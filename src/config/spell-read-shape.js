@@ -111,10 +111,40 @@ function migrateV0(document, element) {
   };
 }
 
+function normalizeV1(document, element) {
+  // Current-version documents are normally protected by the Atlas validator,
+  // but public reads must remain safe if an older import or a manual repair
+  // ever bypassed it. Do not send a partial/forged settings tree to the live
+  // renderer just because its schemaVersion happens to be current.
+  const checkedSettings = validateSpellSettings(document.settings);
+  if (!checkedSettings.ok) return null;
+  const settings = checkedSettings.value;
+  return {
+    _id: document._id,
+    schemaVersion: CURRENT_SPELL_SCHEMA_VERSION,
+    slug: document.slug,
+    name: document.name,
+    element,
+    incantation: document.incantation,
+    incantationHistory: safeHistory(document.incantationHistory),
+    lore: string(document.lore, 600),
+    tags: safeTags(document.tags),
+    settings,
+    // Genome is derived rather than trusted from an imported record.
+    genome: deriveGenome(settings, element),
+    portrait: safePortrait(document.portrait, element),
+    stats: safeStats(document.stats),
+    lineage: safeLineage(document.lineage, document._id),
+    creator: safeCreator(document.creator),
+    createdAt: document.createdAt instanceof Date ? document.createdAt : null,
+    updatedAt: document.updatedAt instanceof Date ? document.updatedAt : null
+  };
+}
+
 /**
  * Returns a document that is safe to serialize to a public client, or a
- * stable reason the route can turn into a 409. It intentionally leaves valid
- * v1 documents structurally intact so their renderer settings remain exact.
+ * stable reason the route can turn into a 409. Current documents are rebuilt
+ * from a public allow-list and their settings are rechecked before rendering.
  */
 export function normalizeSpellForRead(document) {
   if (!isRecord(document)) return { ok: false, issue: 'The spell page is malformed.' };
@@ -130,7 +160,9 @@ export function normalizeSpellForRead(document) {
   }
 
   if (version === CURRENT_SPELL_SCHEMA_VERSION) {
-    return { ok: true, value: element === document.element ? document : { ...document, element } };
+    const value = normalizeV1(document, element);
+    if (!value) return { ok: false, issue: 'The spell page has an invalid settings seal.' };
+    return { ok: true, value };
   }
   return { ok: true, value: migrateV0(document, element), migratedFrom: version };
 }

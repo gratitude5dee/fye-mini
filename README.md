@@ -120,7 +120,7 @@ npm run mongo:bootstrap -- --apply --with-embeddings --with-search
 That operation does all of the following:
 
 - creates or tightens strict validators for `spells`, `casts`, `benders`, and
-  capped `craft_log`;
+  a normal, TTL-bounded `craft_log`;
 - creates the B-tree, unique, and 90-day TTL indexes that support casting,
   feeds, lineage, and analytics;
 - upserts the house binder and the twelve canonical seed spells;
@@ -155,7 +155,10 @@ Each seed starts with the full settings snapshot, a derived five-axis genome,
 palette, lineage root, lore, tags, and zeroed counters. The `spells` collection
 is the durable page model; `casts` is append-only telemetry with a 90-day TTL;
 `benders` stores an anonymous signed device identity and bookmarks; and
-`craft_log` supports rate-limiting and one-time lore drafts.
+`craft_log` supports rate-limiting and one-time lore drafts. `craft_log` is a
+normal collection with a two-hour TTL: a lore draft is marked consumed inside
+the same transaction as its spell, which MongoDB does not permit for capped
+collections.
 
 ## Deploy with Sites by ChatGPT
 

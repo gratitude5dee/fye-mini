@@ -1,4 +1,4 @@
-import { json, runtime } from '../_lib/http';
+import { binding, json, runtime } from '../_lib/http';
 import { atlasReady, withDb } from '../_lib/mongo';
 
 async function atlasHealth() {
@@ -24,5 +24,7 @@ async function openaiHealth() {
 
 export async function GET() {
   const [atlas, openai] = await Promise.all([atlasHealth(), openaiHealth()]);
-  return json({ ok: atlas.reachable || openai.reachable, atlas, openai }, { headers: { 'cache-control': 'no-store' } });
+  const portraits = { configured: Boolean(binding('SPELL_PORTRAITS')) };
+  const ready = atlas.reachable && openai.reachable && portraits.configured;
+  return json({ ok: ready, ready, atlas, openai, portraits }, { headers: { 'cache-control': 'no-store' } });
 }

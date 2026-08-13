@@ -32,7 +32,7 @@ import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { Editor } from '../ui/Editor.js';
 
 import { settings, ELEMENTS, MODES, MODE_META, applySettings } from '../config/settings.js';
-import { RANGES, enginePath } from '../config/spell-contract.js';
+import { RANGES, SPELLWRIGHT_COLOR_PATHS, enginePath } from '../config/spell-contract.js';
 
 const HDR_URL = '/hdri/spruit_sunrise.hdr';
 
@@ -84,7 +84,8 @@ export class App {
       decals: this.decals,
       bursts: this.bursts,
       shake: this.shake,
-      flash: this.flash
+      flash: this.flash,
+      onAbilityImpact: (ability) => this._onAbilityImpact(ability)
     });
 
     /* ---- character ---- */
@@ -105,7 +106,10 @@ export class App {
     this.input = new InputManager(canvas);
     this.handInput = new HandInput(this.input, {
       onElement: (element) => this.selectElement(element),
-      onStatus: (message) => this.hud?.showToast(message)
+      onStatus: (message) => {
+        this.hud?.showToast(message);
+        window.dispatchEvent(new CustomEvent('grimoire:input-status', { detail: { message } }));
+      }
     });
     this.pathDrawer = new PathDrawer(this.camera);
     this.scene.add(this.pathDrawer.object3D);
@@ -139,7 +143,10 @@ export class App {
       this.dust.setPixelRatio(pixelRatio);
     });
 
-    this.input.on('draw:start', (pointer) => this.pathDrawer.begin(pointer));
+    this.input.on('draw:start', (pointer) => {
+      this._retireHouseSpellLoop();
+      this.pathDrawer.begin(pointer);
+    });
     this.input.on('draw:move', (pointer) => this.pathDrawer.move(pointer));
     this.input.on('draw:end', () => this.pathDrawer.end());
 
@@ -163,6 +170,7 @@ export class App {
   _bindGrimoireEvents() {
     this._onGrimoireSelect = (event) => {
       const requested = event.detail?.element;
+      this._retireHouseSpellLoop();
       this.selectElement(requested === 'air' ? 'wind' : requested);
     };
     this._onGrimoirePatch = (event) => {
@@ -175,6 +183,7 @@ export class App {
     this._onGrimoireLoad = (event) => {
       const spell = event.detail?.spell;
       if (!spell?.settings) return;
+      this._retireHouseSpellLoop();
       const snapshot = structuredClone(spell.settings);
       // The render foundation names this block `wind`; the public document model
       // calls it `air`. Translate only at the boundary and keep live bindings.
@@ -189,12 +198,26 @@ export class App {
     };
     this._onGrimoireDials = () => this.editor.toggle();
     this._onGrimoireAttune = () => void this.handInput.start();
-    this._onGrimoirePortrait = () => {
+    this._onGrimoireOnboardingEarth = () => {
+      this._retireHouseSpellLoop();
+      this.abilities.select('earth');
+      this.hud.setElement('earth');
+      const path = new CatmullRomCurve3([
+        new Vector3(-2.2, 0.02, 1.15), new Vector3(-.82, 0.02, .46),
+        new Vector3(.72, 0.02, -.2), new Vector3(2.05, 0.02, .36)
+      ]);
+      this.abilities.cast(path, 'earth');
+      this._recordCast(path.getLength());
+    };
+    this._onGrimoirePortrait = (event) => {
+      this._retireHouseSpellLoop();
+      this.clearEffects();
       const path = new CatmullRomCurve3([
         new Vector3(-2.4, 0.02, 1.2), new Vector3(-.7, 0.02, .1),
         new Vector3(.85, 0.02, -.25), new Vector3(2.1, 0.02, .5)
       ]);
-      this.abilities.cast(path);
+      const ability = this.abilities.cast(path);
+      this._portraitCapture = ability ? { ability, requestId: event.detail?.requestId } : null;
     };
 
     window.addEventListener('grimoire:select', this._onGrimoireSelect);
@@ -202,6 +225,7 @@ export class App {
     window.addEventListener('grimoire:load-spell', this._onGrimoireLoad);
     window.addEventListener('grimoire:toggle-dials', this._onGrimoireDials);
     window.addEventListener('grimoire:attune', this._onGrimoireAttune);
+    window.addEventListener('grimoire:onboarding-earth', this._onGrimoireOnboardingEarth);
     window.addEventListener('grimoire:portrait', this._onGrimoirePortrait);
   }
 
@@ -209,7 +233,8 @@ export class App {
     for (const [path, value] of Object.entries(patch)) {
       if (typeof path !== 'string' || path.length > 120) continue;
       const range = RANGES[path];
-      if (!range) continue;
+      const isSpellwrightColor = SPELLWRIGHT_COLOR_PATHS.includes(path);
+      if (!range && !isSpellwrightColor) continue;
       const parts = enginePath(path).split('.');
       let target = settings;
       for (let index = 0; index < parts.length - 1; index++) {
@@ -222,17 +247,24 @@ export class App {
       const leaf = parts.at(-1);
       if (!target || !leaf || !Object.prototype.hasOwnProperty.call(target, leaf)) continue;
       const current = target[leaf];
-      if (typeof current === 'number' && typeof value === 'number' && Number.isFinite(value)) target[leaf] = MathUtils.clamp(value, range.min, range.max);
-      if (typeof current === 'string' && typeof value === 'string' && value.length <= 80) target[leaf] = value;
+      if (typeof current === 'number' && typeof value === 'number' && Number.isFinite(value) && range) target[leaf] = MathUtils.clamp(value, range.min, range.max);
+      if (isSpellwrightColor && typeof current === 'string' && typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)) target[leaf] = value;
       if (typeof current === 'boolean' && typeof value === 'boolean') target[leaf] = value;
     }
+  }
+
+  _onAbilityImpact(ability) {
+    if (!this._portraitCapture || this._portraitCapture.ability !== ability) return;
+    const { requestId } = this._portraitCapture;
+    this._portraitCapture = null;
+    window.dispatchEvent(new CustomEvent('grimoire:portrait-impact', { detail: { requestId } }));
   }
 
   _recordCast(pathLength) {
     const element = this.abilities.selected === 'wind' ? 'air' : this.abilities.selected;
     const activeSpell = this.activeSpell?.element === element ? this.activeSpell : null;
     if (!activeSpell) this.activeSpell = null;
-    window.dispatchEvent(new CustomEvent('grimoire:cast', { detail: { element, pathLength } }));
+    window.dispatchEvent(new CustomEvent('grimoire:cast', { detail: { element, pathLength, spellId: activeSpell?._id } }));
     const speed = Math.max(0.1, (settings[this.abilities.selected]?.speed ?? 8) * settings.global.speed);
     void fetch('/api/casts', {
       method: 'POST',
@@ -332,6 +364,8 @@ export class App {
     this.loading.setProgress(0.5, 'Loading character…');
     await this.character.load(assets);
 
+    this.loading.setProgress(0.76, 'Warming the elements…');
+    this.abilities.warm();
     this.loading.setProgress(0.85, 'Compiling shaders…');
     // Compile everything up front so the first cast never stutters.
     await this.renderer.gl.compileAsync(this.scene, this.camera);
@@ -354,14 +388,11 @@ export class App {
 
   stop() {
     cancelAnimationFrame(this._raf);
-    window.clearInterval(this._houseSpellTimer);
-    window.clearTimeout(this._houseFirstCastTimer);
-    this._houseSpellTimer = null;
-    this._houseFirstCastTimer = null;
+    this._retireHouseSpellLoop();
   }
 
   _startHouseSpellLoop() {
-    if (this._houseSpellTimer) return;
+    if (this._houseFirstCastTimer) return;
     const cast = () => {
       if (document.hidden || this.abilities.active?.length >= 6) return;
       const path = new CatmullRomCurve3([
@@ -370,8 +401,15 @@ export class App {
       ]);
       this.abilities.cast(path);
     };
-    this._houseFirstCastTimer = window.setTimeout(cast, 900);
-    this._houseSpellTimer = window.setInterval(cast, 12_000);
+    this._houseFirstCastTimer = window.setTimeout(() => {
+      this._houseFirstCastTimer = null;
+      cast();
+    }, 900);
+  }
+
+  _retireHouseSpellLoop() {
+    window.clearTimeout(this._houseFirstCastTimer);
+    this._houseFirstCastTimer = null;
   }
 
   /* ------------------------------------------------------------------ */
@@ -464,6 +502,7 @@ export class App {
     window.removeEventListener('grimoire:load-spell', this._onGrimoireLoad);
     window.removeEventListener('grimoire:toggle-dials', this._onGrimoireDials);
     window.removeEventListener('grimoire:attune', this._onGrimoireAttune);
+    window.removeEventListener('grimoire:onboarding-earth', this._onGrimoireOnboardingEarth);
     window.removeEventListener('grimoire:portrait', this._onGrimoirePortrait);
   }
 }

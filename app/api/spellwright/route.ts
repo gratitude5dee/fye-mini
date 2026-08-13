@@ -1,4 +1,4 @@
-import { RANGES, SPELLWRIGHT_PATHS, validateSpellSettings, validateSpellwrightPatch } from '../../../src/config/spell-contract';
+import { RANGES, SPELLWRIGHT_COLOR_PATHS, SPELLWRIGHT_PATHS, validateSpellSettings, validateSpellwrightPatch } from '../../../src/config/spell-contract';
 import { consumeRateLimit, deviceIdentity, ensureBender, withSessionCookie } from '../_lib/identity';
 import { RequestError, json, message, readJson, runtime, text } from '../_lib/http';
 import { atlasReady, withDb } from '../_lib/mongo';
@@ -7,7 +7,7 @@ import { structured } from '../_lib/openai';
 const dialMeaning: Record<string, string> = {
   'global.speed': 'overall travel speed', 'global.glow': 'overall light', 'global.turbulence': 'shared irregularity', 'global.particleCount': 'particle density', 'global.particleSize': 'particle scale',
   'trail.width': 'drawn trail width', 'trail.glow': 'drawn trail light', 'trail.flowSpeed': 'trail flow',
-  'fire.flameWidth': 'flame body width', 'fire.flameHeight': 'flame height', 'fire.flameTurbulence': 'flame turbulence', 'fire.streamLength': 'burning tail length', 'fire.emberRate': 'ember density', 'fire.explosionSize': 'impact scale',
+  'fire.flameWidth': 'flame body width', 'fire.flameHeight': 'flame height', 'fire.flameTurbulence': 'flame turbulence', 'fire.streamLength': 'burning tail length', 'fire.emberRate': 'ember density', 'fire.explosionSize': 'impact scale', 'fire.colorCore': 'fire core colour', 'fire.colorMid': 'fire middle colour', 'fire.colorEdge': 'fire edge colour',
   'water.radius': 'water body width', 'water.crest': 'water crest height', 'water.waveAmplitude': 'wave amplitude', 'water.flowSpeed': 'water flow', 'water.foam': 'foam amount', 'water.splashSize': 'splash scale',
   'earth.crustWidth': 'paved crust width', 'earth.plateSize': 'stone plate size', 'earth.rockSize': 'boulder scale', 'earth.riseHeight': 'rock rise height', 'earth.towerHeight': 'tower height', 'earth.towerWidth': 'tower width',
   'air.ribbonWidth': 'air ribbon width', 'air.ribbonLength': 'air ribbon length', 'air.spiralRadius': 'spiral radius', 'air.vortexStrength': 'vortex force', 'air.turbulence': 'air turbulence', 'air.tornadoHeight': 'tornado height'
@@ -19,7 +19,7 @@ const schema = {
   required: ['reply', 'patch'],
   properties: {
     reply: { type: 'string' },
-    patch: { type: 'object', additionalProperties: false, minProperties: 1, maxProperties: 4, properties: Object.fromEntries(SPELLWRIGHT_PATHS.map((path) => [path, { type: 'number' }])) }
+    patch: { type: 'object', additionalProperties: false, minProperties: 1, maxProperties: 4, properties: Object.fromEntries(SPELLWRIGHT_PATHS.map((path) => [path, SPELLWRIGHT_COLOR_PATHS.includes(path) ? { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' } : { type: 'number' }])) }
   }
 };
 
@@ -47,14 +47,14 @@ export async function POST(request: Request) {
     if (!checked.ok) throw new RequestError(400, checked.issues[0]);
     const relevantPaths = SPELLWRIGHT_PATHS.filter((path) => path.startsWith(`${element}.`) || path.startsWith('global.') || path.startsWith('trail.'));
     const current = Object.fromEntries(relevantPaths.map((path) => [path, atPath(checked.value, path)]));
-    const allowedRanges = Object.fromEntries(relevantPaths.map((path) => [path, { ...RANGES[path], meaning: dialMeaning[path] ?? path }]));
+    const allowedRanges = Object.fromEntries(relevantPaths.map((path) => [path, SPELLWRIGHT_COLOR_PATHS.includes(path) ? { type: 'hex-color', meaning: dialMeaning[path] ?? path } : { ...RANGES[path], meaning: dialMeaning[path] ?? path }]));
     const bender = await withDb(async (db) => {
       const resolved = await ensureBender(db, identity);
       await consumeRateLimit(db, resolved._id, 'spellwright', 30);
       return resolved;
     });
     const result = await structured<{ reply: string; patch: Record<string, unknown> }>(
-      'You are Spellwright, a precise visual-effects artisan. Return only one to four measured numeric dial changes from the allowed list. Preserve the current element, never invent a path, and write one practical in-world reply of at most twelve words. Favor a visible, stable result over maximal changes.',
+      'You are Spellwright, a precise visual-effects artisan. Return only one to four allowed dial changes. Numeric paths need numbers in range; hex-color paths need a six-digit hex color. Preserve the current element, never invent a path, and write one practical in-world reply of at most twelve words. Favor a visible, stable result over maximal changes.',
       JSON.stringify({ incantation, element, current, allowedRanges }),
       'spellwright_patch',
       schema

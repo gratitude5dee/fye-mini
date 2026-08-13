@@ -1,9 +1,10 @@
+import type { Db } from 'mongodb';
 import { deriveGenome, SPELL_ELEMENTS, validateSpellSettings } from '../../../src/config/spell-contract';
 import { deviceIdentity, ensureBender, withSessionCookie } from '../_lib/identity';
 import { RequestError, json, message, readJson, runtime, text } from '../_lib/http';
 import { atlasReady, withDb } from '../_lib/mongo';
 import { embedding } from '../_lib/openai';
-import { paletteFor, slugify, spellForClient, spellSearchText } from '../_lib/spells';
+import { paletteFor, readableSpellForClient, slugify, spellForClient, spellSearchText } from '../_lib/spells';
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const FEED_SORTS = {
@@ -11,9 +12,47 @@ const FEED_SORTS = {
   newest: { createdAt: -1 },
   remixed: { 'stats.remixes': -1, createdAt: -1 }
 } as const;
+const PUBLICATION_BLOCKLIST = /\b(?:hitler|nazi|terrorist|rapist|suicide|genocide)\b/i;
+type PublicSpell = ReturnType<typeof spellForClient>;
+
+function publicationName(value: unknown) {
+  const name = text(value, 56);
+  // Custom names are public pages, not free-form prompts. This keeps names
+  // readable, prevents links/handles, and catches a small high-confidence set
+  // of harmful terms before a page reaches shared discovery.
+  if (!/^[A-Z][A-Za-z'’-]*(?:[ -][A-Z][A-Za-z'’-]*){0,5}$/.test(name) || PUBLICATION_BLOCKLIST.test(name)) {
+    throw new RequestError(422, 'Choose a concise, title-cased name that is safe to share.');
+  }
+  return name;
+}
+
+const publicSpells = (documents: Record<string, unknown>[]) => documents
+  .map((document) => readableSpellForClient(document as any))
+  .filter((spell): spell is PublicSpell => spell !== null);
+
+async function trendingSpells(db: Db, element: string | undefined) {
+  const moment = new Date();
+  const since = new Date(moment.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const ranked = await db.collection('casts').aggregate([
+    { $match: { at: { $gte: since }, spellId: { $type: 'objectId' } } },
+    { $addFields: { ageMs: { $subtract: [moment, '$at'] } } },
+    { $addFields: { decay: { $exp: { $multiply: [-1 / (2 * 24 * 60 * 60 * 1000), '$ageMs'] } } } },
+    { $group: { _id: '$spellId', casts: { $sum: 1 }, trend: { $sum: '$decay' } } },
+    { $sort: { trend: -1, casts: -1, _id: 1 } },
+    { $lookup: { from: 'spells', localField: '_id', foreignField: '_id', as: 'spell' } },
+    { $unwind: '$spell' },
+    ...(element ? [{ $match: { 'spell.element': element } }] : []),
+    { $limit: 36 },
+    { $replaceRoot: { newRoot: '$spell' } }
+  ]).toArray();
+  return publicSpells(ranked as Record<string, unknown>[]);
+}
 
 async function hybridSearch(query: string, element: string | undefined) {
   const filter = element ? { element } : {};
+  const autocomplete = query.trim().split(/\s+/).filter(Boolean).length <= 3
+    ? [{ autocomplete: { query, path: 'name', tokenOrder: 'sequential', fuzzy: { maxEdits: 1, prefixLength: 2, maxExpansions: 50 } } }]
+    : [];
   return withDb(async (db) => {
     const spells = db.collection('spells');
     const searches: Array<Promise<unknown>> = [
@@ -22,7 +61,8 @@ async function hybridSearch(query: string, element: string | undefined) {
           $search: {
             index: 'spell_text',
             compound: {
-              should: [{ text: { query, path: ['name', 'incantation', 'lore', 'tags'] } }],
+              should: [...autocomplete, { text: { query, path: ['name', 'incantation', 'lore', 'tags'] } }],
+              minimumShouldMatch: 1,
               ...(element ? { filter: [{ equals: { path: 'element', value: element } }] } : {})
             }
           }
@@ -54,11 +94,11 @@ async function hybridSearch(query: string, element: string | undefined) {
         ranked.set(id, entry);
       });
     }
-    if (ranked.size) return [...ranked.values()].sort((a, b) => b.score - a.score).slice(0, 24).map(({ document }) => spellForClient(document));
+    if (ranked.size) return publicSpells([...ranked.values()].sort((a, b) => b.score - a.score).slice(0, 24).map(({ document }) => document));
 
     const regex = new RegExp(escapeRegex(query), 'i');
     const fallback = await spells.find({ ...filter, $or: [{ name: regex }, { incantation: regex }, { lore: regex }, { tags: regex }] }).sort(FEED_SORTS.trending).limit(24).toArray();
-    return fallback.map(spellForClient);
+    return publicSpells(fallback as Record<string, unknown>[]);
   });
 }
 
@@ -86,8 +126,17 @@ export async function GET(request: Request) {
     const sort = FEED_SORTS[rawSort] ?? FEED_SORTS.trending;
     if (!atlasReady()) return json({ spells: [], source: 'stage' });
     if (query) return json({ spells: await hybridSearch(query, element), source: 'hybrid' });
+    if (rawSort === 'trending') {
+      const spells = await withDb(async (db) => {
+        const ranked = await trendingSpells(db, element);
+        if (ranked.length) return ranked;
+        const recent = await db.collection('spells').find(element ? { element } : {}).sort({ 'stats.casts': -1, createdAt: -1 }).limit(36).toArray();
+        return publicSpells(recent as Record<string, unknown>[]);
+      });
+      return json({ spells, source: 'atlas' });
+    }
     const spells = await withDb(async (db) => db.collection('spells').find(element ? { element } : {}).sort(sort).limit(36).toArray());
-    return json({ spells: spells.map(spellForClient), source: 'atlas' });
+    return json({ spells: publicSpells(spells as Record<string, unknown>[]), source: 'atlas' });
   } catch (error) {
     return message(error, 'The book cannot reach its distant shelves.');
   }
@@ -98,8 +147,12 @@ export async function POST(request: Request) {
     if (!atlasReady()) throw new RequestError(503, 'Atlas is not yet attuned for binding.');
     const identity = await deviceIdentity(request);
     const body = await readJson(request);
-    const name = text(body.name, 56);
+    const name = publicationName(body.name);
     const incantation = text(body.incantation, 420);
+    const incantationHistory = Array.isArray(body.incantationHistory)
+      ? [...new Set(body.incantationHistory.map((entry) => text(entry, 420)).filter(Boolean))].slice(-20)
+      : [incantation];
+    if (!incantationHistory.includes(incantation)) incantationHistory.push(incantation);
     const element = text(body.element, 12);
     const draftId = text(body.draftId, 64);
     if (!name || !incantation || !draftId) throw new RequestError(400, 'Choose a name after the Lorekeeper has written this page.');
@@ -114,7 +167,8 @@ export async function POST(request: Request) {
       const draft = await db.collection('craft_log').findOne({ kind: 'lore_draft', draftId, benderId: bender._id, consumedAt: { $exists: false }, createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) } });
       if (!draft) throw new RequestError(409, 'That Lorekeeper page has faded. Ask for a fresh page before binding.');
       const { lore, tags } = draftValue(draft.payload);
-      if (!lore || tags.length < 3) throw new RequestError(422, 'The Lorekeeper page is incomplete.');
+      const loreWords = lore.split(/\s+/).filter(Boolean).length;
+      if (loreWords < 40 || loreWords > 80 || tags.length < 3) throw new RequestError(422, 'The Lorekeeper page is incomplete.');
 
       const { ObjectId } = await import('mongodb');
       const parentId = text(body.parentId, 24);
@@ -141,7 +195,7 @@ export async function POST(request: Request) {
         name,
         element,
         incantation,
-        incantationHistory: [{ text: incantation, at: createdAt }],
+        incantationHistory: incantationHistory.map((value) => ({ text: value, at: createdAt })),
         lore,
         tags,
         settings: checked.value,
@@ -153,16 +207,13 @@ export async function POST(request: Request) {
         createdAt,
         updatedAt: createdAt
       };
-      if (runtime('OPENAI_API_KEY')) {
-        try {
-          const vector = await embedding(spellSearchText({ name, incantation, lore, tags }));
-          document.embedding = vector;
-          document.embeddingModel = 'text-embedding-3-small';
-          document.embeddingDimensions = 1024;
-        } catch (error) {
-          console.warn('[Living Grimoire] spell saved without embedding', error);
-        }
-      }
+      // Lore drafts already require the OpenAI server secret. Make the
+      // embedding atomic with bind readiness so every published page can be
+      // discovered by meaning instead of creating a silent semantic gap.
+      const vector = await embedding(spellSearchText({ name, incantation, lore, tags }));
+      document.embedding = vector;
+      document.embeddingModel = 'text-embedding-3-small';
+      document.embeddingDimensions = 1024;
 
       const session = client.startSession();
       try {

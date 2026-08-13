@@ -1,12 +1,17 @@
 import { readFile } from 'node:fs/promises';
 import { MongoClient, ObjectId } from 'mongodb';
-import { deriveGenome, snapshotSpellSettings, spellSettingsBsonSchema } from '../../src/config/spell-contract.js';
+import { deriveGenome, spellSettingsBsonSchema } from '../../src/config/spell-contract.js';
+import { HOUSE_PALETTE, HOUSE_SEED_SPELLS, houseSpellSettings } from '../../src/config/house-spells.js';
 
 const databaseName = process.env.ATLAS_DB || 'living_grimoire';
 const uri = process.env.ATLAS_URI;
 const apply = process.argv.includes('--apply');
 const withSearch = process.argv.includes('--with-search');
 const withEmbeddings = process.argv.includes('--with-embeddings');
+// Lore drafts must remain redeemable for 15 minutes and rate records for an
+// hour. Two hours gives the TTL monitor comfortable slack without retaining
+// anonymous prompt data indefinitely.
+const CRAFT_LOG_RETENTION_SECONDS = 2 * 60 * 60;
 
 if (!apply) {
   console.log('Preview only. This script creates no data unless you run: npm run mongo:bootstrap -- --apply');
@@ -18,27 +23,6 @@ if (!uri) throw new Error('ATLAS_URI must be set before bootstrap can run.');
 if (withEmbeddings && !process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is required with --with-embeddings.');
 
 const now = () => new Date();
-const colors = {
-  fire: ['#ff6a3c', '#ffbf58', '#5b170f'], water: ['#3fb8c9', '#c8f3fb', '#164b70'],
-  earth: ['#a08a63', '#d5b78c', '#35291e'], air: ['#bfe8df', '#f3fffd', '#41666a']
-};
-
-// The house pages are deliberately the same 12 names and incantations used in
-// the product brief. `slug` makes this loop idempotent on every bootstrap.
-const seed = [
-  ['cinderwake', 'Cinderwake', 'fire', 'a low, hungry flame that hugs the ground and detonates twice', 'It runs close to the floor, red at its teeth and gold at its heart. The second answer arrives just as the first ember begins to settle, leaving a warm seam in the dark.', ['hungry', 'low', 'double-strike']],
-  ['sun-petal', 'Sun-Petal', 'fire', 'a slow blossom of white-gold fire that opens at the end of the path', 'A patient spark gathers its light until the path has ended, then unfolds in quiet white-gold layers. Its warmth lingers in the air like a held breath finally released.', ['white-gold', 'slow', 'blossom']],
-  ['vermilion-adder', 'Vermilion Adder', 'fire', 'a fast violet-red serpent that strikes hard at the finish', 'Violet light threads a red body that refuses to travel straight. At the last instant it gathers its heat, snaps forward, and leaves a thin ember-bright scar in the air.', ['violet-red', 'serpent', 'striking']],
-  ['moon-whip', 'Moon Whip', 'water', 'a thin cold arc of moonlit water that snaps at the end', 'Cut from a low tide beneath a cloudless moon, this narrow lash keeps its silence until the final crack. It favors a sure hand and leaves pale foam where it has passed.', ['cold', 'precise', 'lunar']],
-  ['harbor-bell', 'Harbor Bell', 'water', 'a heavy, slow swell that rings out wide foam rings on impact', 'A broad blue weight rolls forward without hurry, carrying the stillness of a harbor at dusk. When it lands, pale rings travel outward as if the water has remembered a distant bell.', ['heavy', 'slow', 'foam']],
-  ['undertow', 'Undertow', 'water', 'a deep teal surge that drags low and crowns tall', 'Deep teal water stays close to the ground before rising into a bright, crowned finish. Its pull is steady rather than violent, the kind that asks loose things to follow.', ['teal', 'low', 'crowned']],
-  ['terrace-of-the-patient-king', 'Terrace of the Patient King', 'earth', 'a slow, wide paving that ends in a tall tower', 'Stone rises in deliberate syllables, each plate bearing the memory of the one below it. At the end, a quiet column waits for the world to speak first.', ['steady', 'wide', 'regal']],
-  ['gravel-psalm', 'Gravel Psalm', 'earth', 'quick shallow plates that crack early and settle softly', 'Small plates answer in a quick rhythm, splitting before their edges have found the ground. The dust settles sooner than expected, as though the earth has finished a familiar prayer.', ['quick', 'shallow', 'soft']],
-  ['basalt-procession', 'Basalt Procession', 'earth', 'narrow dark plates marching in file to a squat obelisk', 'Dark slabs move one after another with no wasted motion. Their final obelisk is short, broad, and certain, a marker for a road that exists only while the spell is spoken.', ['basalt', 'narrow', 'obelisk']],
-  ['sparrow-gale', 'Sparrow Gale', 'air', 'a quick, light spiral that scatters leaves and is gone', 'A small wind with a bird’s sudden nerve takes the loose things first, then slips through the fingers of anyone who thinks to hold it. Only the leaves remember where it went.', ['quick', 'light', 'restless']],
-  ['whistling-door', 'Whistling Door', 'air', 'a slow wide vortex that ends in a pressure clap', 'The air opens gradually, a wide pale doorway turning on its own hinge. At the end it closes with a soft, startling clap that rearranges dust and attention alike.', ['wide', 'vortex', 'pressure']],
-  ['sky-lathe', 'Sky Lathe', 'air', 'a tight, fast helix that polishes the air white', 'A tight helix cuts upward so quickly that its center turns white. It does not tear the sky; it burnishes it, leaving the stage briefly brighter than it was before.', ['tight', 'fast', 'white']]
-];
 
 const numeric = { bsonType: ['double', 'int', 'long', 'decimal'] };
 const counter = { bsonType: ['int', 'long', 'double', 'decimal'], minimum: 0 };
@@ -51,7 +35,7 @@ const spellValidator = {
     required: ['schemaVersion', 'slug', 'name', 'element', 'incantation', 'lore', 'tags', 'settings', 'genome', 'portrait', 'stats', 'lineage', 'creator', 'createdAt', 'updatedAt'],
     properties: {
       _id: { bsonType: 'objectId' },
-      schemaVersion: { bsonType: 'int' },
+      schemaVersion: { bsonType: 'int', enum: [1] },
       slug: { bsonType: 'string', minLength: 1, maxLength: 64 },
       name: { bsonType: 'string', minLength: 1, maxLength: 56 },
       element: { enum: ['fire', 'water', 'earth', 'air'] },
@@ -103,12 +87,19 @@ const craftLogValidator = {
 };
 
 async function ensureCollection(db, name, validator, createOptions = {}) {
-  try {
+  const existing = await db.listCollections({ name }, { nameOnly: false }).next();
+  if (!existing) {
     await db.createCollection(name, { validator, validationLevel: 'strict', validationAction: 'error', ...createOptions });
-  } catch (error) {
-    if (error?.codeName !== 'NamespaceExists') throw error;
-    await db.command({ collMod: name, validator, validationLevel: 'strict', validationAction: 'error' });
+    return;
   }
+  // A capped collection cannot participate in the bind transaction: MongoDB
+  // rejects writes to capped collections in transactions. Do not attempt a
+  // destructive conversion in a bootstrap script; make the operator choose a
+  // reviewed migration instead.
+  if (name === 'craft_log' && existing.options?.capped) {
+    throw new Error('craft_log is capped from an earlier bootstrap. Migrate it to a normal collection before applying this version; bind drafts are transactionally consumed.');
+  }
+  await db.command({ collMod: name, validator, validationLevel: 'strict', validationAction: 'error' });
 }
 
 async function embed(text) {
@@ -146,12 +137,18 @@ try {
   await ensureCollection(db, 'spells', spellValidator);
   await ensureCollection(db, 'casts', castValidator);
   await ensureCollection(db, 'benders', benderValidator);
-  await ensureCollection(db, 'craft_log', craftLogValidator, { capped: true, size: 512 * 1024 * 1024, max: 1_000_000 });
+  // This is deliberately a normal collection. `POST /api/spells` consumes a
+  // lore draft inside a transaction with the spell insert, and MongoDB forbids
+  // transaction writes to capped collections. The TTL index below bounds it.
+  await ensureCollection(db, 'craft_log', craftLogValidator);
 
   await Promise.all([
     db.collection('spells').createIndex({ slug: 1 }, { unique: true, name: 'slug_unique' }),
     db.collection('spells').createIndex({ element: 1, 'stats.casts': -1, createdAt: -1 }, { name: 'spell_feed_by_element' }),
     db.collection('spells').createIndex({ 'stats.casts': -1, createdAt: -1 }, { name: 'spell_feed_global' }),
+    db.collection('spells').createIndex({ element: 1, createdAt: -1 }, { name: 'spell_newest_by_element' }),
+    db.collection('spells').createIndex({ createdAt: -1 }, { name: 'spell_newest_global' }),
+    db.collection('spells').createIndex({ element: 1, 'stats.remixes': -1, createdAt: -1 }, { name: 'spell_remixes_by_element' }),
     db.collection('spells').createIndex({ 'stats.remixes': -1, createdAt: -1 }, { name: 'spell_remixes_global' }),
     db.collection('spells').createIndex({ 'lineage.rootId': 1, 'lineage.depth': 1 }, { name: 'lineage_tree' }),
     db.collection('spells').createIndex({ 'lineage.parentId': 1, 'lineage.depth': 1 }, { name: 'lineage_children' }),
@@ -162,7 +159,9 @@ try {
     db.collection('casts').createIndex({ at: 1 }, { name: 'cast_expiry', expireAfterSeconds: 90 * 24 * 60 * 60 }),
     db.collection('benders').createIndex({ tokenId: 1 }, { unique: true, name: 'bender_token_unique' }),
     db.collection('benders').createIndex({ handle: 1 }, { unique: true, name: 'bender_handle_unique' }),
-    db.collection('craft_log').createIndex({ benderId: 1, action: 1, createdAt: -1 }, { name: 'craft_rate_window' })
+    db.collection('craft_log').createIndex({ benderId: 1, action: 1, createdAt: -1 }, { name: 'craft_rate_window' }),
+    db.collection('craft_log').createIndex({ kind: 1, draftId: 1, benderId: 1, consumedAt: 1, createdAt: -1 }, { name: 'craft_draft_redemption' }),
+    db.collection('craft_log').createIndex({ createdAt: 1 }, { name: 'craft_log_expiry', expireAfterSeconds: CRAFT_LOG_RETENTION_SECONDS })
   ]);
 
   const houseToken = 'house-first-binder';
@@ -173,8 +172,28 @@ try {
   );
   if (!houseBender?._id) throw new Error('Could not resolve the house bender.');
 
-  for (const [slug, name, element, incantation, lore, tags] of seed) {
-    const settings = snapshotSpellSettings();
+  const spells = db.collection('spells');
+  for (const { slug, name, element, incantation, lore, tags, settingsPatch } of HOUSE_SEED_SPELLS) {
+    const existing = await spells.findOne(
+      { slug },
+      { projection: { _id: 1, embedding: 1, 'creator.benderId': 1 } },
+    );
+    const isHouseSpell = !existing || String(existing.creator?.benderId ?? '') === String(houseBender._id);
+    if (existing) {
+      // A user who happened to choose a reserved slug must never have their
+      // document overwritten. A previous preview/bootstrap run, however, can
+      // be repaired in place when embeddings are requested later.
+      if (withEmbeddings && isHouseSpell && (!Array.isArray(existing.embedding) || existing.embedding.length !== 1024)) {
+        const vector = await embed([name, incantation, lore, ...tags].join('\n'));
+        await spells.updateOne(
+          { _id: existing._id },
+          { $set: { embedding: vector, embeddingModel: 'text-embedding-3-small', embeddingDimensions: 1024, updatedAt: now() } },
+        );
+      }
+      continue;
+    }
+
+    const settings = houseSpellSettings(settingsPatch);
     const id = new ObjectId();
     const document = {
       _id: id,
@@ -188,7 +207,7 @@ try {
       tags,
       settings,
       genome: deriveGenome(settings, element),
-      portrait: { imageUrl: null, palette: colors[element] },
+      portrait: { imageUrl: null, palette: HOUSE_PALETTE[element] },
       stats: { casts: 0, remixes: 0, bookmarks: 0, lastCastAt: null },
       lineage: { parentId: null, rootId: id, depth: 0 },
       creator: { benderId: houseBender._id, handle: 'The First Binder' },
@@ -201,7 +220,7 @@ try {
       document.embeddingModel = 'text-embedding-3-small';
       document.embeddingDimensions = 1024;
     }
-    await db.collection('spells').updateOne({ slug }, { $setOnInsert: document }, { upsert: true });
+    await spells.updateOne({ slug }, { $setOnInsert: document }, { upsert: true });
   }
 
   if (withSearch) {

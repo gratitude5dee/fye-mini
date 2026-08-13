@@ -275,16 +275,9 @@ export class Ability {
         const reachedEnd = this.followPath(dt);
         this.onTravel(dt);
         this._updateLight(dt, 1);
-        if (reachedEnd) {
-          this.phase = AbilityPhase.IMPACT;
-          this.impactTime = 0;
-          this.onImpact();
-        }
+        if (reachedEnd) this._beginImpact();
         // A path that outlives its element still has to end eventually.
-        if (this.age > this.config.lifetime * settings.global.lifetime * 4) {
-          this.phase = AbilityPhase.IMPACT;
-          this.onImpact();
-        }
+        if (this.age > this.config.lifetime * settings.global.lifetime * 4) this._beginImpact();
         break;
       }
 
@@ -312,6 +305,14 @@ export class Ability {
       default:
         break;
     }
+  }
+
+  _beginImpact() {
+    if (this.phase !== AbilityPhase.TRAVEL) return;
+    this.phase = AbilityPhase.IMPACT;
+    this.impactTime = 0;
+    this.onImpact();
+    this.ctx.onAbilityImpact?.(this);
   }
 
   _updateLight(dt, scale) {

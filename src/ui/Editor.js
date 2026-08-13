@@ -1,6 +1,17 @@
 import GUI from 'lil-gui';
 import { settings, ELEMENTS, ELEMENT_META, MODES } from '../config/settings.js';
+import { RANGES } from '../config/spell-contract.js';
 import { PresetManager } from './PresetManager.js';
+
+const SPELL_BLOCK_BY_SETTINGS = new Map([
+  [settings.global, 'global'],
+  [settings.trail, 'trail'],
+  [settings.fire, 'fire'],
+  [settings.water, 'water'],
+  [settings.earth, 'earth'],
+  [settings.wind, 'air'],
+  [settings.post, 'post'],
+]);
 
 /**
  * Real-time VFX editor.
@@ -48,6 +59,9 @@ export class Editor {
   /* ------------------------------------------------------------------ */
 
   static range(folder, object, key, min, max, step, label) {
+    const spellBlock = SPELL_BLOCK_BY_SETTINGS.get(object);
+    const exact = spellBlock && RANGES[`${spellBlock}.${key}`];
+    if (exact) ({ min, max, step } = exact);
     return folder.add(object, key, min, max, step).name(label ?? key);
   }
 
@@ -287,6 +301,7 @@ export class Editor {
         R(turb, c, 'flicker', 0, 2, 0.01, 'flicker');
         R(turb, c, 'noiseStrength', 0, 3, 0.01, 'noise strength');
         R(turb, c, 'noiseFrequency', 0.1, 6, 0.01, 'noise frequency');
+        R(turb, c, 'noiseSpeed', 0, 4, 0.01, 'noise speed');
         R(turb, c, 'detailOctaves', 2, 5, 1, 'detail octaves');
 
         const heat = folder.addFolder('Temperature & radiance');
@@ -305,6 +320,7 @@ export class Editor {
         R(render, c, 'volumeDensity', 0, 4, 0.01, 'density');
         R(render, c, 'soot', 0, 6, 0.01, 'soot absorption');
         R(render, c, 'coreClarity', 0.02, 1, 0.01, 'core clarity');
+        R(render, c, 'fresnel', 0, 5, 0.01, 'rim fresnel');
         R(render, c, 'opacity', 0, 2, 0.01, 'opacity');
         R(render, c, 'volumeSteps', 6, 72, 1, 'raymarch steps');
 

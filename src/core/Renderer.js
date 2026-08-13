@@ -17,7 +17,10 @@ export class Renderer {
       antialias: true,
       powerPreference: 'high-performance',
       stencil: false,
-      alpha: false
+      alpha: false,
+      // Portrait capture happens on the actual impact frame. Keeping that
+      // frame available makes canvas.toBlob reliable across browsers.
+      preserveDrawingBuffer: true
     });
 
     this.gl.setPixelRatio(this.targetPixelRatio());

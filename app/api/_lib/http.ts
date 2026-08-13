@@ -8,9 +8,14 @@ export class RequestError extends Error {
 }
 
 export function json(data: unknown, init: ResponseInit = {}) {
+  // `Headers` has internal slots rather than enumerable properties. Spreading a
+  // Headers instance drops its contents, including the signed bender cookie.
+  // Clone it first so routes can safely pass either a record or `Headers`.
+  const headers = new Headers(init.headers);
+  if (!headers.has('cache-control')) headers.set('cache-control', 'no-store');
   return Response.json(data, {
     ...init,
-    headers: { 'cache-control': 'no-store', ...(init.headers ?? {}) }
+    headers
   });
 }
 

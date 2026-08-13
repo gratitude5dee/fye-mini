@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, settings } from './settings.js';
+import { EXACT_SPELL_RANGES } from './spell-ranges.js';
 
 export const SPELL_ELEMENTS = ['fire', 'water', 'earth', 'air'];
 // These are the renderer blocks that make a spell portable.  They deliberately
@@ -8,55 +9,16 @@ export const SPELL_SETTING_BLOCKS = ['global', 'trail', 'fire', 'water', 'earth'
 
 const PUBLIC_TO_ENGINE = { air: 'wind' };
 const ENGINE_TO_PUBLIC = { wind: 'air' };
-const NUMBER_HINTS = /(?:count|amount|rate|particles|ribbons|filament|jets|rocks|leaves|bands|samples|maxpoints)/i;
-const LARGE_HINTS = /(?:height|length|radius|distance|width|size|speed|lifetime|intensity|duration|frequency|strength|spread|spacing|elevation|azimuth|fov)/i;
-
-// These are the exact source ranges for the compact Spellwright/dial surface.
-// The expert panel has many more controls; other snapshot leaves use the safe
-// generic guard below until they are promoted into this public contract.
-const EXACT_RANGES = {
-  'global.speed': [0.1, 4, 0.01], 'global.glow': [0, 5, 0.01], 'global.turbulence': [0, 4, 0.01], 'global.particleCount': [0, 3, 0.01], 'global.particleSize': [0.1, 3, 0.01],
-  'trail.width': [0.05, 3, 0.01], 'trail.glow': [0, 10, 0.01], 'trail.flowSpeed': [0, 6, 0.01],
-  'fire.speed': [0.5, 40, 0.1], 'fire.flameWidth': [0.05, 3, 0.01], 'fire.flameHeight': [1, 6, 0.01], 'fire.flameTurbulence': [0, 6, 0.01], 'fire.glow': [0, 10, 0.01], 'fire.streamLength': [0.5, 20, 0.1], 'fire.emberRate': [0, 400, 1], 'fire.explosionSize': [0.2, 10, 0.05],
-  'water.speed': [0.5, 40, 0.1], 'water.radius': [0.05, 3, 0.01], 'water.crest': [1, 4, 0.01], 'water.waveAmplitude': [0, 1.5, 0.01], 'water.flowSpeed': [0, 6, 0.01], 'water.foam': [0, 5, 0.01], 'water.glow': [0, 6, 0.01], 'water.splashSize': [0.2, 12, 0.05], 'water.chop': [0, 3, 0.01], 'water.splashIntensity': [0, 5, 0.01],
-  'earth.speed': [0.5, 40, 0.1], 'earth.crustWidth': [0.5, 10, 0.05], 'earth.plateSize': [0.2, 3, 0.01], 'earth.rockSize': [0.1, 3, 0.01], 'earth.riseHeight': [0.1, 4, 0.01], 'earth.glow': [0, 4, 0.01], 'earth.towerHeight': [0.5, 20, 0.05], 'earth.towerWidth': [0.1, 5, 0.01], 'earth.rockRandomness': [0, 2, 0.01],
-  'air.speed': [0.5, 40, 0.1], 'air.ribbonWidth': [0.05, 6, 0.01], 'air.ribbonLength': [1, 24, 0.1], 'air.spiralRadius': [0.05, 4, 0.01], 'air.vortexStrength': [0, 5, 0.01], 'air.turbulence': [0, 3, 0.01], 'air.glow': [0, 5, 0.01], 'air.tornadoHeight': [1, 20, 0.1]
-};
-
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const isHex = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 const publicKey = (key) => ENGINE_TO_PUBLIC[key] ?? key;
 const engineKey = (key) => PUBLIC_TO_ENGINE[key] ?? key;
 
-function rangeFor(path, value) {
-  if (EXACT_RANGES[path]) {
-    const [min, max, step] = EXACT_RANGES[path];
-    return { min, max, step };
-  }
-  if (path.startsWith('global.')) return { min: 0, max: 4, step: 0.01 };
-  if (NUMBER_HINTS.test(path)) return { min: 0, max: 5000, step: 1 };
-  if (value >= 0 && value <= 1) return { min: 0, max: 1, step: 0.01 };
-  if (LARGE_HINTS.test(path)) return { min: 0, max: Math.max(12, Math.ceil(value * 4)), step: 0.01 };
-  return { min: Math.min(0, Math.floor(value * 4)), max: Math.max(10, Math.ceil(value * 4)), step: 0.01 };
-}
-
-function collectRanges(value, path = '', output = {}) {
-  for (const [key, child] of Object.entries(value)) {
-    const nextPath = path ? `${path}.${publicKey(key)}` : publicKey(key);
-    if (typeof child === 'number') output[nextPath] = rangeFor(nextPath, child);
-    else if (isRecord(child)) collectRanges(child, nextPath, output);
-  }
-  return output;
-}
-
 /**
- * The renderer defaults determine every legal leaf. RANGES is generated once
- * from that source of truth, then used by the client bridge, API routes, and
- * bootstrap tooling to clamp numbers consistently.
+ * A complete, exact manifest shared by the editor, API routes, and bootstrap
+ * tooling. Missing bounds are treated as a programming error, never guessed.
  */
-export const RANGES = Object.freeze(collectRanges(Object.fromEntries(
-  SPELL_SETTING_BLOCKS.map((block) => [engineKey(block), DEFAULT_SETTINGS[engineKey(block)]])
-)));
+export const RANGES = EXACT_SPELL_RANGES;
 
 function publicClone(value, path = '') {
   if (Array.isArray(value)) return value.map((entry) => publicClone(entry, path));
@@ -98,7 +60,12 @@ function normalizeNode(input, template, path, issues) {
         output[name] = defaultValue;
       } else {
         const range = RANGES[nextPath.replace(/^settings\./, '')];
-        output[name] = Math.min(range.max, Math.max(range.min, candidate));
+        if (!range) {
+          issues.push(`${nextPath} has no declared editor range`);
+          output[name] = defaultValue;
+        } else {
+          output[name] = Math.min(range.max, Math.max(range.min, candidate));
+        }
       }
     } else if (typeof defaultValue === 'string') {
       if (isHex(defaultValue) && !isHex(candidate)) issues.push(`${nextPath} must be a hex color`);
@@ -136,11 +103,15 @@ export function validateSpellSettings(candidate) {
 export const SPELLWRIGHT_PATHS = [
   'global.speed', 'global.glow', 'global.turbulence', 'global.particleCount', 'global.particleSize',
   'trail.width', 'trail.glow', 'trail.flowSpeed',
-  'fire.speed', 'fire.flameWidth', 'fire.flameHeight', 'fire.flameTurbulence', 'fire.glow', 'fire.streamLength', 'fire.emberRate', 'fire.explosionSize',
+  'fire.speed', 'fire.flameWidth', 'fire.flameHeight', 'fire.flameTurbulence', 'fire.glow', 'fire.streamLength', 'fire.emberRate', 'fire.explosionSize', 'fire.colorCore', 'fire.colorMid', 'fire.colorEdge',
   'water.speed', 'water.radius', 'water.crest', 'water.waveAmplitude', 'water.flowSpeed', 'water.foam', 'water.glow', 'water.splashSize',
   'earth.speed', 'earth.crustWidth', 'earth.plateSize', 'earth.rockSize', 'earth.riseHeight', 'earth.glow', 'earth.towerHeight', 'earth.towerWidth',
   'air.speed', 'air.ribbonWidth', 'air.ribbonLength', 'air.spiralRadius', 'air.vortexStrength', 'air.turbulence', 'air.glow', 'air.tornadoHeight'
 ];
+
+// A tiny, explicit colour surface lets a natural-language request such as
+// “make it violet” survive the same strict patch contract as numerical dials.
+export const SPELLWRIGHT_COLOR_PATHS = ['fire.colorCore', 'fire.colorMid', 'fire.colorEdge'];
 
 /** Strictly whitelisted patch, also clamped to the same RANGES manifest. */
 export function validateSpellwrightPatch(candidate, allowedPaths = SPELLWRIGHT_PATHS) {
@@ -152,6 +123,14 @@ export function validateSpellwrightPatch(candidate, allowedPaths = SPELLWRIGHT_P
   for (const [path, rawValue] of Object.entries(candidate)) {
     if (!writable.has(path)) {
       issues.push(`${path} is not writable by Spellwright`);
+      continue;
+    }
+    if (SPELLWRIGHT_COLOR_PATHS.includes(path)) {
+      if (!isHex(rawValue)) {
+        issues.push(`${path} must be a six-digit hex color`);
+        continue;
+      }
+      patch[path] = rawValue.toLowerCase();
       continue;
     }
     if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) {

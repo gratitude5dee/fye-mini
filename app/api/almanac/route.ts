@@ -1,6 +1,6 @@
 import { json, message } from '../_lib/http';
 import { atlasReady, withDb } from '../_lib/mongo';
-import { spellForClient } from '../_lib/spells';
+import { readableSpellForClient } from '../_lib/spells';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -41,7 +41,12 @@ export async function GET() {
       totalCasts: result.total,
       elementShare: result.elementShare.map((entry: any) => ({ element: entry._id, casts: entry.casts })),
       daily: result.daily,
-      trending: result.trending.map((entry: any) => ({ spell: spellForClient(entry.spell), casts: entry.casts })),
+      trending: result.trending
+        .map((entry: any) => {
+          const spell = readableSpellForClient(entry.spell);
+          return spell ? { spell, casts: entry.casts } : null;
+        })
+        .filter(Boolean),
       source: 'atlas',
       windowDays: 90
     };

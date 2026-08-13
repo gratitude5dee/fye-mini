@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CURRENT_SPELL_SCHEMA_VERSION, normalizeSpellForRead } from '../src/config/spell-read-shape.js';
+import { snapshotSpellSettings } from '../src/config/spell-contract.js';
 
 const validV1 = {
   _id: 'spell-id',
@@ -9,13 +10,15 @@ const validV1 = {
   name: 'Moon Whip',
   element: 'water',
   incantation: 'A pale lash crosses the tide.',
-  settings: { water: { speed: 4 } }
+  settings: snapshotSpellSettings()
 };
 
-test('keeps an already-current public spell shape intact', () => {
+test('rebuilds an already-current page with a fully valid settings seal', () => {
   const result = normalizeSpellForRead(validV1);
   assert.equal(result.ok, true);
-  assert.equal(result.value, validV1);
+  assert.notEqual(result.value, validV1);
+  assert.deepEqual(result.value.settings, validV1.settings);
+  assert.equal(result.value.genome.pace >= 0, true);
 });
 
 test('adapts the bounded v0 wind spelling without writing a migration', () => {

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { DEFAULT_SETTINGS } from '../src/config/settings.js';
 import { RANGES, deriveGenome, snapshotSpellSettings, spellSettingsBsonSchema, validateSpellSettings, validateSpellwrightPatch } from '../src/config/spell-contract.js';
 
 test('public spell snapshot has only bindable blocks, post, and air', () => {
@@ -20,11 +21,39 @@ test('settings reject unknown leaves and clamp finite numeric values', () => {
   assert.match(checked.issues.join('\n'), /unboundDial/);
 });
 
+test('every persisted numeric leaf has its exact editor range', () => {
+  const persisted = {
+    global: DEFAULT_SETTINGS.global,
+    trail: DEFAULT_SETTINGS.trail,
+    fire: DEFAULT_SETTINGS.fire,
+    water: DEFAULT_SETTINGS.water,
+    earth: DEFAULT_SETTINGS.earth,
+    air: DEFAULT_SETTINGS.wind,
+    post: DEFAULT_SETTINGS.post,
+  };
+  for (const [block, settings] of Object.entries(persisted)) {
+    for (const [key, value] of Object.entries(settings)) {
+      if (typeof value === 'number') assert.ok(RANGES[`${block}.${key}`], `${block}.${key} needs a declared range`);
+    }
+  }
+  assert.deepEqual(RANGES['fire.tempCore'], { min: 1500, max: 6000, step: 10 });
+  assert.deepEqual(RANGES['fire.volumeSteps'], { min: 6, max: 72, step: 1 });
+  assert.deepEqual(RANGES['earth.crackDelay'], { min: 0.02, max: 3, step: 0.01 });
+});
+
 test('Spellwright only receives whitelisted, bounded paths', () => {
   const checked = validateSpellwrightPatch({ 'air.speed': 9999, 'post.exposure': 8 });
   assert.equal(checked.ok, false);
   assert.equal(checked.value['air.speed'], RANGES['air.speed'].max);
   assert.match(checked.issues.join('\n'), /post\.exposure/);
+});
+
+test('Spellwright can make fire violet without opening arbitrary string settings', () => {
+  const violet = validateSpellwrightPatch({ 'fire.colorCore': '#9d4edd', 'fire.flameHeight': 99 });
+  assert.equal(violet.ok, true);
+  assert.equal(violet.value['fire.colorCore'], '#9d4edd');
+  assert.equal(violet.value['fire.flameHeight'], RANGES['fire.flameHeight'].max);
+  assert.equal(validateSpellwrightPatch({ 'water.lightColor': '#9d4edd' }).ok, false);
 });
 
 test('genome mass follows each element’s real size dial', () => {

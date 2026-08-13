@@ -51,6 +51,15 @@ export class AbilityManager {
     this.selected = element;
   }
 
+  /** Construct each pooled effect before the loading screen compiles the scene. */
+  warm() {
+    for (const pool of this.pools.values()) {
+      const ability = pool.acquire();
+      ability.group.visible = false;
+      pool.release(ability);
+    }
+  }
+
   /**
    * Cast the currently selected element along `curve`.
    * @returns {import('./Ability.js').Ability|null}
