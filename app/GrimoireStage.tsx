@@ -176,6 +176,13 @@ function ElementDonut({ entries, total }: { entries: Almanac['elementShare']; to
   return <div className="element-donut" style={{ '--donut': `conic-gradient(${bands.join(', ') || '#efe7d81b 0 100%'})` } as CSSProperties}><span><b>{total}</b><small>casts</small></span></div>;
 }
 
+function LineageBranches({ parentId, nodes, onOpen, depth = 0 }: { parentId?: string; nodes: Spell[]; onOpen: (spell: Spell) => void; depth?: number }) {
+  if (!parentId || depth > 12) return null;
+  const children = nodes.filter((node) => node.lineage?.parentId === parentId);
+  if (!children.length) return null;
+  return <div className="lineage-tree__branches">{children.map((child) => <div className="lineage-tree__branch" key={child._id ?? child.slug}><button style={{ '--branch-indent': `${depth * 15}px` } as CSSProperties} onClick={() => onOpen(child)}>{child.name}</button><LineageBranches parentId={child._id} nodes={nodes} onOpen={onOpen} depth={depth + 1} /></div>)}</div>;
+}
+
 export function GrimoireStage() {
   const [element, setElement] = useState<ElementId>('fire');
   const [view, setView] = useState<'stage' | 'grimoire' | 'almanac'>('stage');
@@ -531,7 +538,7 @@ export function GrimoireStage() {
         <div className="spell-page__hero"><CanvasMark spell={spellDetail.spell} /><div><small>{spellDetail.spell.element} · {spellDetail.spell.creator?.handle ?? 'The First Binder'}</small><p>{spellDetail.spell.incantation}</p><span>{spellDetail.spell.stats?.casts ?? 0} casts remembered</span></div></div>
         <section className="spell-page__lore"><p className="eyebrow">Lore</p><p>{spellDetail.spell.lore}</p><div>{spellDetail.spell.tags.map((tag) => <span key={tag}>{tag}</span>)}</div></section>
         <section className="spell-page__genome"><p className="eyebrow">Genome</p><GenomeRadar genome={spellDetail.spell.genome} /></section>
-        <section className="lineage-tree"><p className="eyebrow">Lineage</p><div className="lineage-tree__path">{spellDetail.ancestors.length ? spellDetail.ancestors.map((ancestor) => <button key={ancestor.slug} onClick={() => void openSpellPage(ancestor)}>{ancestor.name}</button>) : <span>First known page</span>}<b>{spellDetail.spell.name}</b>{spellDetail.descendants.length ? spellDetail.descendants.map((descendant) => <button key={descendant.slug} onClick={() => void openSpellPage(descendant)}>{descendant.name}</button>) : <span>No branches yet</span>}</div></section>
+        <section className="lineage-tree"><p className="eyebrow">Lineage</p><div className="lineage-tree__path">{spellDetail.ancestors.length ? spellDetail.ancestors.map((ancestor) => <button key={ancestor.slug} onClick={() => void openSpellPage(ancestor)}>{ancestor.name}</button>) : <span>First known page</span>}<b>{spellDetail.spell.name}</b>{spellDetail.descendants.length ? <LineageBranches parentId={spellDetail.spell._id} nodes={spellDetail.descendants} onOpen={(branch) => void openSpellPage(branch)} /> : <span>No branches yet</span>}</div></section>
         <div className="spell-page__actions"><button className="quiet-button" onClick={() => loadSpell(spellDetail.spell)}>Load for casting</button><button className="bind-button" onClick={() => beginRemix(spellDetail.spell)}>Remix this page</button></div>
       </aside>}
 
