@@ -8,7 +8,7 @@ const _dir = new Vector3();
 const _desiredTarget = new Vector3();
 
 /**
- * Third-person orbit rig.
+ * Ritual-stage orbit rig.
  *
  * - Left mouse is reserved for drawing, so orbiting is bound to right-drag.
  * - The distance always resolves back to `settings.camera.distance`, so framing
@@ -41,7 +41,7 @@ export class CameraRig {
     this.controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: MOUSE.ROTATE };
     this.controls.touches = { ONE: null, TWO: TOUCH.DOLLY_ROTATE };
 
-    this.anchor = new Vector3(0, 0, 0); // the character
+    this.anchor = new Vector3(0, 0, 0); // the centre of the ritual ground
     this.focus = new Vector3(0, 0, 0); // point of interest (ability head)
     this.focusWeight = 0;
     this.shakeOffset = new Vector3();
@@ -75,7 +75,7 @@ export class CameraRig {
     );
   }
 
-  /** Point the rig should orbit around (character position). */
+  /** Point the rig should orbit around (the ritual-ground anchor). */
   setAnchor(x, y, z) {
     this.anchor.set(x, y, z);
   }
@@ -96,7 +96,7 @@ export class CameraRig {
     this.controls.minPolarAngle = cam.minPolar;
     this.controls.maxPolarAngle = cam.maxPolar;
 
-    // Blend the orbit target between the character and any active ability.
+    // Blend the orbit target between the ritual ground and any active ability.
     const blend = MathUtils.clamp(this.focusWeight * cam.autoFrame, 0, 0.85);
     _desiredTarget.copy(this.anchor);
     _desiredTarget.y += cam.targetHeight;

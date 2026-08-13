@@ -42,8 +42,6 @@ export class Editor {
     this._buildEnvironment();
     this._buildPost();
     this._buildCamera();
-    this._buildCharacter();
-    this._buildWalk();
 
     // Element folders start closed — the global block is the common entry point.
     this.gui.folders.forEach((folder) => folder.close());

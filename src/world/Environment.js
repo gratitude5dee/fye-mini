@@ -6,8 +6,13 @@ import {
   AmbientLight,
   HemisphereLight,
   DirectionalLight,
+  DataTexture,
   EquirectangularReflectionMapping,
-  PMREMGenerator
+  LinearFilter,
+  PMREMGenerator,
+  RGBAFormat,
+  SRGBColorSpace,
+  UnsignedByteType
 } from 'three';
 import { settings } from '../config/settings.js';
 import { getColor } from '../utils/color.js';
@@ -18,17 +23,45 @@ const _sunDir = new Vector3();
 /** Half-width of the shadowed area, in metres, centred on the action. */
 const SHADOW_EXTENT = 26;
 
+function proceduralSkyProbe() {
+  // A tiny equirectangular gradient is enough for PMREM and the custom water
+  // and air shaders. It removes the boot-time HDR download while keeping a
+  // warm horizon and cool overhead reflections on the elemental stage.
+  const width = 96;
+  const height = 48;
+  const pixels = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const v = y / (height - 1);
+    const horizon = Math.exp(-Math.pow((v - 0.56) / 0.2, 2));
+    const cool = 1 - v;
+    for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * 4;
+      pixels[offset] = Math.round(13 + 35 * horizon + 9 * cool);
+      pixels[offset + 1] = Math.round(15 + 23 * horizon + 15 * cool);
+      pixels[offset + 2] = Math.round(18 + 13 * horizon + 28 * cool);
+      pixels[offset + 3] = 255;
+    }
+  }
+  const texture = new DataTexture(pixels, width, height, RGBAFormat, UnsignedByteType);
+  texture.mapping = EquirectangularReflectionMapping;
+  texture.colorSpace = SRGBColorSpace;
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 /**
  * Scene, atmosphere and lighting.
  *
  * The look is a dark cinematic stage rather than an outdoor field: a warm key
  * light, a cool rim from behind, almost no fill, and a fog whose colour matches
- * the flat backdrop so the floor dissolves into the void at the edges. The HDR
- * probe is still loaded, but only as (dim) image-based lighting and as the
- * reflection source for the water / wind shaders — never as the visible sky.
+ * the flat backdrop so the floor dissolves into the void at the edges. A tiny
+ * procedural sky probe provides image-based lighting and reflections without
+ * shipping an HDR asset or making the stage an outdoor scene.
  *
  * Sun shadows use one directional light whose orthographic shadow camera is
- * re-centred on the character every frame and fitted tightly to the play area.
+ * centred on the ritual ground and fitted tightly to the play area.
  * At 4096² over a 52 m box that is ~1.3 cm per texel — sharper than a three
  * cascade split would give here, without the cost or the complexity.
  *
@@ -91,7 +124,7 @@ export class Environment {
 
     /**
      * Cool separation light coming from behind the stage. No shadows: it exists
-     * purely to draw a bright edge around the character and the effects so they
+     * purely to draw a bright edge around the effects so they
      * do not merge into the dark backdrop.
      */
     this.rim = new DirectionalLight(
@@ -110,10 +143,7 @@ export class Environment {
     this._rimDir = new Vector3();
   }
 
-  /**
-   * Load the HDR probe. It lights the scene (IBL) but is deliberately *not*
-   * used as the background — the stage keeps its flat dark backdrop.
-   */
+  /** Load an equirectangular probe without replacing the stage backdrop. */
   async loadEnvironment(hdrTexture) {
     this._pmrem = new PMREMGenerator(this.renderer.gl);
     this._pmrem.compileEquirectangularShader();
@@ -131,6 +161,10 @@ export class Environment {
 
     this._pmrem.dispose();
     this._pmrem = null;
+  }
+
+  async loadProceduralEnvironment() {
+    await this.loadEnvironment(proceduralSkyProbe());
   }
 
   /**

@@ -12,6 +12,11 @@ const FEED_SORTS = {
   newest: { createdAt: -1 },
   remixed: { 'stats.remixes': -1, createdAt: -1 }
 } as const;
+const SEARCH_LIMIT = 24;
+// Atlas Vector Search generally needs a wider candidate pool than the final
+// result set. Keeping this at 20x the page size preserves semantic recall
+// without ever exceeding Atlas's 10,000-candidate ceiling.
+const VECTOR_NUM_CANDIDATES = SEARCH_LIMIT * 20;
 const PUBLICATION_BLOCKLIST = /\b(?:hitler|nazi|terrorist|rapist|suicide|genocide)\b/i;
 type PublicSpell = ReturnType<typeof spellForClient>;
 
@@ -67,7 +72,7 @@ async function hybridSearch(query: string, element: string | undefined) {
             }
           }
         },
-        { $limit: 24 },
+        { $limit: SEARCH_LIMIT },
         // $set preserves the spell document. A projection containing just score
         // would make successful Atlas results unusable by the Grimoire.
         { $set: { _searchScore: { $meta: 'searchScore' } } }
@@ -77,7 +82,7 @@ async function hybridSearch(query: string, element: string | undefined) {
       searches.push((async () => {
         const vector = await embedding(query);
         return spells.aggregate([
-          { $vectorSearch: { index: 'spell_vector', path: 'embedding', queryVector: vector, numCandidates: 120, limit: 24, ...(element ? { filter } : {}) } },
+          { $vectorSearch: { index: 'spell_vector', path: 'embedding', queryVector: vector, numCandidates: VECTOR_NUM_CANDIDATES, limit: SEARCH_LIMIT, ...(element ? { filter } : {}) } },
           { $set: { _vectorScore: { $meta: 'vectorSearchScore' } } }
         ]).toArray();
       })());
@@ -94,10 +99,10 @@ async function hybridSearch(query: string, element: string | undefined) {
         ranked.set(id, entry);
       });
     }
-    if (ranked.size) return publicSpells([...ranked.values()].sort((a, b) => b.score - a.score).slice(0, 24).map(({ document }) => document));
+    if (ranked.size) return publicSpells([...ranked.values()].sort((a, b) => b.score - a.score).slice(0, SEARCH_LIMIT).map(({ document }) => document));
 
     const regex = new RegExp(escapeRegex(query), 'i');
-    const fallback = await spells.find({ ...filter, $or: [{ name: regex }, { incantation: regex }, { lore: regex }, { tags: regex }] }).sort(FEED_SORTS.trending).limit(24).toArray();
+    const fallback = await spells.find({ ...filter, $or: [{ name: regex }, { incantation: regex }, { lore: regex }, { tags: regex }] }).sort(FEED_SORTS.trending).limit(SEARCH_LIMIT).toArray();
     return publicSpells(fallback as Record<string, unknown>[]);
   });
 }

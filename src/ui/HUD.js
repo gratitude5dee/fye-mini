@@ -1,10 +1,9 @@
 
 /**
- * Heads-up display: mode switch, element selector, controls, live stats and
- * toasts.
+ * Heads-up display: element selector, controls, live stats and toasts.
  *
  * Plain DOM — no framework. The switches are the only interactive parts; they
- * mirror the keyboard shortcuts and report back through `onSelect` / `onMode`.
+ * mirror the keyboard shortcuts and report back through `onSelect`.
  */
 export class HUD {
   constructor(root) {
@@ -55,7 +54,7 @@ export class HUD {
     if (element) this.showToast(`${element === 'wind' ? 'Gale' : element[0].toUpperCase() + element.slice(1)} selected`);
   }
 
-  /** Reflect the interaction mode. Walk mode dims the (unused) element picker. */
+  /** Legacy mode-card support for the standalone foundation entrypoint. */
   setMode(mode) {
     for (const [key, card] of this.modeCards) card.classList.toggle('is-active', key === mode);
   }

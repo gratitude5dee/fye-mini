@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------ *
- * Bending Sandbox — UI shell
+ * The Living Grimoire — standalone UI shell
  * The 3D view owns the whole viewport; everything here floats on top.
  * ------------------------------------------------------------------ */
 
@@ -161,7 +161,7 @@ body {
   pointer-events: auto;
 }
 
-/* The element picker is meaningless while walking — keep it visible but quiet. */
+/* Retained for the standalone foundation shell; the Grimoire always casts. */
 .hud__elements.is-dimmed {
   opacity: 0.32;
   filter: saturate(0.35);

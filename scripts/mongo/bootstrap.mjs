@@ -155,6 +155,9 @@ try {
     db.collection('casts').createIndex({ spellId: 1, at: -1 }, { name: 'casts_by_spell' }),
     db.collection('casts').createIndex({ element: 1, at: -1 }, { name: 'casts_by_element' }),
     db.collection('casts').createIndex({ benderId: 1, at: -1 }, { name: 'casts_by_bender' }),
+    // The Discover and Almanac trend pipelines first bound a seven-day time
+    // window, then group by spell. This avoids scanning the full TTL history.
+    db.collection('casts').createIndex({ at: -1, spellId: 1 }, { name: 'casts_trending_window' }),
     db.collection('casts').createIndex({ eventId: 1 }, { unique: true, name: 'cast_event_unique' }),
     db.collection('casts').createIndex({ at: 1 }, { name: 'cast_expiry', expireAfterSeconds: 90 * 24 * 60 * 60 }),
     db.collection('benders').createIndex({ tokenId: 1 }, { unique: true, name: 'bender_token_unique' }),

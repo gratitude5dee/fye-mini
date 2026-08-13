@@ -8,11 +8,6 @@ import { frame } from './FrameUniforms.js';
 import { Environment } from '../world/Environment.js';
 import { Ground } from '../world/Ground.js';
 import { DustMotes } from '../world/DustMotes.js';
-import { ContactShadows } from '../world/ContactShadows.js';
-
-import { AssetLoader } from '../loaders/AssetLoader.js';
-import { CharacterController } from '../animation/CharacterController.js';
-import { WalkController } from '../animation/WalkController.js';
 
 import { InputManager } from '../input/InputManager.js';
 import { HandInput } from '../input/HandInput.js';
@@ -31,10 +26,8 @@ import { PostProcessing } from '../postprocessing/PostProcessing.js';
 import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { Editor } from '../ui/Editor.js';
 
-import { settings, ELEMENTS, MODES, MODE_META, applySettings } from '../config/settings.js';
+import { settings, ELEMENTS, applySettings } from '../config/settings.js';
 import { RANGES, SPELLWRIGHT_COLOR_PATHS, enginePath } from '../config/spell-contract.js';
-
-const HDR_URL = '/hdri/spruit_sunrise.hdr';
 
 /**
  * Application root: owns every subsystem and the frame loop.
@@ -62,9 +55,9 @@ export class App {
     /* ---- world ---- */
     this.ground = new Ground(this.environment);
     this.dust = new DustMotes();
-    this.contactShadows = new ContactShadows(this.renderer, { size: 2.6, height: 2.4, blur: 2.0 });
+    this.stageAnchor = new Vector3();
 
-    this.scene.add(this.ground.mesh, this.dust.points, this.contactShadows.group);
+    this.scene.add(this.ground.mesh, this.dust.points);
     this.dust.setPixelRatio(this.renderer.gl.getPixelRatio());
 
     /* ---- shared VFX services ---- */
@@ -86,20 +79,6 @@ export class App {
       shake: this.shake,
       flash: this.flash,
       onAbilityImpact: (ability) => this._onAbilityImpact(ability)
-    });
-
-    /* ---- character ---- */
-    this.character = new CharacterController(this.environment);
-    this.scene.add(this.character.root);
-
-    // Walk mode: the same drawn path, ridden instead of cast.
-    this.walk = new WalkController(this.character, {
-      scene: this.scene,
-      particles: this.particles,
-      lights: this.lights,
-      decals: this.decals,
-      bursts: this.bursts,
-      shake: this.shake
     });
 
     /* ---- input ---- */
@@ -127,8 +106,7 @@ export class App {
 
     this._bindEvents();
     this._bindGrimoireEvents();
-    this._mode = null;
-    this.setMode(settings.mode);
+    settings.mode = 'cast';
     this.selectElement(ELEMENTS[0]);
 
     this._focusPoint = new Vector3();
@@ -153,18 +131,14 @@ export class App {
     this.input.on('element', (index) => this.selectElement(ELEMENTS[index]));
     this.input.on('action', (action) => this._handleAction(action));
 
-    // One gesture, two meanings — the mode decides what a finished stroke does.
+    // Every finished stroke becomes a spell. The Grimoire is first-person
+    // magic, so the stage never switches into the foundation's walk mode.
     this.pathDrawer.on('cast', (curve, _points, _count, length) => {
-      if (settings.mode === 'walk') {
-        if (!this.walk.begin(curve)) this.hud.showToast('Path too short to ride');
-      } else {
-        this.abilities.cast(curve);
-        this._recordCast(length);
-      }
+      this.abilities.cast(curve);
+      this._recordCast(length);
     });
 
     this.hud.onSelect = (element) => this.selectElement(element);
-    this.hud.onMode = (mode) => this.setMode(mode);
   }
 
   _bindGrimoireEvents() {
@@ -296,14 +270,8 @@ export class App {
         this.paused = !this.paused;
         this.hud.showToast(this.paused ? 'Paused' : 'Resumed');
         break;
-      case 'togglePose': {
-        const pose = this.character.togglePose();
-        this.editor.refresh();
-        this.hud.showToast(pose === 'sitting' ? 'Meditation pose' : 'Standing idle');
-        break;
-      }
       case 'toggleMode':
-        this.setMode(MODES[(MODES.indexOf(settings.mode) + 1) % MODES.length]);
+      case 'togglePose':
         break;
       default:
         break;
@@ -319,27 +287,7 @@ export class App {
     window.dispatchEvent(new CustomEvent('grimoire:selected', { detail: { element: publicElement } }));
   }
 
-  /**
-   * Switch between casting and walking.
-   *
-   * `settings.mode` is the source of truth — the editor writes it directly and
-   * the frame loop notices — so this is also the sync point for presets and
-   * "reset to defaults".
-   */
-  setMode(mode) {
-    const next = MODES.includes(mode) ? mode : MODES[0];
-    const changed = this._mode !== next;
-    this._mode = next;
-    settings.mode = next;
-
-    if (next !== 'walk') this.walk.cancel();
-    this.hud.setMode(next);
-    if (changed) this.hud.showToast(`${MODE_META[next].hint} — ${MODE_META[next].blurb}`);
-    this.editor.refresh();
-  }
-
   clearEffects() {
-    this.walk.cancel();
     this.abilities.clear();
     this.particles.reset();
     this.decals.clear();
@@ -352,19 +300,13 @@ export class App {
 
   /* ------------------------------------------------------------------ */
 
-  /** Load assets, warm the shader cache, then start the loop. */
+  /** Compose the procedural stage, warm shaders, then start the loop. */
   async load() {
-    const assets = new AssetLoader();
-
-    this.loading.setProgress(0.05, 'Loading environment…');
-    const hdr = await assets.loadHDR(HDR_URL);
-    await this.environment.loadEnvironment(hdr);
+    this.loading.setProgress(0.05, 'Composing the stage…');
+    await this.environment.loadProceduralEnvironment();
     frame.uEnvMap.value = this.environment.equirect;
 
-    this.loading.setProgress(0.5, 'Loading character…');
-    await this.character.load(assets);
-
-    this.loading.setProgress(0.76, 'Warming the elements…');
+    this.loading.setProgress(0.56, 'Warming the elements…');
     this.abilities.warm();
     this.loading.setProgress(0.85, 'Compiling shaders…');
     // Compile everything up front so the first cast never stutters.
@@ -432,17 +374,11 @@ export class App {
 
     /* ---- simulation ---- */
     this.renderer.syncSettings();
-    // The editor and the preset system write `settings.mode` directly.
-    if (settings.mode !== this._mode) this.setMode(settings.mode);
-
-    this.environment.setFocus(this.character.position.x, this.character.position.z);
+    this.environment.setFocus(this.stageAnchor.x, this.stageAnchor.z);
     this.environment.update();
-    // Walk mode places the character; the controller then animates him there.
-    this.walk.update(dt);
-    this.character.update(dt);
 
     this.ground.update(this.elapsed);
-    this.dust.update(this.elapsed, this.character.position);
+    this.dust.update(this.elapsed, this.stageAnchor);
 
     this.pathDrawer.update(raw); // the preview keeps animating while paused
     this.abilities.update(dt);
@@ -454,13 +390,10 @@ export class App {
     /* ---- camera ---- */
     const focus = this.abilities.focus;
     if (focus) this.rig.lookAt(focus.position, MathUtils.clamp(1 - focus.u * 0.4, 0, 1));
-    this.rig.setAnchor(this.character.position.x, 0, this.character.position.z);
+    this.rig.setAnchor(this.stageAnchor.x, 0, this.stageAnchor.z);
     this.shake.update(raw);
     this.flash.update(raw);
     this.rig.update(raw);
-
-    this.contactShadows.setPosition(this.character.position.x, this.character.position.z);
-    this.contactShadows.render(this.scene);
 
     /* ---- render ---- */
     // Exactly one cascade shadow update per frame (see Renderer).
@@ -487,11 +420,8 @@ export class App {
     this.decals.dispose();
     this.bursts.dispose();
     this.lights.dispose();
-    this.walk.dispose();
-    this.character.dispose();
     this.ground.dispose();
     this.dust.dispose();
-    this.contactShadows.dispose();
     this.post.dispose();
     this.environment.dispose();
     this.editor.dispose();

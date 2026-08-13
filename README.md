@@ -42,7 +42,8 @@ and API routes are built with Vinext and are intended to be deployed through
 [`.openai/hosting.json`](.openai/hosting.json); it names the portrait bucket
 binding `SPELL_PORTRAITS`.
 
-The 3D stage can still open without Atlas or OpenAI configured. Saving,
+The first-person 3D stage uses a procedural sky probe rather than a character
+model or HDR download, so it can still open without Atlas or OpenAI configured. Saving,
 discovering live pages, analytics, identity, AI crafting, and portraits require
 their respective server-side bindings.
 
@@ -204,8 +205,7 @@ Recommended release checklist:
   Hold a fist for Earth, two fingers for Water, index + pinky for Fire, or an
   open hand for Air. Hover over an element dock button to select it.
 - **Keyboard fallback:** `1–4` select elements, `Q/E` cycle, `G` opens the
-  full dials, `C` clears effects, `P` pauses, `T` toggles the character pose,
-  `M` toggles cast/walk mode, and `H` toggles help.
+  full dials, `C` clears effects, `P` pauses, and `H` toggles help.
 
 The Spellwright’s language patch is constrained to the same numeric ranges as
 the visual dials. Binding saves a complete spell settings snapshot, so a page
