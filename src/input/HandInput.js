@@ -5,6 +5,9 @@ const PINCH_DOWN = 0.32;
 const PINCH_UP = 0.48;
 const DROPOUT_GRACE_MS = 120;
 const POSE_HOLD_MS = 450;
+const DOCK_DWELL_MS = 400;
+const ONE_EURO = { minCutoff: 1.2, beta: 0.02, dCutoff: 1.0 };
+const HAND_CONNECTIONS = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -29,12 +32,18 @@ export class HandInput {
     this.pose = null;
     this.poseStartedAt = 0;
     this.poseTriggered = false;
+    this.dockElement = null;
+    this.dockStartedAt = 0;
+    this.dockTriggered = false;
     this._raf = 0;
     this._stream = null;
     this._landmarker = null;
     this._video = null;
     this._canvas = null;
     this._context = null;
+    this._filter = null;
+    this._onElementAccent = (event) => this._setAccent(event.detail?.element);
+    window.addEventListener('grimoire:selected', this._onElementAccent);
   }
 
   async start() {
@@ -78,13 +87,39 @@ export class HandInput {
     if (this._video) return;
     const mirror = document.createElement('div');
     mirror.className = 'hand-mirror';
-    mirror.innerHTML = '<video muted playsinline></video><canvas aria-hidden="true"></canvas><span>Seeking your hand…</span>';
+    mirror.innerHTML = '<video muted playsinline></video><canvas aria-hidden="true"></canvas><i aria-hidden="true"></i><span>Seeking your hand…</span>';
     document.body.append(mirror);
     this._video = mirror.querySelector('video');
     this._canvas = mirror.querySelector('canvas');
     this._context = this._canvas.getContext('2d');
     this._label = mirror.querySelector('span');
+    this._ring = mirror.querySelector('i');
     this._mirror = mirror;
+    this._setAccent('air');
+  }
+
+  _setAccent(element) {
+    const colors = { fire: '#ff6a3c', water: '#3fb8c9', earth: '#a08a63', air: '#bfe8df', wind: '#bfe8df' };
+    this._mirror?.style.setProperty('--hand-accent', colors[element] ?? colors.air);
+  }
+
+  _smoothPoint(next, now) {
+    const alpha = (cutoff, delta) => {
+      const tau = 1 / (2 * Math.PI * cutoff);
+      return 1 / (1 + tau / delta);
+    };
+    if (!this._filter) {
+      this._filter = { raw: next.clone(), value: next.clone(), derivative: new Vector2(), at: now };
+      return next.clone();
+    }
+    const delta = clamp((now - this._filter.at) / 1000, 1 / 240, 0.1);
+    const derivative = next.clone().sub(this._filter.raw).multiplyScalar(1 / delta);
+    this._filter.derivative.lerp(derivative, alpha(ONE_EURO.dCutoff, delta));
+    const cutoff = ONE_EURO.minCutoff + ONE_EURO.beta * this._filter.derivative.length();
+    this._filter.value.lerp(next, alpha(cutoff, delta));
+    this._filter.raw.copy(next);
+    this._filter.at = now;
+    return this._filter.value;
   }
 
   _loop = () => {
@@ -128,12 +163,9 @@ export class HandInput {
       -(clamp((rawY - INSET) / (1 - INSET * 2), 0, 1) * 2 - 1)
     );
 
-    // A compact One-Euro-inspired smoother: at low speed it removes tremor;
-    // on fast travel it moves nearly with the fingertip to preserve latency.
-    const speed = this.pointer.distanceTo(this.filtered) * 60;
-    const alpha = clamp(0.16 + speed * 0.04, 0.16, 0.8);
-    if (!this.filtered.lengthSq()) this.filtered.copy(this.pointer);
-    this.filtered.lerp(this.pointer, alpha);
+    // One-Euro filtering gives a steady idle cursor without making a fast
+    // fingertip feel delayed. Values match the documented starting tune.
+    this.filtered.copy(this._smoothPoint(this.pointer, now));
 
     const handScale = Math.max(.0001, distance(landmarks[0], landmarks[9]));
     const pinchRatio = distance(landmarks[4], landmarks[8]) / handScale;
@@ -146,7 +178,10 @@ export class HandInput {
     }
     if (this.isDrawing) this.input.emit('draw:move', this.filtered);
 
-    if (!this.isDrawing) this._trackPose(landmarks, now);
+    if (!this.isDrawing) {
+      this._trackPose(landmarks, now);
+      this._trackDock(rawX, rawY, now);
+    }
     else this._resetPose();
   }
 
@@ -177,6 +212,12 @@ export class HandInput {
       this.poseStartedAt = now;
       this.poseTriggered = false;
     }
+    if (next && this._ring) {
+      this._ring.style.setProperty('--hold', `${Math.min(1, (now - this.poseStartedAt) / POSE_HOLD_MS)}`);
+      this._mirror?.classList.add('is-pose');
+    } else {
+      this._mirror?.classList.remove('is-pose');
+    }
     if (next && !this.poseTriggered && now - this.poseStartedAt >= POSE_HOLD_MS) {
       this.poseTriggered = true;
       this.onElement?.(next);
@@ -184,10 +225,29 @@ export class HandInput {
     }
   }
 
+  _trackDock(rawX, rawY, now) {
+    const target = document.elementFromPoint(rawX * window.innerWidth, rawY * window.innerHeight)?.closest?.('[data-element]');
+    const next = target?.dataset?.element ?? null;
+    if (next !== this.dockElement) {
+      this.dockElement = next;
+      this.dockStartedAt = now;
+      this.dockTriggered = false;
+    }
+    if (next && !this.dockTriggered && now - this.dockStartedAt >= DOCK_DWELL_MS) {
+      this.dockTriggered = true;
+      this.onElement?.(next === 'air' ? 'wind' : next);
+      this.onStatus?.(`${next[0].toUpperCase() + next.slice(1)} rests in your hand.`);
+    }
+  }
+
   _resetPose() {
     this.pose = null;
     this.poseStartedAt = 0;
     this.poseTriggered = false;
+    this.dockElement = null;
+    this.dockStartedAt = 0;
+    this.dockTriggered = false;
+    this._mirror?.classList.remove('is-pose');
   }
 
   _drawMirror(landmarks) {
@@ -201,7 +261,16 @@ export class HandInput {
     const ctx = this._context;
     ctx.clearRect(0, 0, width, height);
     if (!landmarks) return;
-    ctx.fillStyle = '#bfe8df';
+    ctx.strokeStyle = getComputedStyle(this._mirror).getPropertyValue('--hand-accent') || '#bfe8df';
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    for (const [from, to] of HAND_CONNECTIONS) {
+      ctx.beginPath();
+      ctx.moveTo((1 - landmarks[from].x) * width, landmarks[from].y * height);
+      ctx.lineTo((1 - landmarks[to].x) * width, landmarks[to].y * height);
+      ctx.stroke();
+    }
+    ctx.fillStyle = ctx.strokeStyle;
     for (const point of landmarks) {
       ctx.beginPath();
       ctx.arc((1 - point.x) * width, point.y * height, 3.2, 0, Math.PI * 2);
@@ -224,9 +293,11 @@ export class HandInput {
     this._video = null;
     this._canvas = null;
     this._context = null;
+    this._filter = null;
   }
 
   dispose() {
     this.stop();
+    window.removeEventListener('grimoire:selected', this._onElementAccent);
   }
 }

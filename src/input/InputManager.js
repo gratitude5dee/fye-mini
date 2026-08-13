@@ -14,6 +14,7 @@ export class InputManager extends EventEmitter {
     this.dom = domElement;
     this.pointer = new Vector2(); // NDC
     this.isDrawing = false;
+    this.lastPointerType = 'mouse';
     this.keys = new Set();
     this.enabled = true;
 
@@ -43,6 +44,7 @@ export class InputManager extends EventEmitter {
     if (event.target !== this.dom) return; // started on UI
 
     this._updatePointer(event);
+    this.lastPointerType = event.pointerType === 'touch' ? 'touch' : 'mouse';
     this.isDrawing = true;
     this.dom.setPointerCapture?.(event.pointerId);
     this.emit('draw:start', this.pointer);

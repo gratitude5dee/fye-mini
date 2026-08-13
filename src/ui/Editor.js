@@ -37,6 +37,10 @@ export class Editor {
     // Element folders start closed — the global block is the common entry point.
     this.gui.folders.forEach((folder) => folder.close());
     this.globalFolder.open();
+    // The Grimoire owns the primary right-hand interaction surface. Keep this
+    // expert panel available behind G instead of letting it cover Spellwright.
+    this._hidden = true;
+    this.gui.hide();
   }
 
   /* ------------------------------------------------------------------ */

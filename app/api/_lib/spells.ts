@@ -6,8 +6,19 @@ export function slugify(value: string) {
 }
 
 export function spellForClient(document: Document) {
-  const { _id, embedding, creator, updatedAt, createdAt, schemaVersion, ...spell } = document;
-  return { _id: _id?.toString(), ...spell };
+  const { _id, embedding, creator, updatedAt, createdAt, schemaVersion, _searchScore, _vectorScore, lineage, stats, ...spell } = document as Document & Record<string, any>;
+  const count = (value: unknown) => {
+    if (typeof value === 'number') return value;
+    if (value && typeof value === 'object' && 'toString' in value) return Number(String(value));
+    return Number(value ?? 0);
+  };
+  return {
+    _id: _id?.toString(),
+    ...spell,
+    lineage: lineage ? { ...lineage, parentId: lineage.parentId?.toString?.() ?? lineage.parentId ?? null, rootId: lineage.rootId?.toString?.() ?? lineage.rootId } : undefined,
+    stats: stats ? { ...stats, casts: count(stats.casts), remixes: count(stats.remixes), bookmarks: count(stats.bookmarks) } : undefined,
+    creator: creator?.handle ? { handle: creator.handle } : undefined
+  };
 }
 
 export function spellSearchText(spell: { name: string; incantation: string; lore: string; tags: string[] }) {

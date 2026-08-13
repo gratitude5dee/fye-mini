@@ -1,4 +1,4 @@
-import { Vector3, MathUtils } from 'three';
+import { CatmullRomCurve3, Vector3, MathUtils } from 'three';
 
 import { Renderer } from './Renderer.js';
 import { Time } from './Time.js';
@@ -189,12 +189,20 @@ export class App {
     };
     this._onGrimoireDials = () => this.editor.toggle();
     this._onGrimoireAttune = () => void this.handInput.start();
+    this._onGrimoirePortrait = () => {
+      const path = new CatmullRomCurve3([
+        new Vector3(-2.4, 0.02, 1.2), new Vector3(-.7, 0.02, .1),
+        new Vector3(.85, 0.02, -.25), new Vector3(2.1, 0.02, .5)
+      ]);
+      this.abilities.cast(path);
+    };
 
     window.addEventListener('grimoire:select', this._onGrimoireSelect);
     window.addEventListener('grimoire:patch', this._onGrimoirePatch);
     window.addEventListener('grimoire:load-spell', this._onGrimoireLoad);
     window.addEventListener('grimoire:toggle-dials', this._onGrimoireDials);
     window.addEventListener('grimoire:attune', this._onGrimoireAttune);
+    window.addEventListener('grimoire:portrait', this._onGrimoirePortrait);
   }
 
   _applyFlatPatch(patch) {
@@ -221,15 +229,15 @@ export class App {
   }
 
   _recordCast(pathLength) {
-    const activeSpell = this.activeSpell;
-    window.dispatchEvent(new CustomEvent('grimoire:cast', { detail: { element: this.abilities.selected, pathLength } }));
-    if (!activeSpell?._id) return;
-    const benderId = localStorage.getItem('living-grimoire.bender-id') ?? crypto.randomUUID();
-    localStorage.setItem('living-grimoire.bender-id', benderId);
+    const element = this.abilities.selected === 'wind' ? 'air' : this.abilities.selected;
+    const activeSpell = this.activeSpell?.element === element ? this.activeSpell : null;
+    if (!activeSpell) this.activeSpell = null;
+    window.dispatchEvent(new CustomEvent('grimoire:cast', { detail: { element, pathLength } }));
+    const speed = Math.max(0.1, (settings[this.abilities.selected]?.speed ?? 8) * settings.global.speed);
     void fetch('/api/casts', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ spellId: activeSpell._id, element: activeSpell.element, pathLenM: pathLength, benderId, client: { input: this.handInput.active ? 'hands' : 'mouse', deviceClass: window.innerWidth < 700 ? 'mobile' : 'desktop' } })
+      body: JSON.stringify({ eventId: crypto.randomUUID(), ...(activeSpell?._id ? { spellId: activeSpell._id } : {}), element, pathLenM: pathLength, travelMs: Math.round(pathLength / speed * 1000), client: { input: this.handInput.active ? 'hands' : this.input.lastPointerType, deviceClass: window.innerWidth < 700 ? 'mobile' : 'desktop' } })
     }).catch(() => undefined);
   }
 
@@ -273,8 +281,10 @@ export class App {
   selectElement(element) {
     if (!element) return;
     this.abilities.select(element);
+    const publicElement = element === 'wind' ? 'air' : element;
+    if (this.activeSpell?.element && this.activeSpell.element !== publicElement) this.activeSpell = null;
     this.hud.setElement(element);
-    window.dispatchEvent(new CustomEvent('grimoire:selected', { detail: { element: element === 'wind' ? 'air' : element } }));
+    window.dispatchEvent(new CustomEvent('grimoire:selected', { detail: { element: publicElement } }));
   }
 
   /**
@@ -339,10 +349,29 @@ export class App {
       this.frame();
     };
     this._raf = requestAnimationFrame(loop);
+    this._startHouseSpellLoop();
   }
 
   stop() {
     cancelAnimationFrame(this._raf);
+    window.clearInterval(this._houseSpellTimer);
+    window.clearTimeout(this._houseFirstCastTimer);
+    this._houseSpellTimer = null;
+    this._houseFirstCastTimer = null;
+  }
+
+  _startHouseSpellLoop() {
+    if (this._houseSpellTimer) return;
+    const cast = () => {
+      if (document.hidden || this.abilities.active?.length >= 6) return;
+      const path = new CatmullRomCurve3([
+        new Vector3(-3.7, 0.02, 1.9), new Vector3(-1.6, 0.02, .9),
+        new Vector3(.35, 0.02, -.4), new Vector3(2.65, 0.02, .45)
+      ]);
+      this.abilities.cast(path);
+    };
+    this._houseFirstCastTimer = window.setTimeout(cast, 900);
+    this._houseSpellTimer = window.setInterval(cast, 12_000);
   }
 
   /* ------------------------------------------------------------------ */
@@ -435,5 +464,6 @@ export class App {
     window.removeEventListener('grimoire:load-spell', this._onGrimoireLoad);
     window.removeEventListener('grimoire:toggle-dials', this._onGrimoireDials);
     window.removeEventListener('grimoire:attune', this._onGrimoireAttune);
+    window.removeEventListener('grimoire:portrait', this._onGrimoirePortrait);
   }
 }

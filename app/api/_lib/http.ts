@@ -14,9 +14,36 @@ export function json(data: unknown, init: ResponseInit = {}) {
   });
 }
 
+export async function readBytes(request: Request, maximumBytes = 180_000) {
+  const declaredLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) throw new RequestError(413, 'The page is too heavy to bind.');
+  if (!request.body) throw new RequestError(400, 'The Grimoire could not read that request.');
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    size += next.value.byteLength;
+    if (size > maximumBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new RequestError(413, 'The page is too heavy to bind.');
+    }
+    chunks.push(next.value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 export async function readJson(request: Request, maximumBytes = 180_000): Promise<Record<string, unknown>> {
-  const text = await request.text();
-  if (text.length > maximumBytes) throw new RequestError(413, 'The page is too heavy to bind.');
+  const bytes = await readBytes(request, maximumBytes);
+  const text = new TextDecoder().decode(bytes);
   try {
     const value = JSON.parse(text);
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
@@ -45,4 +72,10 @@ export function runtime(name: string) {
   const workerEnv = (globalThis as typeof globalThis & { __LIVING_GRIMOIRE_ENV?: Record<string, unknown> }).__LIVING_GRIMOIRE_ENV;
   const value = workerEnv?.[name] ?? process.env[name];
   return typeof value === 'string' ? value : undefined;
+}
+
+export function binding<T>(name: string) {
+  const workerEnv = (globalThis as typeof globalThis & { __LIVING_GRIMOIRE_ENV?: Record<string, unknown> }).__LIVING_GRIMOIRE_ENV;
+  const value = workerEnv?.[name];
+  return value as T | undefined;
 }

@@ -387,6 +387,7 @@ body {
  * lil-gui theming
  * ------------------------------------------------------------------ */
 
+.lil-gui.lil-root,
 .lil-gui.root {
   --background-color: rgba(12, 16, 22, 0.9);
   --widget-color: rgba(255, 255, 255, 0.1);
@@ -398,7 +399,7 @@ body {
   --title-height: 30px;
   --widget-height: 22px;
   --name-width: 46%;
-  z-index: 40;
+  z-index: 40 !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-radius: 12px;
@@ -407,6 +408,7 @@ body {
   max-height: calc(100vh - 32px);
 }
 
+.lil-gui.lil-root > .title,
 .lil-gui.root > .title {
   letter-spacing: 0.16em;
   text-transform: uppercase;

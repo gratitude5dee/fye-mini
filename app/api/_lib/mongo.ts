@@ -1,4 +1,4 @@
-import type { Db } from 'mongodb';
+import type { Db, MongoClient } from 'mongodb';
 import { runtime } from './http';
 
 const options = {
@@ -20,7 +20,7 @@ export function atlasReady() {
  * opens a tiny, short-lived driver pool per request instead of keeping a
  * cross-request global connection that Cloudflare can reject.
  */
-export async function withDb<T>(work: (db: Db) => Promise<T>) {
+export async function withDb<T>(work: (db: Db, client: MongoClient) => Promise<T>) {
   const uri = runtime('ATLAS_URI');
   if (!uri) throw new Error('ATLAS_URI is not configured.');
   const { MongoClient } = await import('mongodb');
