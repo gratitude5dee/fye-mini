@@ -1,0 +1,5 @@
+@import '../src/ui/styles.css';
+
+:root {
+  color-scheme: dark;
+}

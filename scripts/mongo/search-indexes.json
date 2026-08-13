@@ -1,0 +1,31 @@
+{
+  "text": {
+    "name": "spell_text",
+    "definition": {
+      "mappings": {
+        "dynamic": false,
+        "fields": {
+          "name": { "type": "string", "analyzer": "lucene.standard" },
+          "incantation": { "type": "string", "analyzer": "lucene.standard" },
+          "lore": { "type": "string", "analyzer": "lucene.standard" },
+          "tags": { "type": "string", "analyzer": "lucene.standard" },
+          "element": { "type": "token" },
+          "lineage": {
+            "type": "document",
+            "fields": { "rootId": { "type": "token" } }
+          }
+        }
+      }
+    }
+  },
+  "vector": {
+    "name": "spell_vector",
+    "definition": {
+      "fields": [
+        { "type": "vector", "path": "embedding", "numDimensions": 1024, "similarity": "cosine", "quantization": "scalar" },
+        { "type": "filter", "path": "element" },
+        { "type": "filter", "path": "lineage.rootId" }
+      ]
+    }
+  }
+}
