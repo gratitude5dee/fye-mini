@@ -6,7 +6,7 @@ export function slugify(value: string) {
 }
 
 export function spellForClient(document: Document) {
-  const { _id, embedding, creator, updatedAt, createdAt, schemaVersion, _searchScore, _vectorScore, lineage, stats, ...spell } = document as Document & Record<string, any>;
+  const { _id, embedding, creator, updatedAt, createdAt, schemaVersion, _searchScore, _vectorScore, _lineageDistance, ancestors, descendants, lineage, stats, ...spell } = document as Document & Record<string, any>;
   const count = (value: unknown) => {
     if (typeof value === 'number') return value;
     if (value && typeof value === 'object' && 'toString' in value) return Number(String(value));

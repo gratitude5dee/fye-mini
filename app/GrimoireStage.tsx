@@ -17,10 +17,12 @@ type Spell = {
   portrait?: { imageUrl?: string; palette?: string[] };
   stats?: { casts?: number; remixes?: number };
   lineage?: { parentId?: string | null; rootId?: string; depth?: number };
+  creator?: { handle?: string };
   settings?: Record<string, unknown>;
 };
 
 type LoreDraft = { draftId: string; names: string[]; lore: string; tags: string[]; portraitUrl?: string | null };
+type SpellDetail = { spell: Spell; ancestors: Spell[]; descendants: Spell[] };
 type FeedSort = 'trending' | 'newest' | 'remixed';
 type Almanac = {
   totalCasts: number | null;
@@ -30,6 +32,26 @@ type Almanac = {
   source: 'atlas' | 'stage';
 };
 type Dial = { path: string; label: string };
+
+type RecognitionResultEventLike = {
+  resultIndex: number;
+  results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+};
+type RecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onresult: ((event: RecognitionResultEventLike) => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+type RecognitionConstructor = new () => RecognitionLike;
+
+const VOICE_FEATURE_ENABLED = import.meta.env.VITE_VOICE_ENABLED !== 'false';
 
 const ELEMENTS: Array<{ id: ElementId; sigil: string; label: string; color: string }> = [
   { id: 'fire', sigil: 'ᛉ', label: 'Ember', color: '#FF6A3C' },
@@ -41,34 +63,18 @@ const ELEMENTS: Array<{ id: ElementId; sigil: string; label: string; color: stri
 // The house shelf makes the offline stage feel intentional. As soon as Atlas
 // answers, this is replaced by the stored pages and never used as analytics.
 const HOUSE_SPELLS: Spell[] = [
-  {
-    slug: 'moon-whip', name: 'Moon Whip', element: 'water',
-    incantation: 'a thin cold arc of moonlit water that snaps at the end',
-    lore: 'Cut from a low tide beneath a cloudless moon, this narrow lash keeps its silence until the final crack. It favors a sure hand and leaves pale foam where it has passed.',
-    tags: ['cold', 'precise', 'lunar'],
-    genome: { pace: .72, mass: .21, chaos: .28, radiance: .69, menace: .34 }, stats: { casts: 0 }
-  },
-  {
-    slug: 'cinderwake', name: 'Cinderwake', element: 'fire',
-    incantation: 'a low, hungry flame that hugs the ground and detonates twice',
-    lore: 'It runs close to the floor, red at its teeth and gold at its heart. The second answer arrives just as the first ember begins to settle.',
-    tags: ['hungry', 'low', 'double-strike'],
-    genome: { pace: .61, mass: .44, chaos: .63, radiance: .81, menace: .72 }, stats: { casts: 0 }
-  },
-  {
-    slug: 'terrace-of-the-patient-king', name: 'Terrace of the Patient King', element: 'earth',
-    incantation: 'a slow, wide paving that ends in a tall tower',
-    lore: 'Stone rises in deliberate syllables, each plate bearing the memory of the one below it. At the end, a quiet column waits for the world to speak first.',
-    tags: ['steady', 'wide', 'regal'],
-    genome: { pace: .24, mass: .88, chaos: .22, radiance: .33, menace: .49 }, stats: { casts: 0 }
-  },
-  {
-    slug: 'sparrow-gale', name: 'Sparrow Gale', element: 'air',
-    incantation: 'a quick, light spiral that scatters leaves and is gone',
-    lore: 'A small wind with a bird’s sudden nerve. It takes the loose things first, then slips through the fingers of anyone who thinks to hold it.',
-    tags: ['quick', 'light', 'restless'],
-    genome: { pace: .91, mass: .11, chaos: .55, radiance: .46, menace: .18 }, stats: { casts: 0 }
-  }
+  { slug: 'cinderwake', name: 'Cinderwake', element: 'fire', incantation: 'a low, hungry flame that hugs the ground and detonates twice', lore: 'It runs close to the floor, red at its teeth and gold at its heart. The second answer arrives just as the first ember begins to settle.', tags: ['hungry', 'low', 'double-strike'], genome: { pace: .61, mass: .44, chaos: .63, radiance: .81, menace: .72 }, stats: { casts: 0 } },
+  { slug: 'sun-petal', name: 'Sun-Petal', element: 'fire', incantation: 'a slow blossom of white-gold fire that opens at the end of the path', lore: 'A patient spark gathers its light until the path has ended, then unfolds in quiet white-gold layers. Its warmth lingers like a held breath finally released.', tags: ['white-gold', 'slow', 'blossom'], genome: { pace: .28, mass: .46, chaos: .19, radiance: .95, menace: .26 }, stats: { casts: 0 } },
+  { slug: 'vermilion-adder', name: 'Vermilion Adder', element: 'fire', incantation: 'a fast violet-red serpent that strikes hard at the finish', lore: 'Violet light threads a red body that refuses to travel straight. At the last instant it gathers its heat, snaps forward, and leaves a thin ember-bright scar in the air.', tags: ['violet-red', 'serpent', 'striking'], genome: { pace: .91, mass: .31, chaos: .76, radiance: .7, menace: .83 }, stats: { casts: 0 } },
+  { slug: 'moon-whip', name: 'Moon Whip', element: 'water', incantation: 'a thin cold arc of moonlit water that snaps at the end', lore: 'Cut from a low tide beneath a cloudless moon, this narrow lash keeps its silence until the final crack. It favors a sure hand and leaves pale foam where it has passed.', tags: ['cold', 'precise', 'lunar'], genome: { pace: .72, mass: .21, chaos: .28, radiance: .69, menace: .34 }, stats: { casts: 0 } },
+  { slug: 'harbor-bell', name: 'Harbor Bell', element: 'water', incantation: 'a heavy, slow swell that rings out wide foam rings on impact', lore: 'A broad blue weight rolls forward without hurry, carrying the stillness of a harbor at dusk. When it lands, pale rings travel outward as if the water has remembered a distant bell.', tags: ['heavy', 'slow', 'foam'], genome: { pace: .2, mass: .85, chaos: .18, radiance: .48, menace: .41 }, stats: { casts: 0 } },
+  { slug: 'undertow', name: 'Undertow', element: 'water', incantation: 'a deep teal surge that drags low and crowns tall', lore: 'Deep teal water stays close to the ground before rising into a bright, crowned finish. Its pull is steady rather than violent, the kind that asks loose things to follow.', tags: ['teal', 'low', 'crowned'], genome: { pace: .56, mass: .67, chaos: .46, radiance: .64, menace: .62 }, stats: { casts: 0 } },
+  { slug: 'terrace-of-the-patient-king', name: 'Terrace of the Patient King', element: 'earth', incantation: 'a slow, wide paving that ends in a tall tower', lore: 'Stone rises in deliberate syllables, each plate bearing the memory of the one below it. At the end, a quiet column waits for the world to speak first.', tags: ['steady', 'wide', 'regal'], genome: { pace: .24, mass: .88, chaos: .22, radiance: .33, menace: .49 }, stats: { casts: 0 } },
+  { slug: 'gravel-psalm', name: 'Gravel Psalm', element: 'earth', incantation: 'quick shallow plates that crack early and settle softly', lore: 'Small plates answer in a quick rhythm, splitting before their edges have found the ground. The dust settles sooner than expected, as though the earth has finished a familiar prayer.', tags: ['quick', 'shallow', 'soft'], genome: { pace: .68, mass: .39, chaos: .52, radiance: .27, menace: .28 }, stats: { casts: 0 } },
+  { slug: 'basalt-procession', name: 'Basalt Procession', element: 'earth', incantation: 'narrow dark plates marching in file to a squat obelisk', lore: 'Dark slabs move one after another with no wasted motion. Their final obelisk is short, broad, and certain, a marker for a road that exists only while the spell is spoken.', tags: ['basalt', 'narrow', 'obelisk'], genome: { pace: .47, mass: .79, chaos: .31, radiance: .19, menace: .66 }, stats: { casts: 0 } },
+  { slug: 'sparrow-gale', name: 'Sparrow Gale', element: 'air', incantation: 'a quick, light spiral that scatters leaves and is gone', lore: 'A small wind with a bird’s sudden nerve takes the loose things first, then slips through the fingers of anyone who thinks to hold it.', tags: ['quick', 'light', 'restless'], genome: { pace: .91, mass: .11, chaos: .55, radiance: .46, menace: .18 }, stats: { casts: 0 } },
+  { slug: 'whistling-door', name: 'Whistling Door', element: 'air', incantation: 'a slow wide vortex that ends in a pressure clap', lore: 'The air opens gradually, a wide pale doorway turning on its own hinge. At the end it closes with a soft, startling clap that rearranges dust and attention alike.', tags: ['wide', 'vortex', 'pressure'], genome: { pace: .33, mass: .36, chaos: .57, radiance: .58, menace: .45 }, stats: { casts: 0 } },
+  { slug: 'sky-lathe', name: 'Sky Lathe', element: 'air', incantation: 'a tight, fast helix that polishes the air white', lore: 'A tight helix cuts upward so quickly that its center turns white. It does not tear the sky; it burnishes it, leaving the stage briefly brighter than it was before.', tags: ['tight', 'fast', 'white'], genome: { pace: .95, mass: .19, chaos: .67, radiance: .85, menace: .39 }, stats: { casts: 0 } }
 ];
 
 const QUICK_DIALS: Record<ElementId, Dial[]> = {
@@ -138,6 +144,38 @@ function Genome({ genome }: { genome: Record<string, number> }) {
   );
 }
 
+function GenomeRadar({ genome }: { genome: Record<string, number> }) {
+  const metrics = ['pace', 'mass', 'chaos', 'radiance', 'menace'];
+  const point = (index: number, value: number) => {
+    const angle = -Math.PI / 2 + index * (Math.PI * 2 / metrics.length);
+    const radius = 45 * value;
+    return `${50 + Math.cos(angle) * radius},${50 + Math.sin(angle) * radius}`;
+  };
+  const polygon = metrics.map((metric, index) => point(index, Math.max(0, Math.min(1, genome[metric] ?? 0)))).join(' ');
+  const rings = [.25, .5, .75, 1];
+  return (
+    <div className="genome-radar" aria-label="Spell genome: pace, mass, chaos, radiance, and menace">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        {rings.map((ring) => <polygon key={ring} className="genome-radar__ring" points={metrics.map((_, index) => point(index, ring)).join(' ')} />)}
+        {metrics.map((_, index) => <line key={index} x1="50" y1="50" x2={point(index, 1).split(',')[0]} y2={point(index, 1).split(',')[1]} />)}
+        <polygon className="genome-radar__shape" points={polygon} />
+      </svg>
+      <div className="genome-radar__labels">{metrics.map((metric) => <span key={metric}>{metric}</span>)}</div>
+    </div>
+  );
+}
+
+function ElementDonut({ entries, total }: { entries: Almanac['elementShare']; total: number }) {
+  let cursor = 0;
+  const bands = entries.map((entry) => {
+    const start = cursor;
+    cursor += entry.casts / Math.max(1, total) * 100;
+    const color = ELEMENTS.find((item) => item.id === entry.element)?.color ?? '#efe7d8';
+    return `${color} ${start}% ${cursor}%`;
+  });
+  return <div className="element-donut" style={{ '--donut': `conic-gradient(${bands.join(', ') || '#efe7d81b 0 100%'})` } as CSSProperties}><span><b>{total}</b><small>casts</small></span></div>;
+}
+
 export function GrimoireStage() {
   const [element, setElement] = useState<ElementId>('fire');
   const [view, setView] = useState<'stage' | 'grimoire' | 'almanac'>('stage');
@@ -154,11 +192,19 @@ export function GrimoireStage() {
   const [searching, setSearching] = useState(false);
   const [loreDraft, setLoreDraft] = useState<LoreDraft | null>(null);
   const [bindStatus, setBindStatus] = useState('');
+  const [customName, setCustomName] = useState('');
   const [selectedSpell, setSelectedSpell] = useState<Spell | null>(null);
+  const [remixParent, setRemixParent] = useState<Spell | null>(null);
+  const [spellDetail, setSpellDetail] = useState<SpellDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [analytics, setAnalytics] = useState<Almanac>({ totalCasts: null, elementShare: [], daily: [], trending: [], source: 'stage' });
   const [dialValues, setDialValues] = useState<Record<string, number>>({});
   const [dialRanges, setDialRanges] = useState<Record<string, { min: number; max: number; step: number }>>({});
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState('');
   const queryVersion = useRef(0);
+  const recognition = useRef<RecognitionLike | null>(null);
 
   const shownSpells = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -172,6 +218,15 @@ export function GrimoireStage() {
     void fetch('/api/identity').catch(() => undefined);
     return () => {
       current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const browser = window as Window & typeof globalThis & { SpeechRecognition?: RecognitionConstructor; webkitSpeechRecognition?: RecognitionConstructor };
+    setVoiceAvailable(Boolean(VOICE_FEATURE_ENABLED && (browser.SpeechRecognition || browser.webkitSpeechRecognition)));
+    return () => {
+      recognition.current?.abort();
+      recognition.current = null;
     };
   }, []);
 
@@ -279,6 +334,7 @@ export function GrimoireStage() {
       if (!response.ok) throw new Error();
       const draft = await response.json() as LoreDraft;
       setLoreDraft({ ...draft, portraitUrl });
+      setCustomName('');
       setBindStatus(portraitUrl ? 'Choose the page title.' : 'Choose the page title. The portrait will remain a sigil until the gallery wakes.');
     } catch {
       setBindStatus('The Lorekeeper is resting. Try again in a moment.');
@@ -286,12 +342,17 @@ export function GrimoireStage() {
   };
 
   const finishBind = async (name: string) => {
+    const boundName = name.trim();
+    if (!boundName) {
+      setBindStatus('Give the page a name before binding it.');
+      return;
+    }
     setBindStatus('Binding your spell into the book…');
     try {
       const settingsModule = await import('../src/config/spell-contract.js');
       const response = await fetch('/api/spells', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, incantation, element, draftId: loreDraft?.draftId, portrait: { imageUrl: loreDraft?.portraitUrl ?? null }, ...(selectedSpell?._id ? { parentId: selectedSpell._id } : {}), settings: settingsModule.snapshotSpellSettings() })
+        body: JSON.stringify({ name: boundName, incantation, element, draftId: loreDraft?.draftId, portrait: { imageUrl: loreDraft?.portraitUrl ?? null }, ...(remixParent?._id ? { parentId: remixParent._id } : {}), settings: settingsModule.snapshotSpellSettings() })
       });
       if (!response.ok) throw new Error();
       const { spell } = await response.json() as { spell: Spell };
@@ -299,6 +360,7 @@ export function GrimoireStage() {
       setLoreDraft(null);
       setBindStatus(`${spell.name} answers from the Grimoire.`);
       setSelectedSpell(spell);
+      setRemixParent(null);
       selectElement(spell.element);
       event('grimoire:load-spell', { spell });
       setView('grimoire');
@@ -312,7 +374,80 @@ export function GrimoireStage() {
     selectElement(spell.element);
     event('grimoire:load-spell', { spell });
     setReply(`${spell.name} is now in your hand.`);
+    setSpellDetail(null);
     setView('stage');
+  };
+
+  const openSpellPage = async (spell: Spell) => {
+    setDetailLoading(true);
+    setSpellDetail({ spell, ancestors: [], descendants: [] });
+    try {
+      const response = await fetch(`/api/spells/${encodeURIComponent(spell.slug)}`);
+      if (!response.ok) throw new Error();
+      const page = await response.json() as SpellDetail;
+      if (!page.spell?.slug) throw new Error();
+      setSpellDetail({ spell: page.spell, ancestors: page.ancestors ?? [], descendants: page.descendants ?? [] });
+    } catch {
+      // A list-card remains a complete, useful page when a temporary offline
+      // shelf cannot resolve its lineage yet.
+      setSpellDetail({ spell, ancestors: [], descendants: [] });
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const beginRemix = (spell: Spell) => {
+    setRemixParent(spell);
+    setIncantation(spell.incantation);
+    selectElement(spell.element);
+    setSpellDetail(null);
+    setSpellwrightOpen(true);
+    setView('stage');
+    setReply(`${spell.name} leaves a branch open for your next variation.`);
+  };
+
+  const toggleVoice = () => {
+    if (recognition.current) {
+      recognition.current.stop();
+      return;
+    }
+    const browser = window as Window & typeof globalThis & { SpeechRecognition?: RecognitionConstructor; webkitSpeechRecognition?: RecognitionConstructor };
+    const Recognition = browser.SpeechRecognition || browser.webkitSpeechRecognition;
+    if (!Recognition) {
+      setVoiceStatus('Dictation is not available in this browser.');
+      return;
+    }
+    const engine = new Recognition();
+    const beginning = incantation.trim();
+    engine.lang = 'en-US';
+    engine.continuous = false;
+    engine.interimResults = true;
+    engine.maxAlternatives = 1;
+    engine.onresult = (result) => {
+      const words: string[] = [];
+      for (let index = 0; index < result.results.length; index++) {
+        const transcript = result.results[index]?.[0]?.transcript?.trim();
+        if (transcript) words.push(transcript);
+      }
+      if (words.length) setIncantation([beginning, words.join(' ')].filter(Boolean).join(beginning ? ' ' : ''));
+    };
+    engine.onerror = (event) => {
+      setVoiceStatus(event.error === 'not-allowed' ? 'Microphone access was not granted.' : 'Dictation drifted away. You can keep writing by hand.');
+    };
+    engine.onend = () => {
+      recognition.current = null;
+      setVoiceListening(false);
+    };
+    recognition.current = engine;
+    setVoiceListening(true);
+    setVoiceStatus('Listening in your browser…');
+    try {
+      engine.start();
+    } catch {
+      recognition.current = null;
+      setVoiceListening(false);
+      setVoiceStatus('Dictation could not begin. Try the quill instead.');
+    }
   };
 
   const startHands = () => {
@@ -361,11 +496,13 @@ export function GrimoireStage() {
             <textarea value={incantation} onChange={(event) => setIncantation(event.target.value)} rows={4} aria-label="Spell incantation" placeholder="A violet serpent of fire…" />
             <button type="submit" disabled={isCrafting}>{isCrafting ? 'Writing…' : 'Alter the spell'}</button>
           </form>
+          {voiceAvailable && <div className="voice-control"><button type="button" className={voiceListening ? 'is-listening' : ''} onClick={toggleVoice} aria-pressed={voiceListening}>{voiceListening ? 'Stop dictation' : 'Dictate incantation'} <small>Beta</small></button><span>{voiceStatus || 'Optional browser dictation.'}</span></div>}
           <p className="spellwright__reply">{reply}</p>
           <div className="spellwright__actions">
             <button className="quiet-button" onClick={() => event('grimoire:toggle-dials')}>Full dials <kbd>G</kbd></button>
             <button className="bind-button" onClick={beginBind}>Bind this spell</button>
           </div>
+          {remixParent && <p className="remix-note">Remixing from <b>{remixParent.name}</b> · <button onClick={() => setRemixParent(null)}>clear branch</button></p>}
           <div className="quick-dials" aria-label={`${element} quick dials`}>
             <span>Eight living dials</span>
             {QUICK_DIALS[element].map(({ path, label }) => {
@@ -375,7 +512,7 @@ export function GrimoireStage() {
             })}
           </div>
           {bindStatus && <p className="bind-status">{bindStatus}</p>}
-          {loreDraft && <div className="name-choice"><span>Choose its name</span>{loreDraft.names.map((name) => <button key={name} onClick={() => finishBind(name)}>{name}</button>)}</div>}
+          {loreDraft && <div className="name-choice"><span>Choose its name</span>{loreDraft.names.map((name) => <button key={name} onClick={() => finishBind(name)}>{name}</button>)}<form onSubmit={(event) => { event.preventDefault(); void finishBind(customName); }}><input value={customName} onChange={(event) => setCustomName(event.target.value)} maxLength={56} placeholder="Or write your own name" aria-label="Your own spell name" /><button type="submit" disabled={!customName.trim()}>Bind your own name</button></form></div>}
         </div>
       </aside>
 
@@ -385,15 +522,24 @@ export function GrimoireStage() {
         <div className="book-controls" aria-label="Discover filters"><div>{(['all', ...ELEMENTS.map((entry) => entry.id)] as Array<'all' | ElementId>).map((entry) => <button key={entry} className={filter === entry ? 'is-active' : ''} onClick={() => setFilter(entry)}>{entry === 'all' ? 'All' : entry}</button>)}</div><select value={sort} onChange={(event) => setSort(event.target.value as FeedSort)} aria-label="Sort spells"><option value="trending">Trending</option><option value="newest">Newest</option><option value="remixed">Most remixed</option></select></div>
         <p className="search-note">{searching ? 'Listening for distant pages…' : query && !shownSpells.length ? 'Nothing answers to that name — but these are near in spirit.' : 'Keyword and meaning, bound together.'}</p>
         <div className="spell-list">
-          {shownSpells.map((spell) => <button className="spell-card" key={spell.slug} onClick={() => loadSpell(spell)}><CanvasMark spell={spell} /><span className="spell-card__body"><small>{spell.element}</small><strong>{spell.name}</strong><em>{spell.lore}</em><Genome genome={spell.genome} /><span>{spell.stats?.casts ?? 0} casts · {spell.tags.slice(0, 2).join(' · ')}</span></span></button>)}
+          {shownSpells.map((spell) => <button className="spell-card" key={spell.slug} onClick={() => void openSpellPage(spell)}><CanvasMark spell={spell} /><span className="spell-card__body"><small>{spell.element}</small><strong>{spell.name}</strong><em>{spell.lore}</em><Genome genome={spell.genome} /><span>{spell.stats?.casts ?? 0} casts · {spell.tags.slice(0, 2).join(' · ')}</span></span></button>)}
         </div>
+      </aside>}
+
+      {spellDetail && <aside className="spell-page" aria-label={`${spellDetail.spell.name} spell page`}>
+        <div className="book-drawer__head"><div><p className="eyebrow">Bound page {detailLoading ? '· tracing lineage…' : ''}</p><h2>{spellDetail.spell.name}</h2></div><button onClick={() => setSpellDetail(null)} aria-label="Close spell page">×</button></div>
+        <div className="spell-page__hero"><CanvasMark spell={spellDetail.spell} /><div><small>{spellDetail.spell.element} · {spellDetail.spell.creator?.handle ?? 'The First Binder'}</small><p>{spellDetail.spell.incantation}</p><span>{spellDetail.spell.stats?.casts ?? 0} casts remembered</span></div></div>
+        <section className="spell-page__lore"><p className="eyebrow">Lore</p><p>{spellDetail.spell.lore}</p><div>{spellDetail.spell.tags.map((tag) => <span key={tag}>{tag}</span>)}</div></section>
+        <section className="spell-page__genome"><p className="eyebrow">Genome</p><GenomeRadar genome={spellDetail.spell.genome} /></section>
+        <section className="lineage-tree"><p className="eyebrow">Lineage</p><div className="lineage-tree__path">{spellDetail.ancestors.length ? spellDetail.ancestors.map((ancestor) => <button key={ancestor.slug} onClick={() => void openSpellPage(ancestor)}>{ancestor.name}</button>) : <span>First known page</span>}<b>{spellDetail.spell.name}</b>{spellDetail.descendants.length ? spellDetail.descendants.map((descendant) => <button key={descendant.slug} onClick={() => void openSpellPage(descendant)}>{descendant.name}</button>) : <span>No branches yet</span>}</div></section>
+        <div className="spell-page__actions"><button className="quiet-button" onClick={() => loadSpell(spellDetail.spell)}>Load for casting</button><button className="bind-button" onClick={() => beginRemix(spellDetail.spell)}>Remix this page</button></div>
       </aside>}
 
       {view === 'almanac' && <aside className="almanac" aria-label="The Almanac">
         <div className="book-drawer__head"><div><p className="eyebrow">A living record</p><h2>The Almanac</h2></div><button onClick={() => setView('stage')} aria-label="Close almanac">×</button></div>
         <div className="almanac__total"><span>Casts remembered · last 90 days</span><strong>{analytics.source === 'atlas' ? analytics.totalCasts ?? 0 : '—'}</strong><em>{analytics.source === 'atlas' ? analytics.totalCasts ? 'the book is listening' : 'The Almanac is early. Make the first mark.' : 'The Almanac wakes when Atlas is bound.'}</em></div>
         {analytics.source === 'atlas' && <>
-          <section><p>Element share</p>{analytics.elementShare.length ? analytics.elementShare.map((entry) => <div className="meter" key={entry.element}><span>{entry.element}</span><i style={{ width: `${Math.min(100, entry.casts / Math.max(1, analytics.totalCasts ?? 0) * 100)}%` }} /><b>{entry.casts}</b></div>) : <em className="almanac-empty">No element has been cast yet.</em>}</section>
+          <section><p>Element share</p>{analytics.elementShare.length ? <div className="element-share"><ElementDonut entries={analytics.elementShare} total={analytics.totalCasts ?? 0} /><div>{analytics.elementShare.map((entry) => <div className="meter" key={entry.element}><span>{entry.element}</span><i style={{ width: `${Math.min(100, entry.casts / Math.max(1, analytics.totalCasts ?? 0) * 100)}%` }} /><b>{entry.casts}</b></div>)}</div></div> : <em className="almanac-empty">No element has been cast yet.</em>}</section>
           <section><p>Castings by day</p>{analytics.daily.length ? <div className="daily-bars">{analytics.daily.slice(-28).map((entry) => <span key={`${entry.day}-${entry.element}`} title={`${entry.element}: ${entry.casts}`} style={{ '--height': `${Math.min(100, 14 + entry.casts * 12)}%`, '--element': ELEMENTS.find((item) => item.id === entry.element)?.color } as CSSProperties} />)}</div> : <em className="almanac-empty">The first line appears with the first cast.</em>}</section>
           <section><p>Trending pages · seven days</p>{analytics.trending.length ? analytics.trending.map(({ spell, casts }) => <button className="almanac-spell" key={spell.slug} onClick={() => loadSpell(spell)}><CanvasMark spell={spell} compact /><span><strong>{spell.name}</strong><em>{casts} recent castings</em></span></button>) : <em className="almanac-empty">No pages are trending yet.</em>}</section>
         </>}

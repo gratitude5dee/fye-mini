@@ -154,6 +154,7 @@ try {
     db.collection('spells').createIndex({ 'stats.casts': -1, createdAt: -1 }, { name: 'spell_feed_global' }),
     db.collection('spells').createIndex({ 'stats.remixes': -1, createdAt: -1 }, { name: 'spell_remixes_global' }),
     db.collection('spells').createIndex({ 'lineage.rootId': 1, 'lineage.depth': 1 }, { name: 'lineage_tree' }),
+    db.collection('spells').createIndex({ 'lineage.parentId': 1, 'lineage.depth': 1 }, { name: 'lineage_children' }),
     db.collection('casts').createIndex({ spellId: 1, at: -1 }, { name: 'casts_by_spell' }),
     db.collection('casts').createIndex({ element: 1, at: -1 }, { name: 'casts_by_element' }),
     db.collection('casts').createIndex({ benderId: 1, at: -1 }, { name: 'casts_by_bender' }),
