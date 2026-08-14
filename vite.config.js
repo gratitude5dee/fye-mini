@@ -23,7 +23,6 @@ export default defineConfig(async () => {
           compatibility_flags: ['nodejs_compat']
         }
       })
-    ],
-    assetsInclude: ['**/*.fbx', '**/*.hdr']
+    ]
   };
 });
