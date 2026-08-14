@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { MongoClient, ObjectId } from 'mongodb';
 import { deriveGenome, spellSettingsBsonSchema } from '../../src/config/spell-contract.js';
 import { HOUSE_PALETTE, HOUSE_SEED_SPELLS, houseSpellSettings } from '../../src/config/house-spells.js';
+import { housePortraitUrl } from '../../src/config/house-portraits.js';
 
 const databaseName = process.env.ATLAS_DB || 'living_grimoire';
 const uri = process.env.ATLAS_URI;
@@ -177,21 +178,34 @@ try {
 
   const spells = db.collection('spells');
   for (const { slug, name, element, incantation, lore, tags, settingsPatch } of HOUSE_SEED_SPELLS) {
+    const imageUrl = housePortraitUrl(slug);
+    if (!imageUrl) throw new Error(`Missing House portrait: ${slug}`);
+    const portrait = { imageUrl, palette: HOUSE_PALETTE[element] };
     const existing = await spells.findOne(
       { slug },
-      { projection: { _id: 1, embedding: 1, 'creator.benderId': 1 } },
+      { projection: { _id: 1, embedding: 1, portrait: 1, 'creator.benderId': 1 } },
     );
     const isHouseSpell = !existing || String(existing.creator?.benderId ?? '') === String(houseBender._id);
     if (existing) {
       // A user who happened to choose a reserved slug must never have their
-      // document overwritten. A previous preview/bootstrap run, however, can
-      // be repaired in place when embeddings are requested later.
-      if (withEmbeddings && isHouseSpell && (!Array.isArray(existing.embedding) || existing.embedding.length !== 1024)) {
-        const vector = await embed([name, incantation, lore, ...tags].join('\n'));
-        await spells.updateOne(
-          { _id: existing._id },
-          { $set: { embedding: vector, embeddingModel: 'text-embedding-3-small', embeddingDimensions: 1024, updatedAt: now() } },
-        );
+      // document overwritten. A prior version of the House bootstrap can be
+      // repaired in place, however: it may lack an embedding or still point
+      // to the old null portrait placeholder.
+      if (isHouseSpell) {
+        const updates = {};
+        if (existing.portrait?.imageUrl !== imageUrl || JSON.stringify(existing.portrait?.palette) !== JSON.stringify(portrait.palette)) {
+          updates.portrait = portrait;
+        }
+        if (withEmbeddings && (!Array.isArray(existing.embedding) || existing.embedding.length !== 1024)) {
+          const vector = await embed([name, incantation, lore, ...tags].join('\n'));
+          updates.embedding = vector;
+          updates.embeddingModel = 'text-embedding-3-small';
+          updates.embeddingDimensions = 1024;
+        }
+        if (Object.keys(updates).length) {
+          updates.updatedAt = now();
+          await spells.updateOne({ _id: existing._id }, { $set: updates });
+        }
       }
       continue;
     }
@@ -210,7 +224,7 @@ try {
       tags,
       settings,
       genome: deriveGenome(settings, element),
-      portrait: { imageUrl: null, palette: HOUSE_PALETTE[element] },
+      portrait,
       stats: { casts: 0, remixes: 0, bookmarks: 0, lastCastAt: null },
       lineage: { parentId: null, rootId: id, depth: 0 },
       creator: { benderId: houseBender._id, handle: 'The First Binder' },

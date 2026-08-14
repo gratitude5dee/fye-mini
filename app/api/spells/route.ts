@@ -5,8 +5,6 @@ import { RequestError, json, message, readJson, runtime, text } from '../_lib/ht
 import { atlasReady, withDb } from '../_lib/mongo';
 import { embedding } from '../_lib/openai';
 import { paletteFor, readableSpellForClient, slugify, spellForClient, spellSearchText } from '../_lib/spells';
-
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const FEED_SORTS = {
   trending: { 'stats.casts': -1, createdAt: -1 },
   newest: { createdAt: -1 },
@@ -55,38 +53,65 @@ async function trendingSpells(db: Db, element: string | undefined) {
 
 async function hybridSearch(query: string, element: string | undefined) {
   const filter = element ? { element } : {};
-  const autocomplete = query.trim().split(/\s+/).filter(Boolean).length <= 3
+  const isShortQuery = query.trim().split(/\s+/).filter(Boolean).length <= 3;
+  const autocomplete = isShortQuery
     ? [{ autocomplete: { query, path: 'name', tokenOrder: 'sequential', fuzzy: { maxEdits: 1, prefixLength: 2, maxExpansions: 50 } } }]
     : [];
   return withDb(async (db) => {
     const spells = db.collection('spells');
-    const searches: Array<Promise<unknown>> = [
-      spells.aggregate([
-        {
-          $search: {
-            index: 'spell_text',
-            compound: {
-              should: [...autocomplete, { text: { query, path: ['name', 'incantation', 'lore', 'tags'] } }],
-              minimumShouldMatch: 1,
-              ...(element ? { filter: [{ equals: { path: 'element', value: element } }] } : {})
-            }
+    // Keep input pipelines to only the stages permitted by $rankFusion. Any
+    // client-facing shaping belongs after fusion (the serializer below).
+    const lexicalPipeline = [
+      {
+        $search: {
+          index: 'spell_text',
+          compound: {
+            should: [...autocomplete, { text: { query, path: ['name', 'incantation', 'lore', 'tags'] } }],
+            minimumShouldMatch: 1,
+            ...(element ? { filter: [{ equals: { path: 'element', value: element } }] } : {})
           }
-        },
-        { $limit: SEARCH_LIMIT },
-        // $set preserves the spell document. A projection containing just score
-        // would make successful Atlas results unusable by the Grimoire.
-        { $set: { _searchScore: { $meta: 'searchScore' } } }
-      ]).toArray()
+        }
+      },
+      { $limit: SEARCH_LIMIT }
     ];
+    let vector: number[] | null = null;
     if (runtime('OPENAI_API_KEY')) {
-      searches.push((async () => {
-        const vector = await embedding(query);
-        return spells.aggregate([
-          { $vectorSearch: { index: 'spell_vector', path: 'embedding', queryVector: vector, numCandidates: VECTOR_NUM_CANDIDATES, limit: SEARCH_LIMIT, ...(element ? { filter } : {}) } },
-          { $set: { _vectorScore: { $meta: 'vectorSearchScore' } } }
-        ]).toArray();
-      })());
+      try {
+        vector = await embedding(query);
+      } catch (error) {
+        // A transient embedding failure must never turn a keyword search into
+        // an error page. Atlas Search remains useful while the model recovers.
+        console.warn('[Living Grimoire] Query embedding unavailable.', error);
+      }
     }
+    const semanticPipeline = vector
+      ? [{ $vectorSearch: { index: 'spell_vector', path: 'embedding', queryVector: vector, numCandidates: VECTOR_NUM_CANDIDATES, limit: SEARCH_LIMIT, ...(element ? { filter } : {}) } }]
+      : [];
+
+    if (semanticPipeline.length) {
+      try {
+        const fused = await spells.aggregate([
+          {
+            $rankFusion: {
+              input: { pipelines: { lexical: lexicalPipeline, semantic: semanticPipeline } },
+              // Short queries are usually named pages; descriptive phrases
+              // benefit slightly more from meaning. Both paths always remain.
+              combination: { weights: isShortQuery ? { lexical: 1.35, semantic: 1 } : { lexical: 1, semantic: 1.25 } }
+            }
+          },
+          { $limit: SEARCH_LIMIT }
+        ]).toArray();
+        if (fused.length) return publicSpells(fused as Record<string, unknown>[]);
+      } catch (error) {
+        // Atlas Search index creation is asynchronous and $rankFusion may be
+        // unavailable during an upgrade. Fall through to the same RRF formula
+        // in application code rather than breaking the one search box.
+        console.warn('[Living Grimoire] Atlas rank fusion unavailable; using RRF fallback.', error);
+      }
+    }
+
+    const searches: Array<Promise<unknown>> = [spells.aggregate(lexicalPipeline).toArray()];
+    if (semanticPipeline.length) searches.push(spells.aggregate(semanticPipeline).toArray());
     const settled = await Promise.allSettled(searches);
     const ranked = new Map<string, { document: Record<string, unknown>; score: number }>();
     for (const result of settled) {
@@ -100,10 +125,7 @@ async function hybridSearch(query: string, element: string | undefined) {
       });
     }
     if (ranked.size) return publicSpells([...ranked.values()].sort((a, b) => b.score - a.score).slice(0, SEARCH_LIMIT).map(({ document }) => document));
-
-    const regex = new RegExp(escapeRegex(query), 'i');
-    const fallback = await spells.find({ ...filter, $or: [{ name: regex }, { incantation: regex }, { lore: regex }, { tags: regex }] }).sort(FEED_SORTS.trending).limit(SEARCH_LIMIT).toArray();
-    return publicSpells(fallback as Record<string, unknown>[]);
+    return [];
   });
 }
 
@@ -117,8 +139,9 @@ function draftValue(value: unknown) {
 function portraitValue(value: unknown, element: string) {
   const portrait = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const imageUrl = text(portrait.imageUrl, 512);
+  if (!imageUrl) throw new RequestError(503, 'The portrait gallery must seal this spell before it can be bound.');
   if (imageUrl && !imageUrl.startsWith('/api/portraits?key=portraits%2F')) throw new RequestError(400, 'The portrait must come from the Grimoire’s sealed gallery.');
-  return { imageUrl: imageUrl || null, palette: paletteFor(element) };
+  return { imageUrl, palette: paletteFor(element) };
 }
 
 export async function GET(request: Request) {

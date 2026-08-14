@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { type CSSProperties, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HOUSE_SEED_SPELLS, houseSpellForClient } from '../src/config/house-spells';
 import './grimoire-stage.css';
 
@@ -23,6 +23,13 @@ type Spell = {
 };
 
 type LoreDraft = { draftId: string; names: string[]; lore: string; tags: string[]; portraitUrl?: string | null };
+type BindingSnapshot = {
+  incantation: string;
+  incantationHistory: string[];
+  element: ElementId;
+  settings: Record<string, unknown>;
+  parentId?: string;
+};
 type SpellDetail = { spell: Spell; ancestors: Spell[]; descendants: Spell[] };
 type FeedSort = 'trending' | 'newest' | 'remixed';
 type SpellSource = 'stage' | 'atlas' | 'hybrid';
@@ -63,6 +70,13 @@ const ELEMENTS: Array<{ id: ElementId; sigil: string; label: string; color: stri
 ];
 
 const ATTUNEMENT_KEY = 'living-grimoire-attunement-complete';
+const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function focusableElements(container: HTMLElement | null) {
+  if (!container) return [];
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+    .filter((element) => !element.hasAttribute('aria-hidden') && element.getClientRects().length > 0);
+}
 
 // The house shelf makes the offline stage feel intentional. As soon as Atlas
 // answers, this is replaced by the stored pages and never used as analytics.
@@ -95,25 +109,36 @@ function valueAtPath(source: Record<string, unknown>, path: string) {
   return path.split('.').reduce<unknown>((cursor, key) => cursor && typeof cursor === 'object' ? (cursor as Record<string, unknown>)[key] : undefined, source);
 }
 
-async function capturePortrait() {
+async function capturePortrait(settings: Record<string, unknown>, element: ElementId) {
   const requestId = crypto.randomUUID();
   await new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
+    const finish = () => {
+      window.clearTimeout(timeout);
       window.removeEventListener('grimoire:portrait-impact', onImpact);
+      window.removeEventListener('grimoire:portrait-failed', onFailure);
+    };
+    const timeout = window.setTimeout(() => {
+      finish();
       reject(new Error('The spell did not reach its bright moment.'));
     }, 7_000);
     const onImpact = (event: Event) => {
       if ((event as CustomEvent<{ requestId?: string }>).detail?.requestId !== requestId) return;
-      window.clearTimeout(timeout);
-      window.removeEventListener('grimoire:portrait-impact', onImpact);
+      finish();
       resolve();
     };
+    const onFailure = (event: Event) => {
+      const detail = (event as CustomEvent<{ requestId?: string; message?: string }>).detail;
+      if (detail?.requestId !== requestId) return;
+      finish();
+      reject(new Error(detail.message ?? 'The portrait replay could not continue.'));
+    };
     window.addEventListener('grimoire:portrait-impact', onImpact);
-    event('grimoire:portrait', { requestId });
+    window.addEventListener('grimoire:portrait-failed', onFailure);
+    event('grimoire:portrait', { requestId, settings, element });
   });
-  // Capture on the next composited frame, after the impact event has updated
-  // the post stack, rather than guessing at a fixed travel duration.
-  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+  // App only emits this after its post stack has drawn the matching impact
+  // frame, so copying immediately preserves the actual hit rather than a
+  // guessed travel duration or a later fading frame.
   const stage = document.querySelector<HTMLCanvasElement>('#viewport');
   if (!stage || !stage.width || !stage.height) return null;
   const scale = Math.min(1, 900 / Math.max(stage.width, stage.height));
@@ -228,6 +253,7 @@ export function GrimoireStage() {
   const [incantationHistory, setIncantationHistory] = useState<string[]>(['a low, hungry flame that hugs the ground and detonates twice']);
   const [reply, setReply] = useState('Name what the fire is becoming.');
   const [isCrafting, setIsCrafting] = useState(false);
+  const [isBinding, setIsBinding] = useState(false);
   const [spells, setSpells] = useState<Spell[]>(HOUSE_SPELLS);
   const [spellSource, setSpellSource] = useState<SpellSource>('stage');
   const [query, setQuery] = useState('');
@@ -235,6 +261,7 @@ export function GrimoireStage() {
   const [sort, setSort] = useState<FeedSort>('trending');
   const [searching, setSearching] = useState(false);
   const [loreDraft, setLoreDraft] = useState<LoreDraft | null>(null);
+  const [bindingSnapshot, setBindingSnapshot] = useState<BindingSnapshot | null>(null);
   const [bindStatus, setBindStatus] = useState('');
   const [customName, setCustomName] = useState('');
   const [selectedSpell, setSelectedSpell] = useState<Spell | null>(null);
@@ -250,13 +277,69 @@ export function GrimoireStage() {
   const queryVersion = useRef(0);
   const recognition = useRef<RecognitionLike | null>(null);
   const onboardingCastSent = useRef(false);
+  const stageSurfaceRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
 
-  const finishAttunement = (notice = '') => {
+  const finishAttunement = useCallback((notice = '') => {
     try { window.localStorage.setItem(ATTUNEMENT_KEY, 'true'); } catch { /* storage is optional */ }
     setAttunement(false);
     setAttunementQueued(false);
     if (notice) setInputNotice(notice);
-  };
+  }, []);
+
+  const activeModal = attunement && attunementStep === 'ask' ? 'attunement' : spellDetail ? 'spell' : null;
+
+  useEffect(() => {
+    if (!activeModal) return;
+    const surface = stageSurfaceRef.current;
+    const dialog = dialogRef.current;
+    if (!surface || !dialog) return;
+
+    const restoreFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    surface.setAttribute('inert', '');
+    surface.setAttribute('aria-hidden', 'true');
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      const [first] = focusableElements(dialog);
+      (first ?? dialog).focus();
+    });
+    const onKeyDown = (keyEvent: KeyboardEvent) => {
+      if (keyEvent.key === 'Escape') {
+        keyEvent.preventDefault();
+        if (activeModal === 'spell') setSpellDetail(null);
+        else finishAttunement('Attunement skipped. Your mouse and touch input are ready whenever you are.');
+        return;
+      }
+      if (keyEvent.key !== 'Tab') return;
+      const focusable = focusableElements(dialog);
+      if (!focusable.length) {
+        keyEvent.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const current = document.activeElement;
+      if (keyEvent.shiftKey && (current === first || !dialog.contains(current))) {
+        keyEvent.preventDefault();
+        last.focus();
+      } else if (!keyEvent.shiftKey && (current === last || !dialog.contains(current))) {
+        keyEvent.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener('keydown', onKeyDown);
+      surface.removeAttribute('inert');
+      surface.removeAttribute('aria-hidden');
+      window.requestAnimationFrame(() => {
+        if (!surface.hasAttribute('inert') && restoreFocus?.isConnected) restoreFocus.focus();
+      });
+    };
+  }, [activeModal, finishAttunement]);
 
   const shownSpells = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -398,18 +481,20 @@ export function GrimoireStage() {
   }, [view, query, filter, sort]);
 
   const selectElement = (next: ElementId) => {
+    if (isBinding) return;
     setElement(next);
     event('grimoire:select', { element: next });
   };
 
   const adjustDial = (path: string, value: number) => {
+    if (isBinding) return;
     setDialValues((current) => ({ ...current, [path]: value }));
     event('grimoire:patch', { [path]: value });
   };
 
   const craft = async (formEvent: FormEvent) => {
     formEvent.preventDefault();
-    if (!incantation.trim()) return;
+    if (isBinding || !incantation.trim()) return;
     setIsCrafting(true);
     setIncantationHistory((history) => [...new Set([...history, incantation.trim()])].filter(Boolean).slice(-20));
     try {
@@ -431,41 +516,68 @@ export function GrimoireStage() {
   };
 
   const beginBind = async () => {
+    if (isBinding) return;
+    setIsBinding(true);
+    setLoreDraft(null);
+    setBindingSnapshot(null);
     setBindStatus('Capturing the bright moment…');
     try {
       const settingsModule = await import('../src/config/spell-contract.js');
-      const portraitUrl = await capturePortrait();
+      const boundIncantation = incantation.trim();
+      const binding: BindingSnapshot = {
+        incantation: boundIncantation,
+        incantationHistory: [...new Set([...incantationHistory, boundIncantation])].filter(Boolean).slice(-20),
+        element,
+        settings: settingsModule.snapshotSpellSettings() as Record<string, unknown>,
+        ...(remixParent?._id ? { parentId: remixParent._id } : {})
+      };
+      const portraitUrl = await capturePortrait(binding.settings, binding.element);
+      if (!portraitUrl) throw new Error('The portrait gallery could not seal this impact. Try binding again in a moment.');
       const response = await fetch('/api/lore', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ incantation, element, settings: settingsModule.snapshotSpellSettings() })
+        body: JSON.stringify({ incantation: binding.incantation, element: binding.element, settings: binding.settings })
       });
       if (!response.ok) throw new Error();
       const draft = await response.json() as LoreDraft;
       setLoreDraft({ ...draft, portraitUrl });
+      setBindingSnapshot(binding);
       setCustomName('');
-      setBindStatus(portraitUrl ? 'Choose the page title.' : 'Choose the page title. The portrait will remain a sigil until the gallery wakes.');
-    } catch {
-      setBindStatus('The Lorekeeper is resting. Try again in a moment.');
+      setBindStatus('Choose the page title.');
+    } catch (error) {
+      setBindingSnapshot(null);
+      setBindStatus(error instanceof Error && error.message ? error.message : 'The Lorekeeper is resting. Try again in a moment.');
+    } finally {
+      setIsBinding(false);
     }
   };
 
   const finishBind = async (name: string) => {
     const boundName = name.trim();
-    if (!boundName) {
+    if (isBinding || !boundName) {
+      if (isBinding) return;
       setBindStatus('Give the page a name before binding it.');
       return;
     }
+    setIsBinding(true);
     setBindStatus('Binding your spell into the book…');
     try {
       const settingsModule = await import('../src/config/spell-contract.js');
+      const binding: BindingSnapshot = bindingSnapshot ?? {
+        incantation: incantation.trim(),
+        incantationHistory: [...new Set([...incantationHistory, incantation.trim()])].filter(Boolean).slice(-20),
+        element,
+        settings: settingsModule.snapshotSpellSettings() as Record<string, unknown>,
+        ...(remixParent?._id ? { parentId: remixParent._id } : {})
+      };
       const response = await fetch('/api/spells', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: boundName, incantation, incantationHistory: [...new Set([...incantationHistory, incantation.trim()])].filter(Boolean).slice(-20), element, draftId: loreDraft?.draftId, portrait: { imageUrl: loreDraft?.portraitUrl ?? null }, ...(remixParent?._id ? { parentId: remixParent._id } : {}), settings: settingsModule.snapshotSpellSettings() })
+        body: JSON.stringify({ name: boundName, incantation: binding.incantation, incantationHistory: binding.incantationHistory, element: binding.element, draftId: loreDraft?.draftId, portrait: { imageUrl: loreDraft?.portraitUrl ?? null }, ...(binding.parentId ? { parentId: binding.parentId } : {}), settings: binding.settings })
       });
       if (!response.ok) throw new Error();
       const { spell } = await response.json() as { spell: Spell };
       setSpells((existing) => [spell, ...existing.filter((entry) => entry.slug !== spell.slug)]);
       setLoreDraft(null);
+      setBindingSnapshot(null);
       setBindStatus(`${spell.name} answers from the Grimoire.`);
       setSelectedSpell(spell);
       setRemixParent(null);
@@ -474,6 +586,8 @@ export function GrimoireStage() {
       setView('grimoire');
     } catch {
       setBindStatus('The binding could not reach Atlas. Your live spell remains safe on stage.');
+    } finally {
+      setIsBinding(false);
     }
   };
 
@@ -575,6 +689,7 @@ export function GrimoireStage() {
 
   return (
     <main className="grimoire-stage">
+      <div className="grimoire-stage__surface" ref={stageSurfaceRef}>
       <canvas id="viewport" aria-label="Elemental casting stage" />
       <div id="loader" className="loader" aria-live="polite">
         <div className="loader__inner">
@@ -593,69 +708,61 @@ export function GrimoireStage() {
         </button>
         <p className="stage-prompt">{selectedSpell ? `Holding ${selectedSpell.name}` : 'Show your hands.'}</p>
         <nav aria-label="Grimoire navigation">
-          <button className={view === 'grimoire' ? 'is-active' : ''} onClick={() => setView(view === 'grimoire' ? 'stage' : 'grimoire')}>Discover</button>
-          <button className={view === 'almanac' ? 'is-active' : ''} onClick={() => setView(view === 'almanac' ? 'stage' : 'almanac')}>Almanac</button>
+          <button className={view === 'grimoire' ? 'is-active' : ''} aria-pressed={view === 'grimoire'} onClick={() => setView(view === 'grimoire' ? 'stage' : 'grimoire')}>Discover</button>
+          <button className={view === 'almanac' ? 'is-active' : ''} aria-pressed={view === 'almanac'} onClick={() => setView(view === 'almanac' ? 'stage' : 'almanac')}>Almanac</button>
         </nav>
       </header>
 
-      <div className="grimoire-element-dock" aria-label="Choose an element">
+      <div className="grimoire-element-dock" role="group" aria-label="Choose an element">
         {ELEMENTS.map((entry) => (
-          <button key={entry.id} data-element={entry.id} className={element === entry.id ? 'is-active' : ''} style={{ '--accent': entry.color } as CSSProperties} onClick={() => selectElement(entry.id)}>
+          <button key={entry.id} data-element={entry.id} disabled={isBinding} className={element === entry.id ? 'is-active' : ''} aria-pressed={element === entry.id} style={{ '--accent': entry.color } as CSSProperties} onClick={() => selectElement(entry.id)}>
             <span>{entry.sigil}</span>{entry.label}
           </button>
         ))}
       </div>
 
-      <aside className={`spellwright ${spellwrightOpen ? 'is-open' : ''}`} aria-label="Spellwright">
-        <button className="spellwright__tab" onClick={() => setSpellwrightOpen((open) => !open)}>{spellwrightOpen ? 'Close' : 'Spellwright'}</button>
-        <div className="spellwright__inside">
+      <aside className={`spellwright ${spellwrightOpen ? 'is-open' : ''}`} aria-labelledby="spellwright-title">
+        <button className="spellwright__tab" aria-expanded={spellwrightOpen} aria-controls="spellwright-panel" onClick={() => setSpellwrightOpen((open) => !open)}>{spellwrightOpen ? 'Close' : 'Spellwright'}</button>
+        <div className="spellwright__inside" id="spellwright-panel" aria-hidden={!spellwrightOpen} inert={!spellwrightOpen}>
           <p className="eyebrow">The Spellwright</p>
-          <h2>Speak the shape you seek.</h2>
+          <h2 id="spellwright-title">Speak the shape you seek.</h2>
           <form onSubmit={craft}>
-            <textarea value={incantation} onChange={(event) => setIncantation(event.target.value)} rows={4} aria-label="Spell incantation" placeholder="A violet serpent of fire…" />
-            <button type="submit" disabled={isCrafting}>{isCrafting ? 'Writing…' : 'Alter the spell'}</button>
+            <textarea value={incantation} disabled={isBinding} onChange={(event) => setIncantation(event.target.value)} rows={4} aria-label="Spell incantation" placeholder="A violet serpent of fire…" />
+            <button type="submit" disabled={isCrafting || isBinding}>{isCrafting ? 'Writing…' : 'Alter the spell'}</button>
           </form>
-          {voiceAvailable && <div className="voice-control"><button type="button" className={voiceListening ? 'is-listening' : ''} onClick={toggleVoice} aria-pressed={voiceListening}>{voiceListening ? 'Stop dictation' : 'Dictate incantation'} <small>Beta</small></button><span>{voiceStatus || 'Optional browser dictation.'}</span></div>}
+          {voiceAvailable && <div className="voice-control"><button type="button" disabled={isBinding} className={voiceListening ? 'is-listening' : ''} onClick={toggleVoice} aria-pressed={voiceListening}>{voiceListening ? 'Stop dictation' : 'Dictate incantation'} <small>Beta</small></button><span role="status">{voiceStatus || 'Optional browser dictation.'}</span></div>}
           <p className="spellwright__reply">{reply}</p>
           <div className="spellwright__actions">
-            <button className="quiet-button" onClick={() => event('grimoire:toggle-dials')}>Full dials <kbd>G</kbd></button>
-            <button className="bind-button" onClick={beginBind}>Bind this spell</button>
+            <button className="quiet-button" disabled={isBinding} onClick={() => event('grimoire:toggle-dials')}>Full dials <kbd>G</kbd></button>
+            <button className="bind-button" disabled={isBinding} onClick={beginBind}>{isBinding ? 'Binding…' : 'Bind this spell'}</button>
           </div>
           {remixParent && <p className="remix-note">Remixing from <b>{remixParent.name}</b> · <button onClick={() => setRemixParent(null)}>clear branch</button></p>}
-          <div className="quick-dials" aria-label={`${element} quick dials`}>
-            <span>Eight living dials</span>
+          <fieldset className="quick-dials">
+            <legend>{element} · eight living dials</legend>
             {QUICK_DIALS[element].map(({ path, label }) => {
               const range = dialRanges[path];
               const value = dialValues[path];
-              return <label key={path}><b>{label}</b><input type="range" min={range?.min ?? 0} max={range?.max ?? 1} step={range?.step ?? .01} value={Number.isFinite(value) ? value : range?.min ?? 0} onChange={(event) => adjustDial(path, Number(event.target.value))} /><em>{Number.isFinite(value) ? value.toFixed(range?.step && range.step >= 1 ? 0 : 2) : '—'}</em></label>;
+              return <label key={path}><b>{label}</b><input type="range" disabled={isBinding} min={range?.min ?? 0} max={range?.max ?? 1} step={range?.step ?? .01} value={Number.isFinite(value) ? value : range?.min ?? 0} onChange={(event) => adjustDial(path, Number(event.target.value))} /><em>{Number.isFinite(value) ? value.toFixed(range?.step && range.step >= 1 ? 0 : 2) : '—'}</em></label>;
             })}
-          </div>
-          {bindStatus && <p className="bind-status">{bindStatus}</p>}
-          {loreDraft && <div className="name-choice"><span>Choose its name</span>{loreDraft.names.map((name) => <button key={name} onClick={() => finishBind(name)}>{name}</button>)}<form onSubmit={(event) => { event.preventDefault(); void finishBind(customName); }}><input value={customName} onChange={(event) => setCustomName(event.target.value)} maxLength={56} placeholder="Or write your own name" aria-label="Your own spell name" /><button type="submit" disabled={!customName.trim()}>Bind your own name</button></form></div>}
+          </fieldset>
+          {bindStatus && <p className="bind-status" aria-live="polite">{bindStatus}</p>}
+          {loreDraft && <div className="name-choice"><span>Choose its name</span>{loreDraft.names.map((name) => <button key={name} disabled={isBinding} onClick={() => finishBind(name)}>{name}</button>)}<form onSubmit={(event) => { event.preventDefault(); void finishBind(customName); }}><input value={customName} disabled={isBinding} onChange={(event) => setCustomName(event.target.value)} maxLength={56} placeholder="Or write your own name" aria-label="Your own spell name" /><button type="submit" disabled={isBinding || !customName.trim()}>Bind your own name</button></form></div>}
         </div>
       </aside>
 
-      {view === 'grimoire' && <aside className="book-drawer" aria-label="The Grimoire">
-        <div className="book-drawer__head"><div><p className="eyebrow">The book is open</p><h2>Cast what calls to you.</h2></div><button onClick={() => setView('stage')} aria-label="Close grimoire">×</button></div>
+      {view === 'grimoire' && <aside className="book-drawer" aria-labelledby="grimoire-title">
+        <div className="book-drawer__head"><div><p className="eyebrow">The book is open</p><h2 id="grimoire-title">Cast what calls to you.</h2></div><button onClick={() => setView('stage')} aria-label="Close grimoire">×</button></div>
         <label className="search-field"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find by name or meaning" aria-label="Search the Grimoire" /></label>
-        <div className="book-controls" aria-label="Discover filters"><div>{(['all', ...ELEMENTS.map((entry) => entry.id)] as Array<'all' | ElementId>).map((entry) => <button key={entry} className={filter === entry ? 'is-active' : ''} onClick={() => setFilter(entry)}>{entry === 'all' ? 'All' : entry}</button>)}</div><select value={sort} onChange={(event) => setSort(event.target.value as FeedSort)} aria-label="Sort spells"><option value="trending">Trending</option><option value="newest">Newest</option><option value="remixed">Most remixed</option></select></div>
+        <div className="book-controls"><div role="group" aria-label="Discover filters">{(['all', ...ELEMENTS.map((entry) => entry.id)] as Array<'all' | ElementId>).map((entry) => <button key={entry} className={filter === entry ? 'is-active' : ''} aria-pressed={filter === entry} onClick={() => setFilter(entry)}>{entry === 'all' ? 'All' : entry}</button>)}</div><select value={sort} onChange={(event) => setSort(event.target.value as FeedSort)} aria-label="Sort spells"><option value="trending">Trending</option><option value="newest">Newest</option><option value="remixed">Most remixed</option></select></div>
         <p className="search-note">{searching ? 'Listening for distant pages…' : query && !shownSpells.length ? 'Nothing answers to that name — but these are near in spirit.' : 'Keyword and meaning, bound together.'}</p>
-        <div className="spell-list">
-          {shownSpells.map((spell) => <div className="spell-card-wrap" key={spell.slug}><button className="spell-card" onClick={() => loadSpell(spell)} aria-label={`Load ${spell.name} for casting`}><CanvasMark spell={spell} /><span className="spell-card__body"><small>{spell.element}</small><strong>{spell.name}</strong><em>{spell.lore}</em><Genome genome={spell.genome} /><span>{spell.stats?.casts ?? 0} casts · {spell.tags.slice(0, 2).join(' · ')}</span></span></button><button className="spell-card__page" onClick={() => void openSpellPage(spell)} aria-label={`Read ${spell.name} spell page`}>Read page</button></div>)}
-        </div>
+        <p className="sr-only" aria-live="polite">{searching ? 'Searching the Grimoire.' : `${shownSpells.length} spell${shownSpells.length === 1 ? '' : 's'} found.`}</p>
+        <ul className="spell-list">
+          {shownSpells.map((spell) => <li className="spell-card-wrap" key={spell.slug}><article><button className="spell-card" onClick={() => loadSpell(spell)} aria-label={`Load ${spell.name} for casting`}><CanvasMark spell={spell} /><span className="spell-card__body"><small>{spell.element}</small><strong>{spell.name}</strong><em>{spell.lore}</em><Genome genome={spell.genome} /><span>{spell.stats?.casts ?? 0} casts · {spell.tags.slice(0, 2).join(' · ')}</span></span></button><button className="spell-card__page" onClick={() => void openSpellPage(spell)} aria-label={`Read ${spell.name} spell page`}>Read page</button></article></li>)}
+        </ul>
       </aside>}
 
-      {spellDetail && <aside className="spell-page" aria-label={`${spellDetail.spell.name} spell page`}>
-        <div className="book-drawer__head"><div><p className="eyebrow">Bound page {detailLoading ? '· tracing lineage…' : ''}</p><h2>{spellDetail.spell.name}</h2></div><button onClick={() => setSpellDetail(null)} aria-label="Close spell page">×</button></div>
-        <div className="spell-page__hero"><CanvasMark spell={spellDetail.spell} /><div><small><BinderSigil handle={spellDetail.spell.creator?.handle} element={spellDetail.spell.element} /> {spellDetail.spell.element} · {spellDetail.spell.creator?.handle ?? 'The First Binder'}</small><p>{spellDetail.spell.incantation}</p><span>{spellDetail.spell.stats?.casts ?? 0} casts remembered</span></div></div>
-        <section className="spell-page__lore"><p className="eyebrow">Lore</p><p>{spellDetail.spell.lore}</p><div>{spellDetail.spell.tags.map((tag) => <span key={tag}>{tag}</span>)}</div></section>
-        <section className="spell-page__genome"><p className="eyebrow">Genome</p><GenomeRadar genome={spellDetail.spell.genome} /></section>
-        <section className="lineage-tree"><p className="eyebrow">Lineage</p><div className="lineage-tree__path">{spellDetail.ancestors.length ? spellDetail.ancestors.map((ancestor) => <button key={ancestor.slug} onClick={() => void openSpellPage(ancestor)}>{ancestor.name}</button>) : <span>First known page</span>}<b>{spellDetail.spell.name}</b>{spellDetail.descendants.length ? <LineageBranches parentId={spellDetail.spell._id} nodes={spellDetail.descendants} onOpen={(branch) => void openSpellPage(branch)} /> : <span>No branches yet</span>}</div></section>
-        <div className="spell-page__actions"><button className="quiet-button" onClick={() => loadSpell(spellDetail.spell)}>Load for casting</button><button className="bind-button" onClick={() => beginRemix(spellDetail.spell)}>Remix this page</button></div>
-      </aside>}
-
-      {view === 'almanac' && <aside className="almanac" aria-label="The Almanac">
-        <div className="book-drawer__head"><div><p className="eyebrow">A living record</p><h2>The Almanac</h2></div><button onClick={() => setView('stage')} aria-label="Close almanac">×</button></div>
+      {view === 'almanac' && <aside className="almanac" aria-labelledby="almanac-title">
+        <div className="book-drawer__head"><div><p className="eyebrow">A living record</p><h2 id="almanac-title">The Almanac</h2></div><button onClick={() => setView('stage')} aria-label="Close almanac">×</button></div>
         <div className="almanac__total"><span>Casts remembered · last 90 days</span><strong>{analytics.source === 'atlas' ? analytics.totalCasts ?? 0 : '—'}</strong><em>{analytics.source === 'atlas' ? analytics.totalCasts ? 'the book is listening' : 'The Almanac is early. Make the first mark.' : 'The Almanac wakes when Atlas is bound.'}</em></div>
         {analytics.source === 'atlas' && <>
           <section><p>Element share</p>{analytics.elementShare.length ? <div className="element-share"><ElementDonut entries={analytics.elementShare} total={analytics.totalCasts ?? 0} /><div>{analytics.elementShare.map((entry) => <div className="meter" key={entry.element}><span>{entry.element}</span><i style={{ width: `${Math.min(100, entry.casts / Math.max(1, analytics.totalCasts ?? 0) * 100)}%` }} /><b>{entry.casts}</b></div>)}</div></div> : <em className="almanac-empty">No element has been cast yet.</em>}</section>
@@ -665,7 +772,18 @@ export function GrimoireStage() {
       </aside>}
 
       {attunement && attunementStep === 'trace' && <div className="ground-rune" aria-hidden="true"><span>⌁</span></div>}
-      {attunement && <section className={`attunement ${attunementStep === 'ask' ? '' : 'attunement--guide'}`} aria-modal={attunementStep === 'ask' ? 'true' : undefined} role="dialog" aria-label="Attune to the stage"><div className="attunement__sigil">{attunementStep === 'pose' ? '◇' : attunementStep === 'trace' ? '⌁' : '✦'}</div><p className="eyebrow">First attunement · {attunementStep === 'ask' ? 'one' : attunementStep === 'trace' ? 'two' : 'three'} of three</p><h1>{attunementStep === 'ask' ? 'Show your hands.' : attunementStep === 'trace' ? 'Trace the first rune.' : 'Hold a fist for stone.'}</h1><p>{attunementStep === 'ask' ? 'Your hands are read on your device. No video ever leaves it.' : attunementStep === 'trace' ? 'Pinch thumb to index, draw one small line, then release.' : 'Hold the pose until the ring in your mirror closes.'}</p><div>{attunementStep === 'ask' ? <><button className="bind-button" onClick={startHands}>{stageReady ? 'Begin attunement' : 'Begin when the stage wakes'}</button><button className="quiet-button" onClick={() => finishAttunement('Your mouse and touch input are ready whenever you are.')}>Use a humbler wand</button></> : <button className="quiet-button" onClick={() => finishAttunement('Your mouse and touch input are ready whenever you are.')}>Skip the ritual</button>}</div></section>}
+      </div>
+
+      {activeModal && <div className="modal-scrim" aria-hidden="true" />}
+      {spellDetail && <aside className="spell-page" role="dialog" aria-modal="true" aria-labelledby="spell-page-title" aria-describedby="spell-page-incantation" ref={dialogRef} tabIndex={-1}>
+        <div className="book-drawer__head"><div><p className="eyebrow">Bound page {detailLoading ? '· tracing lineage…' : ''}</p><h2 id="spell-page-title">{spellDetail.spell.name}</h2></div><button onClick={() => setSpellDetail(null)} aria-label="Close spell page">×</button></div>
+        <div className="spell-page__hero"><CanvasMark spell={spellDetail.spell} /><div><small><BinderSigil handle={spellDetail.spell.creator?.handle} element={spellDetail.spell.element} /> {spellDetail.spell.element} · {spellDetail.spell.creator?.handle ?? 'The First Binder'}</small><p id="spell-page-incantation">{spellDetail.spell.incantation}</p><span>{spellDetail.spell.stats?.casts ?? 0} casts remembered</span></div></div>
+        <section className="spell-page__lore" aria-labelledby="spell-page-lore"><p className="eyebrow" id="spell-page-lore">Lore</p><p>{spellDetail.spell.lore}</p><div>{spellDetail.spell.tags.map((tag) => <span key={tag}>{tag}</span>)}</div></section>
+        <section className="spell-page__genome" aria-labelledby="spell-page-genome"><p className="eyebrow" id="spell-page-genome">Genome</p><GenomeRadar genome={spellDetail.spell.genome} /></section>
+        <section className="lineage-tree" aria-labelledby="spell-page-lineage"><p className="eyebrow" id="spell-page-lineage">Lineage</p><div className="lineage-tree__path">{spellDetail.ancestors.length ? spellDetail.ancestors.map((ancestor) => <button key={ancestor.slug} onClick={() => void openSpellPage(ancestor)}>{ancestor.name}</button>) : <span>First known page</span>}<b>{spellDetail.spell.name}</b>{spellDetail.descendants.length ? <LineageBranches parentId={spellDetail.spell._id} nodes={spellDetail.descendants} onOpen={(branch) => void openSpellPage(branch)} /> : <span>No branches yet</span>}</div></section>
+        <div className="spell-page__actions"><button className="quiet-button" onClick={() => loadSpell(spellDetail.spell)}>Load for casting</button><button className="bind-button" onClick={() => beginRemix(spellDetail.spell)}>Remix this page</button></div>
+      </aside>}
+      {attunement && <section className={`attunement ${attunementStep === 'ask' ? '' : 'attunement--guide'}`} aria-modal={attunementStep === 'ask' ? 'true' : undefined} role={attunementStep === 'ask' ? 'dialog' : undefined} aria-labelledby="attunement-title" ref={attunementStep === 'ask' ? dialogRef : undefined} tabIndex={attunementStep === 'ask' ? -1 : undefined}><div className="attunement__sigil">{attunementStep === 'pose' ? '◇' : attunementStep === 'trace' ? '⌁' : '✦'}</div><p className="eyebrow">First attunement · {attunementStep === 'ask' ? 'one' : attunementStep === 'trace' ? 'two' : 'three'} of three</p><h1 id="attunement-title">{attunementStep === 'ask' ? 'Show your hands.' : attunementStep === 'trace' ? 'Trace the first rune.' : 'Hold a fist for stone.'}</h1><p>{attunementStep === 'ask' ? 'Your hands are read on your device. No video ever leaves it.' : attunementStep === 'trace' ? 'Pinch thumb to index, draw one small line, then release.' : 'Hold the pose until the ring in your mirror closes.'}</p><div>{attunementStep === 'ask' ? <><button className="bind-button" onClick={startHands}>{stageReady ? 'Begin attunement' : 'Begin when the stage wakes'}</button><button className="quiet-button" onClick={() => finishAttunement('Your mouse and touch input are ready whenever you are.')}>Use a humbler wand</button></> : <button className="quiet-button" onClick={() => finishAttunement('Your mouse and touch input are ready whenever you are.')}>Skip the ritual</button>}</div></section>}
     </main>
   );
 }

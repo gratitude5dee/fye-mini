@@ -1,4 +1,5 @@
 import { deriveGenome, snapshotSpellSettings, validateSpellSettings } from './spell-contract.js';
+import { housePortraitUrl } from './house-portraits.js';
 
 export const HOUSE_PALETTE = Object.freeze({
   fire: ['#ff6a3c', '#ffbf58', '#5b170f'],
@@ -41,11 +42,16 @@ export function houseSpellSettings(settingsPatch) {
 
 export function houseSpellForClient(seed) {
   const settings = houseSpellSettings(seed.settingsPatch);
+  const imageUrl = housePortraitUrl(seed.slug);
+  if (!imageUrl) throw new Error(`Missing House portrait: ${seed.slug}`);
   return {
     ...seed,
     settings,
     genome: deriveGenome(settings, seed.element),
-    portrait: { imageUrl: null, palette: HOUSE_PALETTE[seed.element] },
+    // This exact immutable path is also stored by the Atlas bootstrap. The
+    // offline shelf and a hydrated Atlas feed therefore render the same House
+    // art rather than falling back to a generic elemental sigil.
+    portrait: { imageUrl, palette: HOUSE_PALETTE[seed.element] },
     stats: { casts: 0, remixes: 0 },
     lineage: { parentId: null, rootId: seed.slug, depth: 0 },
     creator: { handle: 'The First Binder' },

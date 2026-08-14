@@ -10,6 +10,9 @@ test('the Grimoire boot path is procedural and never loads the foundation charac
 
   assert.match(app, /loadProceduralEnvironment\(\)/);
   assert.doesNotMatch(app, /AssetLoader|CharacterController|WalkController|spruit_sunrise|Standing Idle/);
+  assert.match(app, /_startArrivalSpellLoop\(\)/);
+  assert.match(app, /this\.abilities\.cast\(path, 'fire'\)/);
+  assert.match(app, /this\._retireArrivalSpellLoop\(\)/);
   assert.match(environment, /function proceduralSkyProbe\(\)/);
   assert.match(environment, /new DataTexture\(/);
 });

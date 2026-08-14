@@ -27,7 +27,12 @@ import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { Editor } from '../ui/Editor.js';
 
 import { settings, ELEMENTS, applySettings } from '../config/settings.js';
-import { RANGES, SPELLWRIGHT_COLOR_PATHS, enginePath } from '../config/spell-contract.js';
+import {
+  RANGES,
+  SPELLWRIGHT_COLOR_PATHS,
+  enginePath,
+  validateSpellSettings
+} from '../config/spell-contract.js';
 
 /**
  * Application root: owns every subsystem and the frame loop.
@@ -43,6 +48,16 @@ export class App {
     this.elapsed = 0;
     this.paused = false;
     this._raf = 0;
+    // A bind replay owns the stage only until its first fully composited
+    // impact frame has been captured. Keeping this explicit makes it
+    // impossible for an ambient or manual cast to leak into that portrait.
+    this._portraitCapture = null;
+    // The opening page is allowed one quiet, non-recorded house-spell loop so
+    // the stage feels inhabited before a visitor acts. Any intentional input
+    // retires it permanently; it must never pollute a visitor's cast history
+    // or a deterministic bind replay.
+    this._arrivalCastTimer = 0;
+    this._arrivalRetired = false;
 
     /* ---- core ---- */
     this.renderer = new Renderer(canvas);
@@ -122,32 +137,43 @@ export class App {
     });
 
     this.input.on('draw:start', (pointer) => {
-      this._retireHouseSpellLoop();
+      if (this._portraitCapture) return;
+      this._retireArrivalSpellLoop();
       this.pathDrawer.begin(pointer);
     });
     this.input.on('draw:move', (pointer) => this.pathDrawer.move(pointer));
     this.input.on('draw:end', () => this.pathDrawer.end());
 
-    this.input.on('element', (index) => this.selectElement(ELEMENTS[index]));
+    this.input.on('element', (index) => {
+      this._retireArrivalSpellLoop();
+      this.selectElement(ELEMENTS[index]);
+    });
     this.input.on('action', (action) => this._handleAction(action));
 
     // Every finished stroke becomes a spell. The Grimoire is first-person
     // magic, so the stage never switches into the foundation's walk mode.
     this.pathDrawer.on('cast', (curve, _points, _count, length) => {
+      if (this._portraitCapture) return;
       this.abilities.cast(curve);
       this._recordCast(length);
     });
 
-    this.hud.onSelect = (element) => this.selectElement(element);
+    this.hud.onSelect = (element) => {
+      this._retireArrivalSpellLoop();
+      this.selectElement(element);
+    };
   }
 
   _bindGrimoireEvents() {
     this._onGrimoireSelect = (event) => {
+      if (this._portraitCapture) return;
+      this._retireArrivalSpellLoop();
       const requested = event.detail?.element;
-      this._retireHouseSpellLoop();
       this.selectElement(requested === 'air' ? 'wind' : requested);
     };
     this._onGrimoirePatch = (event) => {
+      if (this._portraitCapture) return;
+      this._retireArrivalSpellLoop();
       const patch = event.detail?.patch ?? event.detail;
       if (!patch || typeof patch !== 'object') return;
       this._applyFlatPatch(patch);
@@ -155,9 +181,10 @@ export class App {
       this.hud.showToast('The spell shifts in your hand.');
     };
     this._onGrimoireLoad = (event) => {
+      if (this._portraitCapture) return;
+      this._retireArrivalSpellLoop();
       const spell = event.detail?.spell;
       if (!spell?.settings) return;
-      this._retireHouseSpellLoop();
       const snapshot = structuredClone(spell.settings);
       // The render foundation names this block `wind`; the public document model
       // calls it `air`. Translate only at the boundary and keep live bindings.
@@ -170,10 +197,21 @@ export class App {
       this.editor.refresh();
       this.hud.showToast(`${spell.name} is in your hand.`);
     };
-    this._onGrimoireDials = () => this.editor.toggle();
-    this._onGrimoireAttune = () => void this.handInput.start();
+    this._onGrimoireDials = () => {
+      if (!this._portraitCapture) {
+        this._retireArrivalSpellLoop();
+        this.editor.toggle();
+      }
+    };
+    this._onGrimoireAttune = () => {
+      if (!this._portraitCapture) {
+        this._retireArrivalSpellLoop();
+        void this.handInput.start();
+      }
+    };
     this._onGrimoireOnboardingEarth = () => {
-      this._retireHouseSpellLoop();
+      if (this._portraitCapture) return;
+      this._retireArrivalSpellLoop();
       this.abilities.select('earth');
       this.hud.setElement('earth');
       const path = new CatmullRomCurve3([
@@ -184,14 +222,55 @@ export class App {
       this._recordCast(path.getLength());
     };
     this._onGrimoirePortrait = (event) => {
-      this._retireHouseSpellLoop();
-      this.clearEffects();
+      const requestId = event.detail?.requestId;
+      if (typeof requestId !== 'string' || !requestId) return;
+      if (this._portraitCapture) {
+        this._failPortraitCapture(requestId, 'A portrait replay is already in progress.');
+        return;
+      }
+
+      this._retireArrivalSpellLoop();
+
+      const publicElement = event.detail?.element;
+      const element = publicElement === 'air' ? 'wind' : publicElement;
+      if (!ELEMENTS.includes(element)) {
+        this._failPortraitCapture(requestId, 'The portrait did not name an element.');
+        return;
+      }
+
+      // The UI sends the exact snapshot it will later bind. Validate it at the
+      // renderer boundary, then keep reapplying it during the short replay so
+      // a live dial can never make the portrait and persisted page disagree.
+      const checked = validateSpellSettings(event.detail?.settings);
+      if (!checked.ok) {
+        this._failPortraitCapture(requestId, 'The portrait settings were incomplete.');
+        return;
+      }
+      const snapshot = structuredClone(checked.value);
+      snapshot.wind = snapshot.air;
+      delete snapshot.air;
+
+      const resumePaused = this.paused;
+      const inputEnabled = this.input.enabled;
+      this.paused = false;
+      this.input.enabled = false;
+      this.clearEffects({ preservePortrait: true });
+      applySettings(snapshot);
+      this.abilities.select(element);
+      this.hud.setElement(element);
+
       const path = new CatmullRomCurve3([
         new Vector3(-2.4, 0.02, 1.2), new Vector3(-.7, 0.02, .1),
         new Vector3(.85, 0.02, -.25), new Vector3(2.1, 0.02, .5)
       ]);
-      const ability = this.abilities.cast(path);
-      this._portraitCapture = ability ? { ability, requestId: event.detail?.requestId } : null;
+      const ability = this.abilities.cast(path, element);
+      if (!ability) {
+        this.paused = resumePaused;
+        this.input.enabled = inputEnabled;
+        this._failPortraitCapture(requestId, 'The portrait replay could not begin.');
+        return;
+      }
+      this._portraitCapture = { ability, requestId, snapshot, resumePaused, inputEnabled, impactReached: false };
     };
 
     window.addEventListener('grimoire:select', this._onGrimoireSelect);
@@ -229,9 +308,35 @@ export class App {
 
   _onAbilityImpact(ability) {
     if (!this._portraitCapture || this._portraitCapture.ability !== ability) return;
-    const { requestId } = this._portraitCapture;
+    // The post stack has not rendered yet. Mark the frame now, then notify the
+    // binding UI immediately after it has composited this impact to the canvas.
+    this._portraitCapture.impactReached = true;
+  }
+
+  _flushPortraitCapture() {
+    const capture = this._portraitCapture;
+    if (!capture?.impactReached) return;
     this._portraitCapture = null;
-    window.dispatchEvent(new CustomEvent('grimoire:portrait-impact', { detail: { requestId } }));
+    this.paused = capture.resumePaused;
+    this.input.enabled = capture.inputEnabled;
+    window.dispatchEvent(new CustomEvent('grimoire:portrait-impact', {
+      detail: { requestId: capture.requestId }
+    }));
+  }
+
+  _failPortraitCapture(requestId, message) {
+    window.dispatchEvent(new CustomEvent('grimoire:portrait-failed', {
+      detail: { requestId, message }
+    }));
+  }
+
+  _cancelPortraitCapture(message = 'The portrait replay was interrupted.') {
+    const capture = this._portraitCapture;
+    if (!capture) return;
+    this._portraitCapture = null;
+    this.paused = capture.resumePaused;
+    this.input.enabled = capture.inputEnabled;
+    this._failPortraitCapture(capture.requestId, message);
   }
 
   _recordCast(pathLength) {
@@ -248,6 +353,8 @@ export class App {
   }
 
   _handleAction(action) {
+    if (this._portraitCapture) return;
+    this._retireArrivalSpellLoop();
     const index = ELEMENTS.indexOf(this.abilities.selected);
     switch (action) {
       case 'nextElement':
@@ -278,7 +385,8 @@ export class App {
     }
   }
 
-  selectElement(element) {
+  selectElement(element, force = false) {
+    if (this._portraitCapture && !force) return;
     if (!element) return;
     this.abilities.select(element);
     const publicElement = element === 'wind' ? 'air' : element;
@@ -287,7 +395,11 @@ export class App {
     window.dispatchEvent(new CustomEvent('grimoire:selected', { detail: { element: publicElement } }));
   }
 
-  clearEffects() {
+  clearEffects({ preservePortrait = false } = {}) {
+    if (!preservePortrait) {
+      this._cancelPortraitCapture();
+      this._retireArrivalSpellLoop();
+    }
     this.abilities.clear();
     this.particles.reset();
     this.decals.clear();
@@ -325,33 +437,39 @@ export class App {
       this.frame();
     };
     this._raf = requestAnimationFrame(loop);
-    this._startHouseSpellLoop();
+    this._startArrivalSpellLoop();
   }
 
   stop() {
     cancelAnimationFrame(this._raf);
-    this._retireHouseSpellLoop();
+    this._retireArrivalSpellLoop();
   }
 
-  _startHouseSpellLoop() {
-    if (this._houseFirstCastTimer) return;
-    const cast = () => {
-      if (document.hidden || this.abilities.active?.length >= 6) return;
-      const path = new CatmullRomCurve3([
-        new Vector3(-3.7, 0.02, 1.9), new Vector3(-1.6, 0.02, .9),
-        new Vector3(.35, 0.02, -.4), new Vector3(2.65, 0.02, .45)
-      ]);
-      this.abilities.cast(path);
+  _startArrivalSpellLoop() {
+    if (this._arrivalRetired || this._arrivalCastTimer) return;
+    const schedule = (delay) => {
+      this._arrivalCastTimer = window.setTimeout(() => {
+        this._arrivalCastTimer = 0;
+        if (this._arrivalRetired) return;
+        // Keep the welcome effect unobtrusive, and never write it to the
+        // cast API. This is presentation, not a visitor action.
+        if (!document.hidden && !this._portraitCapture && this.abilities.active.length < 3) {
+          const path = new CatmullRomCurve3([
+            new Vector3(-3.5, 0.02, 1.85), new Vector3(-1.55, 0.02, .8),
+            new Vector3(.25, 0.02, -.32), new Vector3(2.55, 0.02, .42)
+          ]);
+          this.abilities.cast(path, 'fire');
+        }
+        if (!this._arrivalRetired) schedule(13_000);
+      }, delay);
     };
-    this._houseFirstCastTimer = window.setTimeout(() => {
-      this._houseFirstCastTimer = null;
-      cast();
-    }, 900);
+    schedule(900);
   }
 
-  _retireHouseSpellLoop() {
-    window.clearTimeout(this._houseFirstCastTimer);
-    this._houseFirstCastTimer = null;
+  _retireArrivalSpellLoop() {
+    this._arrivalRetired = true;
+    if (this._arrivalCastTimer) window.clearTimeout(this._arrivalCastTimer);
+    this._arrivalCastTimer = 0;
   }
 
   /* ------------------------------------------------------------------ */
@@ -359,6 +477,11 @@ export class App {
   frame() {
     const gl = this.renderer.gl;
     gl.info.reset();
+
+    // The capture state owns a validated copy of the settings tree. Apply it
+    // before every replay frame so the portrait is a faithful image of the
+    // snapshot that will be stored in the spell document.
+    if (this._portraitCapture) applySettings(this._portraitCapture.snapshot);
 
     const raw = this.time.tick();
     const dt = this.paused ? 0 : raw * settings.global.timeScale;
@@ -400,6 +523,7 @@ export class App {
     gl.shadowMap.needsUpdate = true;
     this.post.sync(this.elapsed, this.flash);
     this.post.render();
+    this._flushPortraitCapture();
 
     this.hud.update(raw, () => ({
       particles: this.particles.countLive(this.elapsed),
@@ -412,6 +536,7 @@ export class App {
 
   dispose() {
     this.stop();
+    this._cancelPortraitCapture('The stage closed before its portrait was captured.');
     this.input.dispose();
     this.handInput.dispose();
     this.pathDrawer.dispose();
