@@ -42,12 +42,27 @@ export class HandInput {
     this._canvas = null;
     this._context = null;
     this._filter = null;
+    // Starting a camera and compiling the tracker are both asynchronous. Keep
+    // one owner for that work so a double-click cannot acquire two streams,
+    // and make a pending start cancellable when the visitor skips the ritual.
+    this._startPromise = null;
+    this._startAttempt = 0;
     this._onElementAccent = (event) => this._setAccent(event.detail?.element);
     window.addEventListener('grimoire:selected', this._onElementAccent);
   }
 
   async start() {
-    if (this.active) return;
+    if (this.active || this._startPromise) return this._startPromise;
+    const attempt = ++this._startAttempt;
+    this._startPromise = this._start(attempt);
+    try {
+      await this._startPromise;
+    } finally {
+      if (attempt === this._startAttempt) this._startPromise = null;
+    }
+  }
+
+  async _start(attempt) {
     if (!navigator.mediaDevices?.getUserMedia) {
       this.onStatus?.('The spirits accept a humbler wand.');
       return;
@@ -59,24 +74,50 @@ export class HandInput {
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
         audio: false
       });
+      if (attempt !== this._startAttempt) {
+        this._stream.getTracks().forEach((track) => track.stop());
+        this._stream = null;
+        return;
+      }
       this._video.srcObject = this._stream;
       await this._video.play();
+      if (attempt !== this._startAttempt) return;
 
       const { FilesetResolver, HandLandmarker } = await import('@mediapipe/tasks-vision');
       const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm');
-      this._landmarker = await HandLandmarker.createFromOptions(vision, {
+      const options = {
         baseOptions: {
-          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-          delegate: 'GPU'
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
         },
         runningMode: 'VIDEO',
         numHands: 1
-      });
+      };
+      try {
+        this._landmarker = await HandLandmarker.createFromOptions(vision, {
+          ...options,
+          baseOptions: { ...options.baseOptions, delegate: 'GPU' }
+        });
+      } catch (gpuError) {
+        // GPU acceleration is preferable, but a browser with an unavailable
+        // WebGL delegate can still track hands accurately on the CPU.
+        console.warn('[HandInput] GPU tracker unavailable; retrying on CPU', gpuError);
+        if (attempt !== this._startAttempt) return;
+        this._landmarker = await HandLandmarker.createFromOptions(vision, {
+          ...options,
+          baseOptions: { ...options.baseOptions, delegate: 'CPU' }
+        });
+      }
+      if (attempt !== this._startAttempt) {
+        this._landmarker?.close?.();
+        this._landmarker = null;
+        return;
+      }
       this.active = true;
       this.lastFrameAt = performance.now();
       this._loop();
       this.onStatus?.('Your hand is read here, and nowhere else.');
     } catch (error) {
+      if (attempt !== this._startAttempt) return;
       console.warn('[HandInput] camera or tracker unavailable', error);
       this.stop();
       this.onStatus?.('The spirits accept a humbler wand.');
@@ -279,6 +320,11 @@ export class HandInput {
   }
 
   stop() {
+    // Invalidate a pending getUserMedia / dynamic-import sequence before
+    // tearing down current resources. A late permission result then closes its
+    // own stream instead of resurrecting the mirror after the user skipped.
+    this._startAttempt++;
+    this._startPromise = null;
     cancelAnimationFrame(this._raf);
     this._raf = 0;
     if (this.isDrawing) this.input.emit('draw:end', this.filtered);

@@ -246,7 +246,6 @@ export function GrimoireStage() {
   });
   const [attunementStep, setAttunementStep] = useState<'ask' | 'trace' | 'pose'>('ask');
   const [stageReady, setStageReady] = useState(false);
-  const [attunementQueued, setAttunementQueued] = useState(false);
   const [inputNotice, setInputNotice] = useState('');
   const [spellwrightOpen, setSpellwrightOpen] = useState(true);
   const [incantation, setIncantation] = useState('a low, hungry flame that hugs the ground and detonates twice');
@@ -280,10 +279,10 @@ export function GrimoireStage() {
   const stageSurfaceRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
 
-  const finishAttunement = useCallback((notice = '') => {
+  const finishAttunement = useCallback((notice = '', stopHands = false) => {
+    if (stopHands) event('grimoire:stop-hands');
     try { window.localStorage.setItem(ATTUNEMENT_KEY, 'true'); } catch { /* storage is optional */ }
     setAttunement(false);
-    setAttunementQueued(false);
     if (notice) setInputNotice(notice);
   }, []);
 
@@ -307,7 +306,7 @@ export function GrimoireStage() {
       if (keyEvent.key === 'Escape') {
         keyEvent.preventDefault();
         if (activeModal === 'spell') setSpellDetail(null);
-        else finishAttunement('Attunement skipped. Your mouse and touch input are ready whenever you are.');
+        else finishAttunement('Attunement skipped. Your mouse and touch input are ready whenever you are.', true);
         return;
       }
       if (keyEvent.key !== 'Tab') return;
@@ -367,12 +366,12 @@ export function GrimoireStage() {
       const message = (event as CustomEvent<{ message?: string }>).detail?.message;
       if (!message || !current) return;
       setInputNotice(message);
-      if (/humbler wand|mouse is ready/i.test(message)) finishAttunement(message);
+      if (/humbler wand|mouse is ready/i.test(message)) finishAttunement(message, true);
     };
     window.addEventListener('grimoire:ready', onReady);
     window.addEventListener('grimoire:input-status', onInputStatus);
     if ((window as Window & { app?: unknown }).app) setStageReady(true);
-    if (window.matchMedia?.('(pointer: coarse)').matches) finishAttunement('Touch casting is ready. This ritual never asks mobile visitors for a camera.');
+    if (window.matchMedia?.('(pointer: coarse)').matches) finishAttunement('Touch casting is ready. This ritual never asks mobile visitors for a camera.', true);
     void import('../src/main.js').catch(() => current && setReply('The stage needs a clearer sky. Refresh to summon it again.'));
     void fetch('/api/identity').catch(() => undefined);
     return () => {
@@ -381,12 +380,6 @@ export function GrimoireStage() {
       window.removeEventListener('grimoire:input-status', onInputStatus);
     };
   }, []);
-
-  useEffect(() => {
-    if (!stageReady || !attunementQueued) return;
-    event('grimoire:attune');
-    setAttunementQueued(false);
-  }, [attunementQueued, stageReady]);
 
   useEffect(() => {
     const browser = window as Window & typeof globalThis & { SpeechRecognition?: RecognitionConstructor; webkitSpeechRecognition?: RecognitionConstructor };
@@ -676,15 +669,18 @@ export function GrimoireStage() {
 
   const startHands = () => {
     if (window.matchMedia?.('(pointer: coarse)').matches) {
-      finishAttunement('Touch casting is ready. This ritual never asks mobile visitors for a camera.');
+      finishAttunement('Touch casting is ready. This ritual never asks mobile visitors for a camera.', true);
+      return;
+    }
+    // getUserMedia must be called during this direct click. Queuing it until
+    // the Three.js stage wakes loses user activation in Safari and many
+    // embedded browsers, so keep the ritual on this screen until it is ready.
+    if (!stageReady) {
+      setInputNotice('The stage is waking. Begin attunement once it is ready.');
       return;
     }
     setAttunementStep('trace');
-    if (stageReady) event('grimoire:attune');
-    else {
-      setAttunementQueued(true);
-      setInputNotice('The stage is waking. Your hand ritual will begin as soon as the scene is ready.');
-    }
+    event('grimoire:attune');
   };
 
   return (
@@ -783,7 +779,7 @@ export function GrimoireStage() {
         <section className="lineage-tree" aria-labelledby="spell-page-lineage"><p className="eyebrow" id="spell-page-lineage">Lineage</p><div className="lineage-tree__path">{spellDetail.ancestors.length ? spellDetail.ancestors.map((ancestor) => <button key={ancestor.slug} onClick={() => void openSpellPage(ancestor)}>{ancestor.name}</button>) : <span>First known page</span>}<b>{spellDetail.spell.name}</b>{spellDetail.descendants.length ? <LineageBranches parentId={spellDetail.spell._id} nodes={spellDetail.descendants} onOpen={(branch) => void openSpellPage(branch)} /> : <span>No branches yet</span>}</div></section>
         <div className="spell-page__actions"><button className="quiet-button" onClick={() => loadSpell(spellDetail.spell)}>Load for casting</button><button className="bind-button" onClick={() => beginRemix(spellDetail.spell)}>Remix this page</button></div>
       </aside>}
-      {attunement && <section className={`attunement ${attunementStep === 'ask' ? '' : 'attunement--guide'}`} aria-modal={attunementStep === 'ask' ? 'true' : undefined} role={attunementStep === 'ask' ? 'dialog' : undefined} aria-labelledby="attunement-title" ref={attunementStep === 'ask' ? dialogRef : undefined} tabIndex={attunementStep === 'ask' ? -1 : undefined}><div className="attunement__sigil">{attunementStep === 'pose' ? '◇' : attunementStep === 'trace' ? '⌁' : '✦'}</div><p className="eyebrow">First attunement · {attunementStep === 'ask' ? 'one' : attunementStep === 'trace' ? 'two' : 'three'} of three</p><h1 id="attunement-title">{attunementStep === 'ask' ? 'Show your hands.' : attunementStep === 'trace' ? 'Trace the first rune.' : 'Hold a fist for stone.'}</h1><p>{attunementStep === 'ask' ? 'Your hands are read on your device. No video ever leaves it.' : attunementStep === 'trace' ? 'Pinch thumb to index, draw one small line, then release.' : 'Hold the pose until the ring in your mirror closes.'}</p><div>{attunementStep === 'ask' ? <><button className="bind-button" onClick={startHands}>{stageReady ? 'Begin attunement' : 'Begin when the stage wakes'}</button><button className="quiet-button" onClick={() => finishAttunement('Your mouse and touch input are ready whenever you are.')}>Use a humbler wand</button></> : <button className="quiet-button" onClick={() => finishAttunement('Your mouse and touch input are ready whenever you are.')}>Skip the ritual</button>}</div></section>}
+      {attunement && <section className={`attunement ${attunementStep === 'ask' ? '' : 'attunement--guide'}`} aria-modal={attunementStep === 'ask' ? 'true' : undefined} role={attunementStep === 'ask' ? 'dialog' : undefined} aria-labelledby="attunement-title" ref={attunementStep === 'ask' ? dialogRef : undefined} tabIndex={attunementStep === 'ask' ? -1 : undefined}><div className="attunement__sigil">{attunementStep === 'pose' ? '◇' : attunementStep === 'trace' ? '⌁' : '✦'}</div><p className="eyebrow">First attunement · {attunementStep === 'ask' ? 'one' : attunementStep === 'trace' ? 'two' : 'three'} of three</p><h1 id="attunement-title">{attunementStep === 'ask' ? 'Show your hands.' : attunementStep === 'trace' ? 'Trace the first rune.' : 'Hold a fist for stone.'}</h1><p>{attunementStep === 'ask' ? 'Your hands are read on your device. No video ever leaves it.' : attunementStep === 'trace' ? 'Pinch thumb to index, draw one small line, then release.' : 'Hold the pose until the ring in your mirror closes.'}</p><div>{attunementStep === 'ask' ? <><button className="bind-button" onClick={startHands}>{stageReady ? 'Begin attunement' : 'Begin when the stage wakes'}</button><button className="quiet-button" onClick={() => finishAttunement('Your mouse and touch input are ready whenever you are.', true)}>Use a humbler wand</button></> : <button className="quiet-button" onClick={() => finishAttunement('Your mouse and touch input are ready whenever you are.', true)}>Skip the ritual</button>}</div></section>}
     </main>
   );
 }

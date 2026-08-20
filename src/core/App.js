@@ -209,6 +209,7 @@ export class App {
         void this.handInput.start();
       }
     };
+    this._onGrimoireStopHands = () => this.handInput.stop();
     this._onGrimoireOnboardingEarth = () => {
       if (this._portraitCapture) return;
       this._retireArrivalSpellLoop();
@@ -278,6 +279,7 @@ export class App {
     window.addEventListener('grimoire:load-spell', this._onGrimoireLoad);
     window.addEventListener('grimoire:toggle-dials', this._onGrimoireDials);
     window.addEventListener('grimoire:attune', this._onGrimoireAttune);
+    window.addEventListener('grimoire:stop-hands', this._onGrimoireStopHands);
     window.addEventListener('grimoire:onboarding-earth', this._onGrimoireOnboardingEarth);
     window.addEventListener('grimoire:portrait', this._onGrimoirePortrait);
   }
@@ -557,6 +559,7 @@ export class App {
     window.removeEventListener('grimoire:load-spell', this._onGrimoireLoad);
     window.removeEventListener('grimoire:toggle-dials', this._onGrimoireDials);
     window.removeEventListener('grimoire:attune', this._onGrimoireAttune);
+    window.removeEventListener('grimoire:stop-hands', this._onGrimoireStopHands);
     window.removeEventListener('grimoire:onboarding-earth', this._onGrimoireOnboardingEarth);
     window.removeEventListener('grimoire:portrait', this._onGrimoirePortrait);
   }
