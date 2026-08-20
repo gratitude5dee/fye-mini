@@ -1,7 +1,10 @@
 import { binding, json, runtime } from '../_lib/http';
+import { gatewayAtlasHealth } from '../_lib/gateway';
 import { atlasReady, withDb } from '../_lib/mongo';
 
 async function atlasHealth() {
+  const gateway = await gatewayAtlasHealth();
+  if (gateway) return gateway;
   if (!atlasReady()) return { configured: false, reachable: false };
   try {
     await withDb(async (db) => { await db.command({ ping: 1 }); });

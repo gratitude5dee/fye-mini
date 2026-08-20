@@ -1,0 +1,8 @@
+# Keep the gateway private: Sites reaches this named tunnel via its
+# CUSTOMER_HTTP_MONGO_GATEWAY binding. Do not add a public hostname here.
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /etc/cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+
+ingress:
+  - service: http://127.0.0.1:8787
+  - service: http_status:404
