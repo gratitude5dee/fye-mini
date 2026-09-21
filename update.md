@@ -2143,9 +2143,10 @@ Then, downstream of that decision:
 - **The score never reaches the player as a number.** "Fidelity", "tolerance", "best score" belong in §10's debug
   overlay. The Ward *is* the readout. If a word must be shown it is the world's: the line was *true*, *close*, or
   *astray*.
-- **"Trace it." is a machine imperative**, and it would be the first thing the world says after a sequence
-  designed to establish a world that does not speak. Either no words at all, which the ghost supports, or the
-  book's own register: *"The Grimoire opens to a single arc."*
+- **The first instruction should be no instruction.** The first draft opened with *"Trace it."* — a machine
+  imperative, and the first thing the world would say after a sequence designed to establish a world that does
+  not speak. §6 now ships zero words there; the lit stone and the ghost line are the instruction. If a line is
+  ever needed, it is the book's own register, not a command: *"The Grimoire opens to a single arc."*
 - **"The spell shifts in your hand." currently fires on a dial drag.** `App._onGrimoirePatch` toasts it when the
   Workshop patches settings. That is the machine borrowing ritual language to narrate a debug action, which is
   the exact inverse of the voice rule above. Keep the line; move it to a world event. The Workshop gets no voice.
@@ -2204,9 +2205,9 @@ behind a `z-index: 100` overlay (§5).
 #### New strings this update introduces
 | Where | Ship |
 |---|---|
-| Ghost sigil, first | Trace it. |
-| Ghost sigil, too short | Longer. Follow it to the end. |
-| First success | Wind answered. There are three more. |
+| Ghost line, first | *(no words — the lit stone and the ghost are the instruction)* |
+| Line too short | *(no words — the ghost pulses once)* |
+| First success | *(no words — the stone lights)* |
 | Ward complete | The Ward is whole. |
 | Ward incomplete at close | Two stones stayed dark. The Rite still ends. |
 | Rite available | The Rite is open. |
