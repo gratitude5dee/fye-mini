@@ -802,21 +802,26 @@ masked by a `clip-path` wipe that travels in the same direction as the air cast 
 VFX share one motion. It dissolves by animating the mask out, never by fading opacity on a blend-mode layer
 (which greys against a dark stage).
 
-#### Skip
-A skip at any moment must not cut. `IntroDirector.skip()` collapses the remaining beats into a 420 ms tail:
-camera damps to the play framing at 4× rate, the title mask completes, in-flight abilities are left to finish
-(they are pooled and harmless), the HUD staggers in. The player lands in the same state as a full watch. Skip is
-also the reduced-motion path's engine.
+#### Skip, reduced motion and the returning visitor: one path, three durations
 
-#### Reduced motion
-Not a 900 ms blink. A designed 2.4 s alternative: no camera move at all (the rig sits at the play framing from the
-first frame), no dolly, no sheen; the four elements are introduced as four **still** ground sigils lighting in
-sequence at 400 ms intervals, and the wordmark cross-fades rather than wipes. Same information, no vestibular load.
+The first draft specified four separate choreographies with four camera handoffs and four regressions. The
+single-path sequence collapses them into one code path that differs only in how long the fade takes.
 
-#### Returning visitor
-Not nothing, and not the full sequence. A 1.6 s **cold open**: the stage fades up already at the play framing, one
-cast of the player's last-used element fires along a short curve, and the HUD arrives. It costs almost nothing, it
-confirms the renderer is alive, and it re-establishes the world without taxing a returning player.
+| Case | Beat 0 | Beat 1 | Beat 2 |
+|---|---|---|---|
+| First visit, cold cache | 400 ms | holds on the gate, breathing rather than static | 400 ms |
+| First visit, warm cache | 400 ms | 1000 ms | 400 ms |
+| Returning visitor | 0 ms | 600 ms | 400 ms |
+| `prefers-reduced-motion` | 400 ms, cross-fade | 600 ms, **no camera move at all** | 400 ms |
+
+**Skip** is a click that sets the remaining beat durations to their floor. It is not a separate path, so it cannot
+land the player in a different state — which is what the first draft's "skipping lands in exactly the same state"
+criterion was really asking for, and it gets it by construction rather than by testing.
+
+**Reduced motion is a designed variant, not a disabled one.** The rig sits at the play framing from the first
+frame, there is no dolly and no drift, and the wordmark cross-fades rather than wiping. Same information, no
+vestibular load. Note that the current blanket `animation-duration: .01ms !important`
+(`app/grimoire-stage.css:53`) also breaks the loader's progress fill, so it needs replacing rather than extending.
 
 #### What happens to the old assets
 - `public/intro/elemental-montage.png` (2.58 MiB) — **deleted**. It is 2.58 MiB on the critical path for a picture of a
@@ -838,12 +843,15 @@ adds a permission-shaped thing to explain; and the reduced-motion audience overl
 audience. If audio is ever added it is one toggle, off by default, and it respects `prefers-reduced-motion`.
 
 #### Acceptance
-- With a cold cache and network throttled to Fast 3G, the screen is never static for more than 900 ms and the
+
+- With a cold cache and the network throttled to Fast 3G, the screen is never static for more than 900 ms and the
   progress the player sees never exceeds the real asset progress.
-- Skipping at any point during beats 0–4 lands in exactly the same state as watching to the end, verified by
-  comparing `settings.camera.distance`, `rig.controls.target` and HUD visibility.
+- **The player can draw their first line within three seconds of first paint on a warm cache.**
+- Skipping at any point lands in the same state as watching to the end — guaranteed by construction, since skip
+  only shortens durations on one path.
 - With `prefers-reduced-motion: reduce`, the camera's world position is identical on frame 1 and frame 144.
-- `public/intro/` is empty and `git ls-files public output | xargs du -ch` drops by ≥5.08 MiB.
+- `public/intro/` is empty and `git ls-files public output | xargs du -ch` drops by at least 5.08 MiB.
+- There is exactly one intro code path. A grep for beat handling finds one sequence, not four.
 
 #### Two implementation caveats (flagged, not hidden)
 1. **`node_modules` is absent from this checkout.** Nothing in this document was verified against the installed
