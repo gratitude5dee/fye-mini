@@ -393,6 +393,8 @@ export class App {
     this.handInput.stop();
     this.worlds.unload();
     this.ground.mesh.visible = true;
+    this.renderer.setWorldVisualMode(false);
+    this.post.setWorldVisualMode(false);
     this.locomotion?.setSpawn({ x: 0, y: 0, z: 0, yaw: 0 });
     window.dispatchEvent(new CustomEvent(TO_UI.RIDE_STATUS, { detail: { active: false } }));
     // Let React restore the intro overlay before the new director publishes
@@ -414,11 +416,15 @@ export class App {
       if (world.kind === 'ritual' || world.slug === 'ritual-stage') {
         this.worlds.unload();
         this.ground.mesh.visible = true;
+        this.renderer.setWorldVisualMode(false);
+        this.post.setWorldVisualMode(false);
         this.locomotion?.setSpawn({ x: 0, y: 0, z: 0, yaw: 0 });
         if (!silent) this.hud.showToast('Ritual Stage restored.');
       } else {
         await this.worlds.load(world);
         this.ground.mesh.visible = false;
+        this.renderer.setWorldVisualMode(true);
+        this.post.setWorldVisualMode(true);
         this.locomotion?.setSpawn(world.spawn);
         if (!silent) this.hud.showToast(`${world.title} is ready.`);
       }
@@ -428,6 +434,8 @@ export class App {
     } catch (error) {
       this.worlds.unload();
       this.ground.mesh.visible = true;
+      this.renderer.setWorldVisualMode(false);
+      this.post.setWorldVisualMode(false);
       this.locomotion?.setSpawn({ x: 0, y: 0, z: 0, yaw: 0 });
       this.hud.showToast('That world could not load. The Ritual Stage is ready.');
       window.dispatchEvent(new CustomEvent(TO_UI.WORLD_STATUS, {

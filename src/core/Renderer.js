@@ -41,6 +41,7 @@ export class Renderer {
     // these two properties from the renderer.
     this.gl.toneMapping = ACESFilmicToneMapping;
     this.gl.toneMappingExposure = settings.post.exposure;
+    this.worldVisualMode = false;
     this.gl.outputColorSpace = SRGBColorSpace;
 
     this.gl.info.autoReset = false;
@@ -90,7 +91,16 @@ export class Renderer {
 
   /** Called once per frame before rendering so the editor can drive exposure. */
   syncSettings() {
-    this.gl.toneMappingExposure = settings.post.exposure;
+    // Marble splats already carry baked, high-key lighting. The cinematic
+    // ritual stage can afford a brighter exposure, but applying it to that
+    // source clips pale stone and water into a milky blur.
+    this.gl.toneMappingExposure = this.worldVisualMode
+      ? Math.min(settings.post.exposure, 0.72)
+      : settings.post.exposure;
+  }
+
+  setWorldVisualMode(active) {
+    this.worldVisualMode = Boolean(active);
   }
 
   dispose() {

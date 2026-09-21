@@ -62,7 +62,9 @@ test('world rendering applies Marble alignment and disposes the prior world', as
   assert.match(manager, /safeFloor/);
   assert.match(manager, /focalAdjustment: 1\.25/);
   assert.match(renderer, /antialias: false/);
+  assert.match(renderer, /setWorldVisualMode/);
   assert.match(post, /camera\.layers\.enable\(LAYER\.COLLIDER\)/);
+  assert.match(post, /setWorldVisualMode/);
 });
 
 test('third-person controls coexist with casting, air travel, and opt-in hands', async () => {
