@@ -37,6 +37,7 @@ export class App {
     this.paused = false;
     this._raf = 0;
     this.rideNextStroke = false;
+    this._shadowClock = 0;
 
     this.renderer = new Renderer(canvas);
     this.rig = new CameraRig(canvas);
@@ -67,7 +68,7 @@ export class App {
       bursts: this.bursts,
       shake: this.shake,
       flash: this.flash,
-      onAbilityImpact: () => this._onAbilityImpact()
+      onAbilityImpact: (ability) => this._onAbilityImpact(ability)
     });
 
     this.character = new CharacterController(this.environment);
@@ -193,8 +194,22 @@ export class App {
     this._recordCast(path.getLength());
   }
 
-  _onAbilityImpact() {
+  /**
+   * A cast reached the end of its path.
+   *
+   * `Ability._beginImpact` has always passed the instance here and the app has
+   * always thrown it away. Keeping it is what lets a game layer resolve a hit
+   * without reaching back into the ability pool.
+   *
+   * @param {import('../abilities/Ability.js').Ability} [ability]
+   */
+  _onAbilityImpact(ability) {
     this.caster?.setGesture('recovery', { element: this.abilities.selected });
+    if (!ability) return;
+    const element = ability.element === 'wind' ? 'air' : ability.element;
+    window.dispatchEvent(new CustomEvent('grimoire:impact', {
+      detail: { element, x: ability.position.x, z: ability.position.z, u: ability.u }
+    }));
   }
 
   _recordCast(pathLength) {
@@ -211,6 +226,20 @@ export class App {
       case 'toggleEditor': this.editor.toggle(); break;
       case 'clear': this.clearEffects(); this.hud.showToast('Effects cleared.'); break;
       case 'togglePause': this.paused = !this.paused; this.hud.showToast(this.paused ? 'Paused.' : 'Resumed.'); break;
+      // These three were bound in InputManager and had no case here, so H, T
+      // and M were advertised and inert.
+      case 'toggleHelp': this.hud.toggleHelp(); break;
+      case 'togglePose': {
+        const seated = this.character.togglePose?.();
+        this.hud.showToast(seated ? 'The caster sits.' : 'The caster stands.');
+        break;
+      }
+      case 'toggleMode': {
+        this.rideNextStroke = !this.rideNextStroke;
+        window.dispatchEvent(new CustomEvent('grimoire:ride-status', { detail: { active: this.rideNextStroke } }));
+        this.hud.showToast(this.rideNextStroke ? 'Draw the path you want to ride.' : 'Back to casting.');
+        break;
+      }
       default: break;
     }
   }
@@ -259,6 +288,12 @@ export class App {
     this.loading.setProgress(.85, 'Setting the performance…');
     await this.renderer.gl.compileAsync(this.scene, this.camera);
     this.loading.setProgress(1, 'Ready');
+    // The stage is genuinely playable here: assets are loaded, pools are warm
+    // and shaders are compiled. Announcing readiness before `hide()` — which
+    // schedules a 220ms timeout into a 0.7s fade — is what stops the interface
+    // spending most of a second insisting the stage is still waking while the
+    // loader dissolves over a live scene.
+    window.dispatchEvent(new CustomEvent('grimoire:ready', { detail: { app: this } }));
     this.loading.hide();
     this.start();
   }
@@ -305,7 +340,14 @@ export class App {
     this.shake.update(raw);
     this.flash.update(raw);
     this.rig.update(raw);
-    gl.shadowMap.needsUpdate = true;
+    // The sun is static and the caster barely moves, so re-rendering a 4096²
+    // map sixty times a second buys nothing. Refresh at 15Hz, and immediately
+    // whenever something that casts a shadow has actually moved.
+    this._shadowClock += raw;
+    if (this._shadowClock >= 1 / 15 || this.walk?.active) {
+      this._shadowClock = 0;
+      gl.shadowMap.needsUpdate = true;
+    }
     this.post.sync(this.elapsed, this.flash);
     this.post.render();
     this.hud.update(raw, () => ({

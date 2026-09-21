@@ -1,13 +1,23 @@
 'use client';
 
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
 import { HOUSE_SEED_SPELLS } from '../src/config/house-spells';
+import { TO_ENGINE, TO_UI } from '../src/state/events.js';
+import { isPersistent, read as readPreferences, write as persistPreferences } from '../src/state/preferences.js';
+import { useDialog } from './useDialog';
 import './grimoire-stage.css';
 
 type ElementId = 'fire' | 'water' | 'earth' | 'air';
 type InputState = 'idle' | 'requesting' | 'ready' | 'tracking' | 'fallback' | 'unavailable';
 type Dial = { label: string; path: string; min: number; max: number; step: number; value: number };
 
+/**
+ * The one place an element's name and colour are written.
+ *
+ * There were three, and they disagreed — this list, `ELEMENT_META` in the
+ * engine's settings, and the accent map inside `HandInput` — on both the hex
+ * values and the words. Anything that needs either reads it from here.
+ */
 const ELEMENTS: Array<{ id: ElementId; label: string; sigil: string; color: string }> = [
   { id: 'fire', label: 'Fire', sigil: '✦', color: '#ff6a3c' },
   { id: 'water', label: 'Water', sigil: '◒', color: '#3fb8c9' },
@@ -46,26 +56,11 @@ const DIALS: Record<ElementId, Dial[]> = {
   ]
 };
 
-const PREFERENCE_KEY = 'living-grimoire.local-preferences.v2';
+/** Display name for an element id, so a raw lowercase key never reaches the page. */
+const labelOf = (id: string) => ELEMENTS.find((entry) => entry.id === id)?.label ?? id;
 
 function emit(name: string, detail?: unknown) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
-}
-
-function readPreferences() {
-  try {
-    return JSON.parse(localStorage.getItem(PREFERENCE_KEY) ?? '{}') as { introSeen?: boolean; element?: ElementId; dials?: Record<string, number> };
-  } catch {
-    return {};
-  }
-}
-
-function persistPreferences(next: Record<string, unknown>) {
-  try {
-    localStorage.setItem(PREFERENCE_KEY, JSON.stringify({ ...readPreferences(), ...next }));
-  } catch {
-    // Browser preference storage is optional; casting always remains usable.
-  }
 }
 
 export function GrimoireStage() {
@@ -80,6 +75,7 @@ export function GrimoireStage() {
   const [rideArmed, setRideArmed] = useState(false);
   const [lastCast, setLastCast] = useState('Draw a path, pinch to cast, or use the cast key.');
   const [dialValues, setDialValues] = useState<Record<string, number>>({});
+  const [storageAvailable, setStorageAvailable] = useState(true);
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
   const activeDials = DIALS[element];
@@ -87,8 +83,9 @@ export function GrimoireStage() {
   useEffect(() => {
     const preferences = readPreferences();
     setIntroVisible(!preferences.introSeen);
-    if (preferences.element) setElement(preferences.element);
-    if (preferences.dials) setDialValues(preferences.dials);
+    setElement(preferences.element as ElementId);
+    setDialValues(preferences.dials);
+    setStorageAvailable(isPersistent());
   }, []);
 
   useEffect(() => {
@@ -104,7 +101,6 @@ export function GrimoireStage() {
       const detail = (event as CustomEvent<{ message?: string; state?: InputState }>).detail;
       setInputStatus(detail?.message ?? 'Hand input is ready.');
       setInputState(detail?.state ?? 'tracking');
-      if (detail?.state === 'ready' || detail?.state === 'tracking') setHandsOpen(true);
     };
     const rideStatusListener = (event: Event) => setRideArmed(Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active));
     const castListener = (event: Event) => {
@@ -112,15 +108,15 @@ export function GrimoireStage() {
       const label = ELEMENTS.find((entry) => entry.id === castElement)?.label ?? 'Element';
       setLastCast(`${label} released. The caster is recovering.`);
     };
-    window.addEventListener('grimoire:ready', ready);
-    window.addEventListener('grimoire:input-status', inputStatusListener);
-    window.addEventListener('grimoire:ride-status', rideStatusListener);
-    window.addEventListener('grimoire:cast-complete', castListener);
+    window.addEventListener(TO_UI.READY, ready);
+    window.addEventListener(TO_UI.INPUT_STATUS, inputStatusListener);
+    window.addEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
+    window.addEventListener(TO_UI.CAST_COMPLETE, castListener);
     return () => {
-      window.removeEventListener('grimoire:ready', ready);
-      window.removeEventListener('grimoire:input-status', inputStatusListener);
-      window.removeEventListener('grimoire:ride-status', rideStatusListener);
-      window.removeEventListener('grimoire:cast-complete', castListener);
+      window.removeEventListener(TO_UI.READY, ready);
+      window.removeEventListener(TO_UI.INPUT_STATUS, inputStatusListener);
+      window.removeEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
+      window.removeEventListener(TO_UI.CAST_COMPLETE, castListener);
     };
   }, []);
 
@@ -128,8 +124,11 @@ export function GrimoireStage() {
   // selected element once it reports readiness so the visible HUD and the
   // active Three.js ability can never drift apart.
   useEffect(() => {
-    if (stageReady) emit('grimoire:select', { element });
+    if (stageReady) emit(TO_ENGINE.SELECT, { element });
   }, [element, stageReady]);
+
+  const closeHands = useCallback(() => setHandsOpen(false), []);
+  const closeWorkshop = useCallback(() => setWorkshopOpen(false), []);
 
   const dismissIntro = () => {
     persistPreferences({ introSeen: true });
@@ -143,22 +142,26 @@ export function GrimoireStage() {
     return () => window.clearTimeout(timer);
   }, [introVisible]);
 
+  const introRef = useDialog<HTMLElement>(introVisible, dismissIntro);
+  const handsRef = useDialog<HTMLElement>(handsOpen, closeHands);
+  const workshopRef = useDialog<HTMLElement>(workshopOpen, closeWorkshop);
+
   const selectElement = (next: ElementId) => {
     setElement(next);
     persistPreferences({ element: next });
-    emit('grimoire:select', { element: next });
+    emit(TO_ENGINE.SELECT, { element: next });
   };
 
   const adjustDial = (dial: Dial, value: number) => {
     const next = { ...dialValues, [dial.path]: value };
     setDialValues(next);
     persistPreferences({ dials: next });
-    emit('grimoire:patch', { patch: { [dial.path]: value } });
+    emit(TO_ENGINE.PATCH, { patch: { [dial.path]: value } });
   };
 
   const choosePreset = (preset: typeof HOUSE_SEED_SPELLS[number]) => {
     selectElement(preset.element as ElementId);
-    emit('grimoire:patch', { patch: preset.settingsPatch });
+    emit(TO_ENGINE.PATCH, { patch: preset.settingsPatch });
     setLastCast(`${preset.name} is prepared locally. Draw to release it.`);
   };
 
@@ -174,11 +177,11 @@ export function GrimoireStage() {
     }
     setInputState('requesting');
     setInputStatus('Requesting camera permission…');
-    emit('grimoire:attune');
+    emit(TO_ENGINE.ATTUNE);
   };
 
   const stopHands = () => {
-    emit('grimoire:stop-hands');
+    emit(TO_ENGINE.STOP_HANDS);
     setHandsOpen(false);
     setInputState('idle');
     setInputStatus('Pointer casting is ready.');
@@ -201,8 +204,8 @@ export function GrimoireStage() {
         <header className="stage-header">
           <div className="wordmark"><span>Local elemental stage</span><strong>Living Grimoire</strong></div>
           <div className="header-actions">
-            <button className="quiet-button" onClick={() => setHandsOpen(true)} aria-expanded={handsOpen}>Hand mode</button>
-            <button className="quiet-button" onClick={() => setWorkshopOpen(true)} aria-expanded={workshopOpen}>Workshop</button>
+            <button className="quiet-button" onClick={() => { setWorkshopOpen(false); setHandsOpen(true); }} aria-expanded={handsOpen}>Hand mode</button>
+            <button className="quiet-button" onClick={() => { setHandsOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>
           </div>
         </header>
 
@@ -214,12 +217,12 @@ export function GrimoireStage() {
               <i>{entry.sigil}</i><span>{entry.label}</span>
             </button>)}
           </div>
-          <button className="cast-button" disabled={!stageReady} onClick={() => emit('grimoire:cast')}><span>{stageReady ? 'Cast' : 'Waking'}</span><b>{currentElement.label}</b></button>
-          <button className={`ride-button ${rideArmed ? 'is-armed' : ''}`} onClick={() => emit('grimoire:ride')} aria-pressed={rideArmed}>{rideArmed ? 'Draw air ride' : 'Ride a path'}</button>
+          <button className="cast-button" disabled={!stageReady} onClick={() => emit(TO_ENGINE.CAST)}><span>{stageReady ? 'Cast' : 'Waking'}</span><b>{currentElement.label}</b></button>
+          <button className={`ride-button ${rideArmed ? 'is-armed' : ''}`} onClick={() => emit(TO_ENGINE.RIDE)} aria-pressed={rideArmed}>{rideArmed ? 'Draw air ride' : 'Ride a path'}</button>
         </section>
       </div>
 
-      {introVisible && <section className="intro" role="dialog" aria-modal="true" aria-label="Elemental introduction">
+      {introVisible && <section className="intro" role="dialog" aria-modal="true" aria-label="Elemental introduction" ref={introRef} tabIndex={-1}>
         <img className="intro__art" src={INTRO_ART} alt="" />
         <div className="intro__panels" aria-hidden="true">
           {INTRO_PANELS.map((panel, index) => <figure key={panel.id} className={`intro__panel intro__panel--${panel.id}`} style={{ '--panel-index': index } as CSSProperties}><figcaption>{panel.title}</figcaption></figure>)}
@@ -228,8 +231,8 @@ export function GrimoireStage() {
         <button className="intro__skip" onClick={dismissIntro}>Skip intro</button>
       </section>}
 
-      {handsOpen && <section className="side-sheet" role="dialog" aria-modal="true" aria-labelledby="hands-title">
-        <button className="sheet-close" onClick={() => setHandsOpen(false)} aria-label="Close hand input panel">×</button>
+      {handsOpen && <section className="side-sheet" role="dialog" aria-modal="true" aria-labelledby="hands-title" ref={handsRef} tabIndex={-1}>
+        <button className="sheet-close" onClick={closeHands} aria-label="Close hand input panel">×</button>
         <p className="eyebrow">Camera-first desktop input</p><h2 id="hands-title">Cast with your hands.</h2>
         <p className="sheet-copy">Enable the camera with the button below. The live mirror and landmarks are processed in this browser only; no video, frames, or landmarks are saved.</p>
         <div className={`input-health input-health--${inputState}`}><i /><span>{inputStatus}</span></div>
@@ -237,11 +240,12 @@ export function GrimoireStage() {
         <div className="sheet-actions"><button className="cast-button" onClick={enableHands}>{inputState === 'ready' || inputState === 'tracking' ? 'Calibrate pose' : 'Enable hands'}</button>{(inputState === 'ready' || inputState === 'tracking' || inputState === 'requesting') && <button className="quiet-button" onClick={stopHands}>Use pointer instead</button>}</div>
       </section>}
 
-      {workshopOpen && <section className="side-sheet workshop" role="dialog" aria-modal="true" aria-labelledby="workshop-title">
-        <button className="sheet-close" onClick={() => setWorkshopOpen(false)} aria-label="Close local workshop">×</button>
+      {workshopOpen && <section className="side-sheet workshop" role="dialog" aria-modal="true" aria-labelledby="workshop-title" ref={workshopRef} tabIndex={-1}>
+        <button className="sheet-close" onClick={closeWorkshop} aria-label="Close local workshop">×</button>
         <p className="eyebrow">Local workshop</p><h2 id="workshop-title">Shape the next cast.</h2>
         <p className="sheet-copy">These presets and dials only change this browser’s live stage. Nothing is uploaded or bound to an account.</p>
-        <div className="preset-grid" aria-label="Local spell presets">{HOUSE_SEED_SPELLS.slice(0, 8).map((preset) => <button key={preset.slug} onClick={() => choosePreset(preset)} data-element={preset.element}><small>{preset.element}</small><strong>{preset.name}</strong></button>)}</div>
+        {!storageAvailable && <p className="sheet-copy">This browser is not keeping site data, so your element and dials will not be here next time. Casting is unaffected.</p>}
+        <div className="preset-grid" aria-label="Local spell presets">{HOUSE_SEED_SPELLS.map((preset) => <button key={preset.slug} onClick={() => choosePreset(preset)} data-element={preset.element}><small>{labelOf(preset.element)}</small><strong>{preset.name}</strong></button>)}</div>
         <fieldset className="local-dials"><legend>{currentElement.label} dials</legend>{activeDials.map((dial) => {
           const value = dialValues[dial.path] ?? dial.value;
           return <label key={dial.path}><span>{dial.label}</span><output>{value.toFixed(dial.step >= 1 ? 0 : 1)}</output><input type="range" min={dial.min} max={dial.max} step={dial.step} value={value} onChange={(event) => adjustDial(dial, Number(event.target.value))} /></label>;

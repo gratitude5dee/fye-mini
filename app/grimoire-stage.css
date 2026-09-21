@@ -7,19 +7,22 @@
 .wordmark { display: grid; gap: 6px; text-shadow: 0 3px 18px #000; }
 .wordmark span, .eyebrow { margin: 0; color: var(--accent); font: 700 10px/1 var(--font-sans); letter-spacing: .18em; text-transform: uppercase; }
 .wordmark strong { font: 500 clamp(25px, 3.3vw, 42px)/.86 var(--font-display); letter-spacing: -.055em; }
-.quiet-button, .ride-button, .sheet-close { border: 1px solid rgb(246 241 232 / .25); border-radius: 999px; padding: 10px 13px; color: var(--ink); background: rgb(10 12 15 / .58); box-shadow: 0 8px 24px #0004; backdrop-filter: blur(16px); font: 700 10px/1 var(--font-sans); letter-spacing: .09em; text-transform: uppercase; cursor: pointer; }
+.quiet-button, .ride-button, .sheet-close { border: 1px solid rgb(246 241 232 / .25); border-radius: 999px; padding: 10px 13px; color: var(--ink); background: rgb(10 12 15 / .58); box-shadow: 0 8px 24px #0004; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); font: 700 10px/1 var(--font-sans); letter-spacing: .09em; text-transform: uppercase; cursor: pointer; }
 .quiet-button:hover, .ride-button:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, #101318); }
 .stage-message { top: 31%; left: 50%; max-width: min(390px, calc(100vw - 42px)); transform: translateX(-50%); color: var(--muted); font: 500 12px/1.35 var(--font-sans); text-align: center; text-shadow: 0 2px 12px #000; pointer-events: none; }
 .stage-message__dot { display: inline-block; width: 6px; height: 6px; margin: 0 8px 1px 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 13px var(--accent); }
 .stage-hud { right: 0; bottom: 22px; left: 0; display: grid; justify-items: center; gap: 9px; pointer-events: none; }
-.element-selector { display: flex; gap: 3px; padding: 4px; border: 1px solid rgb(246 241 232 / .2); border-radius: 18px; background: rgb(10 12 15 / .68); box-shadow: 0 16px 38px #0008; backdrop-filter: blur(16px); pointer-events: auto; }
+/* Every direct child opts back in. The previous per-child rule missed .cast-button,
+   which left the stage's primary action unclickable. */
+.stage-hud > * { pointer-events: auto; }
+.element-selector { display: flex; gap: 3px; padding: 4px; border: 1px solid rgb(246 241 232 / .2); border-radius: 18px; background: rgb(10 12 15 / .68); box-shadow: 0 16px 38px #0008; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
 .element-selector button { display: grid; min-width: 61px; gap: 3px; border: 0; border-radius: 13px; padding: 7px 9px; color: #c6c4bf; background: transparent; font: 700 9px/1 var(--font-sans); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
 .element-selector button i { color: var(--accent); font: 23px/1 Georgia, serif; font-style: normal; text-shadow: 0 0 14px var(--accent); }
 .element-selector button.is-active { color: var(--ink); background: color-mix(in srgb, var(--accent) 19%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent); }
 .cast-button { min-width: 148px; border: 1px solid color-mix(in srgb, var(--accent) 78%, white); border-radius: 14px; padding: 12px 19px; color: #0e1215; background: var(--accent); box-shadow: 0 8px 32px color-mix(in srgb, var(--accent) 42%, transparent); font: 800 10px/1 var(--font-sans); letter-spacing: .16em; text-transform: uppercase; cursor: pointer; }
 .cast-button b { display: block; margin-top: 4px; font: 600 22px/.9 var(--font-display); letter-spacing: -.02em; text-transform: none; }
 .cast-button:disabled { opacity: .55; cursor: wait; }
-.ride-button { padding: 8px 12px; pointer-events: auto; font-size: 9px; }
+.ride-button { padding: 8px 12px; font-size: 9px; }
 .ride-button.is-armed { border-color: #a7e8f2; color: #06252a; background: #a7e8f2; }
 .intro { position: fixed; z-index: 100; inset: 0; display: grid; overflow: hidden; background: #08090a; }
 .intro__art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: panel-drift 7.2s ease-in-out infinite alternate; }
@@ -32,8 +35,8 @@
 .intro__copy p, .intro__copy span { margin: 0; color: #fff6e7; font: 700 10px/1.35 var(--font-sans); letter-spacing: .2em; text-transform: uppercase; }
 .intro__copy h1 { max-width: 620px; margin: 14px 0; font: 500 clamp(45px, 9vw, 112px)/.82 var(--font-display); letter-spacing: -.07em; text-shadow: 0 5px 44px #000; }
 .intro__copy span { color: #f4ead9c7; font-size: 9px; letter-spacing: .11em; text-transform: none; }
-.intro__skip { position: absolute; z-index: 1; right: 24px; bottom: 22px; border: 1px solid rgb(255 255 255 / .42); border-radius: 999px; padding: 10px 14px; color: #fff; background: rgb(0 0 0 / .32); backdrop-filter: blur(12px); font: 700 10px/1 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
-.side-sheet { top: 50%; right: 22px; width: min(360px, calc(100vw - 36px)); max-height: min(680px, calc(100dvh - 50px)); overflow: auto; transform: translateY(-50%); border: 1px solid rgb(246 241 232 / .22); border-radius: 22px; padding: 23px; background: linear-gradient(145deg, rgb(25 30 34 / .96), rgb(11 14 17 / .97)); box-shadow: 0 24px 84px #000a; backdrop-filter: blur(24px); }
+.intro__skip { position: absolute; z-index: 1; right: 24px; bottom: 22px; border: 1px solid rgb(255 255 255 / .42); border-radius: 999px; padding: 10px 14px; color: #fff; background: rgb(0 0 0 / .32); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font: 700 10px/1 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+.side-sheet { top: 50%; right: 22px; width: min(360px, calc(100vw - 36px)); max-height: min(680px, calc(100dvh - 50px)); overflow: auto; transform: translateY(-50%); border: 1px solid rgb(246 241 232 / .22); border-radius: 22px; padding: 23px; background: linear-gradient(145deg, rgb(25 30 34 / .96), rgb(11 14 17 / .97)); box-shadow: 0 24px 84px #000a; -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
 .sheet-close { position: absolute; top: 12px; right: 12px; display: grid; width: 32px; height: 32px; place-items: center; padding: 0; color: var(--muted); font: 300 25px/1 var(--font-sans); }
 .side-sheet h2 { max-width: 280px; margin: 7px 0 12px; font: 500 31px/.98 var(--font-display); letter-spacing: -.045em; }
 .sheet-copy { margin: 0; color: #ddd9d0; font: 400 13px/1.55 var(--font-sans); }

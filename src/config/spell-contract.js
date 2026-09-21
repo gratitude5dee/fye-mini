@@ -1,147 +1,37 @@
-import { DEFAULT_SETTINGS, settings } from './settings.js';
+import { settings } from './settings.js';
 import { EXACT_SPELL_RANGES } from './spell-ranges.js';
 
-export const SPELL_ELEMENTS = ['fire', 'water', 'earth', 'air'];
-// These are the renderer blocks that make a spell portable.  They deliberately
-// exclude input, camera, environment, character, and walk settings: another
-// person's spell should change the magic, not take over the visitor's device.
-export const SPELL_SETTING_BLOCKS = ['global', 'trail', 'fire', 'water', 'earth', 'air', 'post'];
+/**
+ * What the renderer will let an outside value change, and by how much.
+ *
+ * This file used to also carry a validator, a BSON schema and a snapshot
+ * builder for an API that no longer exists — commit 93a438e deleted the routes
+ * and the database, and the seven exports that served them had no callers left.
+ * They are gone; what remains is what `Editor` and `App._applyFlatPatch`
+ * actually use, plus `deriveGenome`, which the Workshop surfaces.
+ */
 
 const PUBLIC_TO_ENGINE = { air: 'wind' };
-const ENGINE_TO_PUBLIC = { wind: 'air' };
-const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-const isHex = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
-const publicKey = (key) => ENGINE_TO_PUBLIC[key] ?? key;
-const engineKey = (key) => PUBLIC_TO_ENGINE[key] ?? key;
 
 /**
- * A complete, exact manifest shared by the editor, API routes, and bootstrap
- * tooling. Missing bounds are treated as a programming error, never guessed.
+ * The exact bounds every patch is clamped to.
+ *
+ * Keyed by **public** paths, so the wind block appears as `air.*`. `enginePath`
+ * bridges the two spellings on the way in.
  */
 export const RANGES = EXACT_SPELL_RANGES;
 
-function publicClone(value, path = '') {
-  if (Array.isArray(value)) return value.map((entry) => publicClone(entry, path));
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(Object.entries(value).map(([key, child]) => [publicKey(key), publicClone(child, path ? `${path}.${key}` : key)]));
-}
-
-/** Return only the spell-safe renderer snapshot, with public `air` naming. */
-export function snapshotSpellSettings(source = settings) {
-  return Object.fromEntries(SPELL_SETTING_BLOCKS.map((block) => {
-    const engineBlock = engineKey(block);
-    return [block, publicClone(source[engineBlock])];
-  }));
-}
-
-function normalizeNode(input, template, path, issues) {
-  if (!isRecord(input)) {
-    issues.push(`${path} must be an object`);
-    return publicClone(template);
-  }
-  const allowed = new Set(Object.keys(template).map(publicKey));
-  for (const key of Object.keys(input)) {
-    if (!allowed.has(key)) issues.push(`${path}.${key} is not a spell setting`);
-  }
-
-  const output = {};
-  for (const [engineName, defaultValue] of Object.entries(template)) {
-    const name = publicKey(engineName);
-    const nextPath = `${path}.${name}`;
-    const candidate = input[name];
-    if (candidate === undefined) {
-      issues.push(`${nextPath} is required`);
-      output[name] = publicClone(defaultValue);
-      continue;
-    }
-    if (typeof defaultValue === 'number') {
-      if (typeof candidate !== 'number' || !Number.isFinite(candidate)) {
-        issues.push(`${nextPath} must be a finite number`);
-        output[name] = defaultValue;
-      } else {
-        const range = RANGES[nextPath.replace(/^settings\./, '')];
-        if (!range) {
-          issues.push(`${nextPath} has no declared editor range`);
-          output[name] = defaultValue;
-        } else {
-          output[name] = Math.min(range.max, Math.max(range.min, candidate));
-        }
-      }
-    } else if (typeof defaultValue === 'string') {
-      if (isHex(defaultValue) && !isHex(candidate)) issues.push(`${nextPath} must be a hex color`);
-      else if (typeof candidate !== 'string' || candidate.length > 80) issues.push(`${nextPath} must be a short string`);
-      output[name] = typeof candidate === 'string' ? candidate : defaultValue;
-    } else if (typeof defaultValue === 'boolean') {
-      if (typeof candidate !== 'boolean') issues.push(`${nextPath} must be true or false`);
-      output[name] = typeof candidate === 'boolean' ? candidate : defaultValue;
-    } else if (isRecord(defaultValue)) {
-      output[name] = normalizeNode(candidate, defaultValue, nextPath, issues);
-    }
-  }
-  return output;
-}
-
 /**
- * Rejects unknown keys and missing leaves. Finite numerical values are clamped
- * to RANGES before persistence so a malformed request cannot make the VFX
- * unstable when another bender loads its spell.
+ * The colour surface a patch may write.
+ *
+ * Kept tiny on purpose: a natural-language request like "make it violet" has to
+ * survive the same strict contract as a numerical dial.
  */
-export function validateSpellSettings(candidate) {
-  const issues = [];
-  if (!isRecord(candidate)) return { ok: false, issues: ['settings must be an object'], value: null };
-  const allowed = new Set(SPELL_SETTING_BLOCKS);
-  for (const key of Object.keys(candidate)) if (!allowed.has(key)) issues.push(`settings.${key} is not allowed`);
-  const value = {};
-  for (const block of SPELL_SETTING_BLOCKS) {
-    const engineBlock = engineKey(block);
-    if (candidate[block] === undefined) issues.push(`settings.${block} is required`);
-    value[block] = normalizeNode(candidate[block], DEFAULT_SETTINGS[engineBlock], `settings.${block}`, issues);
-  }
-  return { ok: issues.length === 0, issues, value };
-}
-
-export const SPELLWRIGHT_PATHS = [
-  'global.speed', 'global.glow', 'global.turbulence', 'global.particleCount', 'global.particleSize',
-  'trail.width', 'trail.glow', 'trail.flowSpeed',
-  'fire.speed', 'fire.flameWidth', 'fire.flameHeight', 'fire.flameTurbulence', 'fire.glow', 'fire.streamLength', 'fire.emberRate', 'fire.explosionSize', 'fire.colorCore', 'fire.colorMid', 'fire.colorEdge',
-  'water.speed', 'water.radius', 'water.crest', 'water.waveAmplitude', 'water.flowSpeed', 'water.foam', 'water.glow', 'water.splashSize',
-  'earth.speed', 'earth.crustWidth', 'earth.plateSize', 'earth.rockSize', 'earth.riseHeight', 'earth.glow', 'earth.towerHeight', 'earth.towerWidth',
-  'air.speed', 'air.ribbonWidth', 'air.ribbonLength', 'air.spiralRadius', 'air.vortexStrength', 'air.turbulence', 'air.glow', 'air.tornadoHeight'
-];
-
-// A tiny, explicit colour surface lets a natural-language request such as
-// “make it violet” survive the same strict patch contract as numerical dials.
 export const SPELLWRIGHT_COLOR_PATHS = ['fire.colorCore', 'fire.colorMid', 'fire.colorEdge'];
 
-/** Strictly whitelisted patch, also clamped to the same RANGES manifest. */
-export function validateSpellwrightPatch(candidate, allowedPaths = SPELLWRIGHT_PATHS) {
-  const patch = {};
-  if (!isRecord(candidate)) return { ok: false, issues: ['patch must be an object'], value: patch };
-  const issues = [];
-  const writable = new Set(allowedPaths);
-  if (Object.keys(candidate).length > 4) issues.push('Spellwright may adjust no more than four dials at once');
-  for (const [path, rawValue] of Object.entries(candidate)) {
-    if (!writable.has(path)) {
-      issues.push(`${path} is not writable by Spellwright`);
-      continue;
-    }
-    if (SPELLWRIGHT_COLOR_PATHS.includes(path)) {
-      if (!isHex(rawValue)) {
-        issues.push(`${path} must be a six-digit hex color`);
-        continue;
-      }
-      patch[path] = rawValue.toLowerCase();
-      continue;
-    }
-    if (typeof rawValue !== 'number' || !Number.isFinite(rawValue)) {
-      issues.push(`${path} must be a finite number`);
-      continue;
-    }
-    const range = RANGES[path];
-    patch[path] = Math.min(range.max, Math.max(range.min, rawValue));
-  }
-  if (Object.keys(patch).length === 0) issues.push('Spellwright must alter at least one dial');
-  return { ok: issues.length === 0, issues, value: patch };
+/** Translate a public settings path into the engine's own spelling. */
+export function enginePath(path) {
+  return path.replace(/^air\./, 'wind.');
 }
 
 const GENOME_PATHS = {
@@ -151,11 +41,34 @@ const GENOME_PATHS = {
   air: { mass: 'air.ribbonWidth', chaos: 'air.turbulence', radiance: 'air.glow', menace: 'air.vortexStrength' }
 };
 
-function atPath(value, path) {
-  return path.split('.').reduce((cursor, key) => cursor && typeof cursor === 'object' ? cursor[key] : undefined, value);
+function walk(value, path) {
+  return path.split('.').reduce((cursor, key) => (cursor && typeof cursor === 'object' ? cursor[key] : undefined), value);
 }
 
-export function deriveGenome(settings, element) {
+/**
+ * Read a public path out of a tree that may be spelled either way.
+ *
+ * `GENOME_PATHS` is written in public spelling, but the live `settings` object
+ * calls the air block `wind`. Reading only the public path returned `undefined`
+ * for every air dial, so the air genome silently came back as five 0.5s.
+ */
+function atPath(value, path) {
+  const direct = walk(value, path);
+  return direct === undefined ? walk(value, enginePath(path)) : direct;
+}
+
+/**
+ * Reduce a settings block to five readable axes.
+ *
+ * Each axis is the normalised position of one or two dials inside their own
+ * declared range, so the readout means the same thing for every element even
+ * though the underlying dials do not share units.
+ *
+ * @param {object} source a settings tree, public or engine spelling
+ * @param {string} element public element id
+ * @returns {{pace:number, mass:number, chaos:number, radiance:number, menace:number}} each 0..1
+ */
+export function deriveGenome(source, element) {
   const paths = GENOME_PATHS[element] ?? GENOME_PATHS.fire;
   const scale = (path, value) => {
     const range = RANGES[path];
@@ -164,42 +77,12 @@ export function deriveGenome(settings, element) {
   };
   const average = (...values) => values.reduce((sum, value) => sum + value, 0) / values.length;
   return {
-    pace: average(scale(`${element}.speed`, atPath(settings, `${element}.speed`)), scale('global.speed', atPath(settings, 'global.speed'))),
-    mass: average(scale(paths.mass, atPath(settings, paths.mass)), scale('global.particleSize', atPath(settings, 'global.particleSize'))),
-    chaos: average(scale(paths.chaos, atPath(settings, paths.chaos)), scale('global.turbulence', atPath(settings, 'global.turbulence'))),
-    radiance: average(scale(paths.radiance, atPath(settings, paths.radiance)), scale('global.glow', atPath(settings, 'global.glow'))),
-    menace: average(scale(paths.menace, atPath(settings, paths.menace)), scale(`${element}.lifetime`, atPath(settings, `${element}.lifetime`)))
+    pace: average(scale(`${element}.speed`, atPath(source, `${element}.speed`)), scale('global.speed', atPath(source, 'global.speed'))),
+    mass: average(scale(paths.mass, atPath(source, paths.mass)), scale('global.particleSize', atPath(source, 'global.particleSize'))),
+    chaos: average(scale(paths.chaos, atPath(source, paths.chaos)), scale('global.turbulence', atPath(source, 'global.turbulence'))),
+    radiance: average(scale(paths.radiance, atPath(source, paths.radiance)), scale('global.glow', atPath(source, 'global.glow'))),
+    menace: average(scale(paths.menace, atPath(source, paths.menace)), scale(`${element}.lifetime`, atPath(source, `${element}.lifetime`)))
   };
 }
 
-function bsonSchemaFor(template, basePath = '') {
-  const properties = {};
-  const required = [];
-  for (const [engineName, value] of Object.entries(template)) {
-    const name = publicKey(engineName);
-    required.push(name);
-    const path = basePath ? `${basePath}.${name}` : name;
-    if (typeof value === 'number') {
-      const range = RANGES[path];
-      properties[name] = { bsonType: ['double', 'int', 'long', 'decimal'], ...(range ? { minimum: range.min, maximum: range.max } : {}) };
-    }
-    else if (typeof value === 'boolean') properties[name] = { bsonType: 'bool' };
-    else if (typeof value === 'string') properties[name] = isHex(value) ? { bsonType: 'string', pattern: '^#[0-9a-fA-F]{6}$' } : { bsonType: 'string', maxLength: 80 };
-    else if (isRecord(value)) properties[name] = bsonSchemaFor(value, path);
-  }
-  return { bsonType: 'object', required, additionalProperties: false, properties };
-}
-
-/** The local validator mirrors the public snapshot tree and rejects unknown keys. */
-export function spellSettingsBsonSchema() {
-  return {
-    bsonType: 'object',
-    required: SPELL_SETTING_BLOCKS,
-    additionalProperties: false,
-    properties: Object.fromEntries(SPELL_SETTING_BLOCKS.map((block) => [block, bsonSchemaFor(DEFAULT_SETTINGS[engineKey(block)], block)]))
-  };
-}
-
-export function enginePath(path) {
-  return path.replace(/^air\./, 'wind.');
-}
+export { settings, PUBLIC_TO_ENGINE };

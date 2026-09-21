@@ -13,11 +13,12 @@ export async function boot() {
   if (window.app) return window.app;
   try {
     const app = new App(canvas);
-    await app.load();
-
-    // Handy for poking at the scene from the console.
+    // Handy for poking at the scene from the console. Assigned before the load
+    // so it is reachable while assets are still streaming.
     window.app = app;
-    window.dispatchEvent(new CustomEvent('grimoire:ready', { detail: { app } }));
+    // `grimoire:ready` is dispatched by `App.load()` the moment the stage is
+    // playable, not here — see the comment at that dispatch.
+    await app.load();
     return app;
   } catch (error) {
     console.error('[boot] failed to start', error);

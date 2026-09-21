@@ -246,7 +246,9 @@ export class HandInput {
     };
     const four = [fingers.index, fingers.middle, fingers.ring, fingers.pinky];
     let next = null;
-    if (!four.some(Boolean)) next = 'earth';
+    // A closed fist is four fingers curled AND the thumb in. Without the thumb
+    // term a thumbs-up reads as a fist and silently selects stone.
+    if (!four.some(Boolean) && !fingers.thumb) next = 'earth';
     else if (fingers.thumb && four.every(Boolean)) next = 'wind';
     else if (fingers.index && fingers.middle && !fingers.ring && !fingers.pinky) next = 'water';
     else if (fingers.index && fingers.pinky && !fingers.middle && !fingers.ring) next = 'fire';

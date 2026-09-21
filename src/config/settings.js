@@ -216,6 +216,36 @@ export const settings = {
   },
 
   /* ------------------------------------------------------------------ */
+  /* The Rite — game rules                                               */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Deliberately given no entries in `EXACT_SPELL_RANGES`.
+   *
+   * `App._applyFlatPatch` refuses any path without a declared range, so a
+   * cosmetic preset can never reach in here and rewrite the game's balance.
+   * Presentation values that genuinely change how a cast feels live in the
+   * element blocks instead, with ranges, where a preset may touch them.
+   */
+  rite: {
+    /** Lines in a Rite, before the generator scales it. */
+    lines: 3,
+    /** Attempts per line. Best kept; the stone shows which attempt lit it. */
+    attempts: 3,
+    /** Radius of a waystone's accept ring, metres. Drawn, so the player sees it. */
+    waystoneRadius: 1.15,
+    /** Each failed attempt widens it by this factor. The player is never told. */
+    waystoneForgiveness: 1.18,
+    /** Visible radius of a hazard region, metres. */
+    hazardRadius: 1.6,
+    /** A stroke sample above this height clears a hazard instead of clipping it. */
+    hazardClearance: 1.2,
+    /** Ring of the ritual ground the generator places on, metres. */
+    fieldRadius: 7.0,
+    /** Shortest allowed gap between two generated features, metres. */
+    featureSpacing: 2.4
+  },
+
+  /* ------------------------------------------------------------------ */
   /* Post processing                                                     */
   /* ------------------------------------------------------------------ */
   post: {
@@ -243,6 +273,10 @@ export const settings = {
   fire: {
     speed: 11.5,
     lifetime: 2.6,
+    // How far a cast reaches when it is aimed rather than drawn. Drawn strokes
+    // ignore these; they bound the aim indicator and the generator's layouts.
+    range: 18.0,
+    minRange: 1.2,
     // Flight: fire does not crawl along the drawn path, it flies above it
     flightHeight: 1.0, // cruise altitude above the ground
     flightArc: 0.29, // extra lob in the middle of the path
@@ -354,6 +388,10 @@ export const settings = {
   water: {
     speed: 7.5,
     lifetime: 3.0,
+    // How far a cast reaches when it is aimed rather than drawn. Drawn strokes
+    // ignore these; they bound the aim indicator and the generator's layouts.
+    range: 18.0,
+    minRange: 1.2,
     // Flight — the body surges over the drawn path rather than crawling on it
     height: 1.0, // cruise height above the ground
     surge: 0.2, // amplitude of the vertical undulation
@@ -437,6 +475,10 @@ export const settings = {
   earth: {
     speed: 6.0,
     lifetime: 3.2,
+    // How far a cast reaches when it is aimed rather than drawn. Drawn strokes
+    // ignore these; they bound the aim indicator and the generator's layouts.
+    range: 18.0,
+    minRange: 1.2,
     // The crust laid down along the path, before anything breaks
     crustWidth: 0.5, // metres of ground paved either side of the path
     crustDensity: 1.12, // plates per square metre multiplier
@@ -497,6 +539,10 @@ export const settings = {
   wind: {
     speed: 14.0,
     lifetime: 2.4,
+    // How far a cast reaches when it is aimed rather than drawn. Drawn strokes
+    // ignore these; they bound the aim indicator and the generator's layouts.
+    range: 18.0,
+    minRange: 1.2,
     // Silk sheets — each strip is combed into `filamentCount` hairlines, so it
     // is far wider and fainter than a single-strand ribbon would be. The bundle
     // is carried by sheet width, not by winding the strips tightly, hence the

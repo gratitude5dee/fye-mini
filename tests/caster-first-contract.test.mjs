@@ -24,10 +24,13 @@ test('the local stage loads a bundled caster, HDR, and all five performance phas
 });
 
 test('hand tracking remains direct-click, local, mirrored, and fallback-safe', async () => {
-  const [hand, stage] = await Promise.all([text('../src/input/HandInput.js'), text('../app/GrimoireStage.tsx')]);
+  const [hand, stage, events] = await Promise.all([
+    text('../src/input/HandInput.js'), text('../app/GrimoireStage.tsx'), text('../src/state/events.js')
+  ]);
   for (const term of ['getUserMedia', 'delegate: \'GPU\'', 'delegate: \'CPU\'', '_createMirror', 'HAND_CONNECTIONS', 'getTracks().forEach']) assert.match(hand, new RegExp(term.replace(/[()]/g, '\\$&')));
   assert.match(hand, /Camera permission or hand tracking was unavailable/);
-  assert.match(stage, /emit\('grimoire:attune'\)/);
+  assert.match(stage, /emit\(TO_ENGINE\.ATTUNE\)/);
+  assert.match(events, /ATTUNE: 'grimoire:attune'/);
   assert.match(stage, /Mobile never requests your camera/);
   assert.match(stage, /Hold an open palm until the ring fills/);
 });
@@ -45,7 +48,10 @@ test('the public interface is local-only and includes a motion-safe four-panel i
   await access(new URL('../output/imagegen/elemental-montage-source.png', import.meta.url));
   assert.match(stage, /Skip intro/);
   assert.match(css, /prefers-reduced-motion/);
-  assert.match(stage, /local-preferences/);
+  const preferences = await text('../src/state/preferences.js');
+  assert.match(preferences, /local-preferences/);
+  assert.match(stage, /state\/preferences/);
+  assert.doesNotMatch(stage, /localStorage/);
   await assert.rejects(access(new URL('../app/api/casts/route.ts', import.meta.url)));
   await assert.rejects(access(new URL('../gateway/server.mjs', import.meta.url)));
 });
