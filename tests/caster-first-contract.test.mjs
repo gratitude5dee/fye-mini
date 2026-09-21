@@ -19,6 +19,8 @@ test('the local stage loads a bundled caster, HDR, and all five performance phas
   assert.match(app, /this\.walk\?\.update\(dt\)/);
   for (const gesture of ['idle', 'gather', 'aim', 'release', 'recovery']) assert.match(performance, new RegExp(`'${gesture}'`));
   assert.match(performance, /setGesture\(/);
+  assert.match(performance, /live\.get\(name\).*copy\(joint\.quaternion\)/);
+  assert.match(performance, /copy\(base\)\.multiply\(_delta\)/);
   assert.doesNotMatch(plugin, /Standing Idle\.fbx/);
   assert.doesNotMatch(plugin, /spruit_sunrise\.hdr/);
 });

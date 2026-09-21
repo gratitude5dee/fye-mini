@@ -29,6 +29,10 @@ export class CasterPerformance {
     this.character = character;
     this.joints = new Map();
     this.rest = new Map();
+    // A mixer updates the supplied idle clip before this layer runs. Keep a
+    // per-frame copy of that live pose so procedural movement augments it
+    // instead of snapping every joint back to its bind rotation.
+    this.live = new Map();
     this.gesture = 'idle';
     this.element = 'wind';
     this.elapsed = 0;
@@ -39,6 +43,7 @@ export class CasterPerformance {
       if (!JOINTS.includes(node.name)) return;
       this.joints.set(node.name, node);
       this.rest.set(node.name, node.quaternion.clone());
+      this.live.set(node.name, node.quaternion.clone());
     });
   }
 
@@ -57,17 +62,22 @@ export class CasterPerformance {
 
   _joint(name, x = 0, y = 0, z = 0, weight = 1) {
     const joint = this.joints.get(name);
-    const rest = this.rest.get(name);
-    if (!joint || !rest) return;
+    const base = this.live.get(name) ?? this.rest.get(name);
+    if (!joint || !base) return;
     _euler.set(x * weight, y * weight, z * weight, 'XYZ');
     _delta.setFromEuler(_euler);
-    joint.quaternion.copy(rest).multiply(_delta);
+    joint.quaternion.copy(base).multiply(_delta);
   }
 
   update(dt, isRiding = false, locomotion = {}) {
     if (this.joints.size === 0) return;
     this.elapsed += dt;
     if (isRiding) return;
+
+    // App.frame updates CharacterController's AnimationMixer immediately
+    // before this method. Snapshot those bones once, then let every joint
+    // delta below be an additive layer over the authored idle performance.
+    for (const [name, joint] of this.joints) this.live.get(name)?.copy(joint.quaternion);
 
     const t = Math.max(0, this.elapsed - this.gestureAt);
     const pulse = 1 + Math.sin(this.elapsed * 3.2) * .045;
@@ -159,5 +169,6 @@ export class CasterPerformance {
   dispose() {
     this.joints.clear();
     this.rest.clear();
+    this.live.clear();
   }
 }
