@@ -64,6 +64,9 @@ export class Rite {
     this.ward.showWard(store.get().ward);
     this._failedAttempts = 0;
     this._timer = 0;
+    // An outcome left over from a previous Rite would be settled against line 0
+    // of this one, lighting a stone nobody earned.
+    this._pending = null;
     this._present();
     this._publish();
   }
@@ -72,8 +75,13 @@ export class Rite {
   setAside() {
     store.setFree();
     this.ward.clear();
+    // `update()` stops the moment the phase is free, so anything left showing
+    // here is left showing for the rest of the session. `clear()` takes the
+    // stones; this takes the suggestion, which used to survive into free play.
+    this.ghost.cut();
     this.layouts = [];
     this._pending = null;
+    this._timer = 0;
     this._publish();
   }
 
@@ -103,6 +111,13 @@ export class Rite {
   judge(points, count, ability) {
     const state = store.get();
     if (!this.judging || !state.layout) return 1;
+    // One line, one outcome. `judging` admits `'draw'`, which is the phase the
+    // first cast puts us in, so a second cast inside the 1.6 s beat used to
+    // overwrite the outcome and reset the timer — a player casting faster than
+    // once per beat never resolved the line at all, and a burst of any length
+    // cost exactly one attempt. The cast still flies and still looks like a
+    // cast; it simply does not get a second verdict on a line already judged.
+    if (this._pending) return outcomeStrength(this._pending);
 
     // Each failed attempt widens the accept rings a little. The player is never
     // told; being quietly helped is the only kind of help that does not sting.
@@ -146,6 +161,9 @@ export class Rite {
       this.ward.setLayout(state.layout, ELEMENT_ACCENT[state.layout?.elements?.[0]] ?? '#bfe8df');
     } else if (state.phase === 'close') {
       this.ward.setLayout(null);
+      // Not `cut()`: a burn started by the `retire()` above belongs to this same
+      // settle, and the close beat is long enough to let it play out.
+      this.ghost.hide();
     } else {
       this._present();
     }

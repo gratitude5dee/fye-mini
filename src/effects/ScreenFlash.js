@@ -37,10 +37,16 @@ export class ScreenFlash {
       this._inWindow = 0;
     }
     const overBudget = this._inWindow >= 3;
+    const admitted = Math.min(1, overBudget ? scaled * 0.25 : scaled);
+    // The guard at the top only proves `scaled` beats the live flash; a quarter
+    // of it need not. Admitting it anyway snapped the screen *down* mid-decay
+    // and recoloured it to the new element on the way — a pop-down, which is
+    // the opposite of what a rate limiter is for.
+    if (admitted <= this.strength) return;
     this._inWindow++;
 
     this.color.copy(color);
-    this.strength = Math.min(1, overBudget ? scaled * 0.25 : scaled);
+    this.strength = admitted;
     this._decay = decay;
   }
 
@@ -59,6 +65,9 @@ export class ScreenFlash {
 
   reset() {
     this.strength = 0;
+    // Both, or the first flash after a reset lands in a window that is already
+    // most of a second old and is rate-limited against flashes that are gone.
     this._inWindow = 0;
+    this._windowAt = this._now();
   }
 }

@@ -377,6 +377,11 @@ export class Ability {
     this.curve = null;
     // Pooled: a height profile left behind would lift whatever cast reuses this.
     this._lift = null;
+    // Same reason. `lightBoost` is set at impact and only ever decays inside
+    // `_updateLight`, so an instance evicted mid-impact — by the 8-cast cap, or
+    // by `clearEffects` — went back to the pool still carrying its flare and
+    // lit the *next* cast's first frames with it.
+    this.lightBoost = 0;
   }
 
   /** Free GPU resources (app teardown only — not part of pooling). */

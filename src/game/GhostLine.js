@@ -36,6 +36,10 @@ export class GhostLine {
     this._points = Array.from({ length: SAMPLES }, () => new Vector3());
     this._curve = null;
     this.visible = false;
+    // Burning away is not the same as being gone: the dissolve is advanced by
+    // `PathTrail.update`, so the line has to keep being updated after it stops
+    // being visible or it freezes on the ground at full opacity.
+    this._retiring = false;
     this._proximity = 1;
   }
 
@@ -90,8 +94,14 @@ export class GhostLine {
   }
 
   update(dt) {
-    if (!this.visible) return;
+    if (!this.visible && !this._retiring) return;
     this.trail.update(dt);
+    if (this._retiring) {
+      // The dissolve owns the look now. `PathTrail` hides itself at the end of
+      // the burn, which is the only thing that can tell us it is over.
+      if (!this.trail.mesh.visible) this._retiring = false;
+      return;
+    }
     const u = this.trail.material.uniforms;
     // Idles faint and legible; answers the player's hand as it approaches.
     u.uOpacity.value = (0.14 + this._proximity * 0.5) * settings.trail.opacity;
@@ -102,14 +112,35 @@ export class GhostLine {
     if (!this.visible) return;
     this.trail.release();
     this.visible = false;
+    this._retiring = true;
   }
 
+  /**
+   * Stop showing the suggestion.
+   *
+   * A burn already under way is left to finish. `Rite._settle` calls `retire()`
+   * and then `_present()`, which calls this — so hiding hard here meant the
+   * burn-away was cut dead on the frame it started, every time but the last
+   * line of a Rite.
+   */
   hide() {
+    if (this._retiring) { this.visible = false; return; }
     this.trail.hide();
     this.visible = false;
   }
 
+  /** Stop everything, burn included. For teardown, and for setting a Rite aside. */
+  cut() {
+    this.trail.hide();
+    this.visible = false;
+    this._retiring = false;
+  }
+
   dispose() {
+    this.cut();
+    // Taken out of the graph before its buffers go, or the scene keeps a mesh
+    // whose geometry and material have been freed.
+    this.trail.mesh.parent?.remove(this.trail.mesh);
     this.trail.dispose();
   }
 }

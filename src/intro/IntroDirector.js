@@ -62,12 +62,18 @@ export class IntroDirector {
       autoFrame: settings.camera.autoFrame
     };
 
+    // The last value this director wrote to each key. The restore compares
+    // against these so it hands back only what it is still holding: a wheel
+    // zoom or a `grimoire:patch` landing during the two seconds the opening
+    // runs used to be discarded by a restore of construction-time values.
+    this._wrote = {};
+
     // Black through the grade rather than behind an overlay, so the renderer is
     // genuinely running underneath from the first frame.
-    settings.post.gain = 0;
+    this._write('post', 'gain', 0);
     // A scripted framing must not be dragged toward whatever is casting.
-    settings.camera.autoFrame = 0;
-    settings.camera.distance = this._wantsCameraMove ? OPENING_DISTANCE : this._restore.distance;
+    this._write('camera', 'autoFrame', 0);
+    this._write('camera', 'distance', this._wantsCameraMove ? OPENING_DISTANCE : this._restore.distance);
 
     this._publish();
   }
@@ -113,9 +119,9 @@ export class IntroDirector {
     if (this.beat === 'reveal') {
       // Ease out, so the stage arrives and settles rather than creeping in.
       const eased = 1 - (1 - t) ** 3;
-      settings.post.gain = this._restore.gain * eased;
+      this._write('post', 'gain', this._restore.gain * eased);
       if (this._wantsCameraMove) {
-        settings.camera.distance = MathUtils.lerp(OPENING_DISTANCE, this._restore.distance, eased);
+        this._write('camera', 'distance', MathUtils.lerp(OPENING_DISTANCE, this._restore.distance, eased));
       }
       if (t >= 1) this._advance('settle');
       return;
@@ -130,11 +136,25 @@ export class IntroDirector {
     this._publish();
   }
 
+  /** Write a setting and remember doing so, so the restore can tell it apart. */
+  _write(group, key, value) {
+    settings[group][key] = value;
+    this._wrote[`${group}.${key}`] = value;
+  }
+
+  /** Hand a key back, unless someone else has since claimed it. */
+  _release(group, key) {
+    if (settings[group][key] === this._wrote[`${group}.${key}`]) {
+      settings[group][key] = this._restore[key];
+    }
+  }
+
   _finish() {
-    // Restore exactly, so nothing the director touched survives it.
-    settings.post.gain = this._restore.gain;
-    settings.camera.distance = this._restore.distance;
-    settings.camera.autoFrame = this._restore.autoFrame;
+    // Restore what the director is still holding, so nothing it touched
+    // survives it — and nothing the player did during it is thrown away.
+    this._release('post', 'gain');
+    this._release('camera', 'distance');
+    this._release('camera', 'autoFrame');
     this.finished = true;
     this.beat = 'play';
     this._publish();

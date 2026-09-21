@@ -156,9 +156,15 @@ export class PathDrawer extends EventEmitter {
       const t = i / (wanted - 1);
       curve.getPointAt(t, this.resampled[i]);
       this.resampled[i].y = settings.trail.height;
-      // Resampled by the same walk as the curve, so sample i of the polyline
-      // and entry i of the lift describe the same point of the stroke.
-      this.resampledLift[i] = this._sampleLiftAt(t);
+      // `getPointAt` walks the curve by arc length; the lift channel is indexed
+      // by sample. Those agree only if the samples are evenly spaced, and they
+      // are not — `minPointDistance` is a floor, so a slow drag gives a sample
+      // every 0.22 m and a fast flick gives one every several metres. Reading
+      // the lift at the raw `t` therefore attributed the hand's rise to
+      // whichever part of the stroke was drawn slowly. `getUtoTmapping` is the
+      // curve's own inverse: it returns the index parameter `u` for which
+      // `getPoint(u)` is the point `getPointAt(t)` just produced.
+      this.resampledLift[i] = this._sampleLiftAt(curve.getUtoTmapping(t));
     }
     this.resampledCount = wanted;
     this.trail.setPoints(this.resampled, wanted);

@@ -90,7 +90,13 @@ export function resolveStroke(points, count, layout, liftAt = () => 0, forgivene
     // A hazard is only clipped if the cast was actually low over it. The lift
     // is sampled at this segment's own progress, so a line that rises for the
     // crossing and comes back down clears it exactly where it rose.
-    const lift = liftAt(i / span);
+    //
+    // At the midpoint, not the leading vertex: a segment covers
+    // [i/span, (i+1)/span] and judging all of it by its start means the last
+    // segment's end — `liftAt(1)` — is never read at all, and each edge of the
+    // raised window is off by half a segment. That half-segment is exactly
+    // where the player is aiming.
+    const lift = liftAt((i + 0.5) / span);
     if (lift >= clearance) continue;
     for (let h = 0; h < hazards.length; h++) {
       const hazard = hazards[h];
