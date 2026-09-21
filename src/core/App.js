@@ -29,6 +29,7 @@ import { settings, ELEMENTS } from '../config/settings.js';
 import { RANGES, SPELLWRIGHT_COLOR_PATHS, enginePath } from '../config/spell-contract.js';
 import { Rite } from '../game/Rite.js';
 import { IntroDirector } from '../intro/IntroDirector.js';
+import { TO_ENGINE, TO_UI } from '../state/events.js';
 
 /** Owns the local stage, input sources, caster performance, and effects. */
 export class App {
@@ -89,10 +90,10 @@ export class App {
       onElement: (element) => this.selectElement(element),
       onStatus: (message, state = 'notice') => {
         this.hud?.showToast(message);
-        window.dispatchEvent(new CustomEvent('grimoire:input-status', { detail: { message, state } }));
+        window.dispatchEvent(new CustomEvent(TO_UI.INPUT_STATUS, { detail: { message, state } }));
       },
       // Throttled inside the tracker, so this is safe to forward straight on.
-      onState: (state) => window.dispatchEvent(new CustomEvent('grimoire:input-status', { detail: state }))
+      onState: (state) => window.dispatchEvent(new CustomEvent(TO_UI.INPUT_STATUS, { detail: state }))
     });
     this.pathDrawer = new PathDrawer(this.camera);
     this.scene.add(this.pathDrawer.object3D);
@@ -157,7 +158,7 @@ export class App {
       if (this.rideNextStroke && this.walk?.begin(curve)) {
         this.rideNextStroke = false;
         this.caster?.setGesture('recovery', { element: 'wind' });
-        window.dispatchEvent(new CustomEvent('grimoire:ride-status', { detail: { active: false } }));
+        window.dispatchEvent(new CustomEvent(TO_UI.RIDE_STATUS, { detail: { active: false } }));
         this.hud.showToast('The caster rides the current.');
         return;
       }
@@ -199,17 +200,17 @@ export class App {
     };
     this._onGrimoireRide = () => {
       this.rideNextStroke = !this.rideNextStroke;
-      window.dispatchEvent(new CustomEvent('grimoire:ride-status', { detail: { active: this.rideNextStroke } }));
+      window.dispatchEvent(new CustomEvent(TO_UI.RIDE_STATUS, { detail: { active: this.rideNextStroke } }));
       this.hud.showToast(this.rideNextStroke ? 'Draw a path for the air ride.' : 'Casting mode restored.');
     };
-    window.addEventListener('grimoire:select', this._onGrimoireSelect);
-    window.addEventListener('grimoire:patch', this._onGrimoirePatch);
-    window.addEventListener('grimoire:attune', this._onGrimoireAttune);
-    window.addEventListener('grimoire:stop-hands', this._onGrimoireStopHands);
-    window.addEventListener('grimoire:cast', this._onGrimoireCast);
-    window.addEventListener('grimoire:ride', this._onGrimoireRide);
-    window.addEventListener('grimoire:rite', this._onGrimoireRite);
-    window.addEventListener('grimoire:skip-intro', this._onGrimoireSkipIntro);
+    window.addEventListener(TO_ENGINE.SELECT, this._onGrimoireSelect);
+    window.addEventListener(TO_ENGINE.PATCH, this._onGrimoirePatch);
+    window.addEventListener(TO_ENGINE.ATTUNE, this._onGrimoireAttune);
+    window.addEventListener(TO_ENGINE.STOP_HANDS, this._onGrimoireStopHands);
+    window.addEventListener(TO_ENGINE.CAST, this._onGrimoireCast);
+    window.addEventListener(TO_ENGINE.RIDE, this._onGrimoireRide);
+    window.addEventListener(TO_ENGINE.RITE, this._onGrimoireRite);
+    window.addEventListener(TO_ENGINE.SKIP_INTRO, this._onGrimoireSkipIntro);
   }
 
   _applyFlatPatch(patch) {
@@ -256,7 +257,7 @@ export class App {
     this.caster?.setGesture('recovery', { element: this.abilities.selected });
     if (!ability) return;
     const element = ability.element === 'wind' ? 'air' : ability.element;
-    window.dispatchEvent(new CustomEvent('grimoire:impact', {
+    window.dispatchEvent(new CustomEvent(TO_UI.IMPACT, {
       detail: { element, x: ability.position.x, z: ability.position.z, u: ability.u }
     }));
   }
@@ -264,7 +265,7 @@ export class App {
   _recordCast(pathLength) {
     const element = this.abilities.selected === 'wind' ? 'air' : this.abilities.selected;
     // Casts are ephemeral: only the browser's visual stage receives this event.
-    window.dispatchEvent(new CustomEvent('grimoire:cast-complete', { detail: { element, pathLength } }));
+    window.dispatchEvent(new CustomEvent(TO_UI.CAST_COMPLETE, { detail: { element, pathLength } }));
   }
 
   _handleAction(action) {
@@ -280,7 +281,7 @@ export class App {
       // The panel is React's; the key is the engine's. Forwarding rather than
       // toggling `hud.toggleHelp()`, which reached for markup React has never
       // rendered and so did nothing at all.
-      case 'toggleHelp': window.dispatchEvent(new CustomEvent('grimoire:help')); break;
+      case 'toggleHelp': window.dispatchEvent(new CustomEvent(TO_UI.HELP)); break;
       case 'togglePose': {
         const seated = this.character.togglePose?.();
         this.hud.showToast(seated ? 'The caster sits.' : 'The caster stands.');
@@ -288,7 +289,7 @@ export class App {
       }
       case 'toggleMode': {
         this.rideNextStroke = !this.rideNextStroke;
-        window.dispatchEvent(new CustomEvent('grimoire:ride-status', { detail: { active: this.rideNextStroke } }));
+        window.dispatchEvent(new CustomEvent(TO_UI.RIDE_STATUS, { detail: { active: this.rideNextStroke } }));
         this.hud.showToast(this.rideNextStroke ? 'Draw the path you want to ride.' : 'Back to casting.');
         break;
       }
@@ -303,7 +304,7 @@ export class App {
     // map, but this toast was real, and cutting the method without moving the
     // line would have silently deleted a visible behaviour.
     this.hud.showToast(`${element === 'wind' ? 'Gale' : element[0].toUpperCase() + element.slice(1)} selected`);
-    window.dispatchEvent(new CustomEvent('grimoire:selected', { detail: { element: element === 'wind' ? 'air' : element } }));
+    window.dispatchEvent(new CustomEvent(TO_UI.SELECTED, { detail: { element: element === 'wind' ? 'air' : element } }));
   }
 
   clearEffects() {
@@ -348,7 +349,7 @@ export class App {
     // schedules a 220ms timeout into a 0.7s fade — is what stops the interface
     // spending most of a second insisting the stage is still waking while the
     // loader dissolves over a live scene.
-    window.dispatchEvent(new CustomEvent('grimoire:ready', { detail: { app: this } }));
+    window.dispatchEvent(new CustomEvent(TO_UI.READY, { detail: { app: this } }));
     this.intro.onStageReady();
     this.loading.hide();
     this.start();
@@ -436,13 +437,13 @@ export class App {
     this.editor.dispose();
     this.rig.dispose();
     this.renderer.dispose();
-    window.removeEventListener('grimoire:select', this._onGrimoireSelect);
-    window.removeEventListener('grimoire:patch', this._onGrimoirePatch);
-    window.removeEventListener('grimoire:attune', this._onGrimoireAttune);
-    window.removeEventListener('grimoire:stop-hands', this._onGrimoireStopHands);
-    window.removeEventListener('grimoire:cast', this._onGrimoireCast);
-    window.removeEventListener('grimoire:ride', this._onGrimoireRide);
-    window.removeEventListener('grimoire:rite', this._onGrimoireRite);
-    window.removeEventListener('grimoire:skip-intro', this._onGrimoireSkipIntro);
+    window.removeEventListener(TO_ENGINE.SELECT, this._onGrimoireSelect);
+    window.removeEventListener(TO_ENGINE.PATCH, this._onGrimoirePatch);
+    window.removeEventListener(TO_ENGINE.ATTUNE, this._onGrimoireAttune);
+    window.removeEventListener(TO_ENGINE.STOP_HANDS, this._onGrimoireStopHands);
+    window.removeEventListener(TO_ENGINE.CAST, this._onGrimoireCast);
+    window.removeEventListener(TO_ENGINE.RIDE, this._onGrimoireRide);
+    window.removeEventListener(TO_ENGINE.RITE, this._onGrimoireRite);
+    window.removeEventListener(TO_ENGINE.SKIP_INTRO, this._onGrimoireSkipIntro);
   }
 }

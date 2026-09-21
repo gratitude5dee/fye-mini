@@ -27,6 +27,24 @@ const IDLE_RITE: RiteState = {
 type Dial = { label: string; path: string; min: number; max: number; step: number; value: number };
 
 /**
+ * What the tracker publishes through `INPUT_STATUS`.
+ *
+ * One channel carries two kinds of payload: a health message with a state, and
+ * the throttled continuous read. Every field is optional because either kind
+ * may arrive, and a missing field must never blank a good value.
+ */
+type HandDetail = {
+  message?: string;
+  state?: InputState;
+  engaged?: boolean;
+  wake?: number;
+  lift?: number;
+  spread?: number;
+  dock?: string | null;
+  dockHold?: number;
+};
+
+/**
  * The one place an element's name and colour are written.
  *
  * There were three, and they disagreed — this list, `ELEMENT_META` in the
@@ -85,8 +103,12 @@ export function GrimoireStage() {
   const [storageAvailable, setStorageAvailable] = useState(true);
   const [rite, setRite] = useState<RiteState>(IDLE_RITE);
   const [introBeat, setIntroBeat] = useState('dark');
-  const [hand, setHand] = useState({ engaged: false, wake: 0, lift: 0, spread: 0 });
+  const [hand, setHand] = useState({ engaged: false, wake: 0, lift: 0, spread: 0, dock: null as string | null, dockHold: 0 });
   const [helpOpen, setHelpOpen] = useState(false);
+  // A phone never gets the camera — `enableHands` refuses on a coarse pointer.
+  // Offering the button anyway is an invitation the product declines, so the
+  // same query that refuses it also decides whether it is there to press.
+  const [coarsePointer, setCoarsePointer] = useState(false);
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
 
@@ -109,6 +131,8 @@ export function GrimoireStage() {
   const activeDials = DIALS[element];
 
   useEffect(() => {
+    // Read after mount, never during render: the server has no `matchMedia`.
+    setCoarsePointer(Boolean(window.matchMedia?.('(pointer: coarse)').matches));
     const preferences = readPreferences();
     setIntroVisible(!preferences.introSeen);
     setElement(preferences.element as ElementId);
@@ -126,14 +150,18 @@ export function GrimoireStage() {
   useEffect(() => {
     const ready = () => setStageReady(true);
     const inputStatusListener = (event: Event) => {
-      const detail = (event as CustomEvent<{ message?: string; state?: InputState }>).detail;
+      const detail = (event as CustomEvent<HandDetail>).detail;
       // The tracker publishes two kinds of detail through this one channel: a
       // health message, and the throttled continuous state. Only the former
       // carries a message, so an absent one must not blank the status line.
       if (detail?.message) setInputStatus(detail.message);
       if (detail?.state) setInputState(detail.state);
       if (typeof detail?.wake === 'number') {
-        setHand({ engaged: Boolean(detail.engaged), wake: detail.wake, lift: detail.lift ?? 0, spread: detail.spread ?? 0 });
+        setHand({
+          engaged: Boolean(detail.engaged), wake: detail.wake,
+          lift: detail.lift ?? 0, spread: detail.spread ?? 0,
+          dock: detail.dock ?? null, dockHold: detail.dockHold ?? 0
+        });
       }
     };
     const rideStatusListener = (event: Event) => setRideArmed(Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active));
@@ -149,16 +177,37 @@ export function GrimoireStage() {
       const detail = (event as CustomEvent<RiteState>).detail;
       if (detail) setRite(detail);
     };
+    const selectedListener = (event: Event) => {
+      const chosen = (event as CustomEvent<{ element?: ElementId }>).detail?.element;
+      if (!chosen) return;
+      // Idempotent on the round trip: a click emits SELECT, the engine answers
+      // SELECTED, and setting the state it already holds re-renders nothing and
+      // re-emits nothing, because the replay effect is keyed on the value.
+      setElement((current) => {
+        if (current !== chosen) persistPreferences({ element: chosen });
+        return chosen;
+      });
+    };
+    window.addEventListener(TO_UI.SELECTED, selectedListener);
     window.addEventListener(TO_UI.CAST_COMPLETE, castListener);
     window.addEventListener(TO_UI.RITE_STATE, riteListener);
     // `H` is bound in the engine's InputManager, so the key and the button have
     // to end up in the same place rather than two panels that disagree.
-    const helpListener = () => setHelpOpen((open) => !open);
+    // Closes the others first, exactly as the buttons do. Without this, `H`
+    // over an open Workshop rendered two `aria-modal` dialogs at once, and the
+    // help sheet's inert walk marked the Workshop — the one sibling the walk
+    // does not skip for itself — unclickable while still on screen.
+    const helpListener = () => {
+      setHandsOpen(false);
+      setWorkshopOpen(false);
+      setHelpOpen((open) => !open);
+    };
     window.addEventListener(TO_UI.HELP, helpListener);
     return () => {
       window.removeEventListener(TO_UI.READY, ready);
       window.removeEventListener(TO_UI.INPUT_STATUS, inputStatusListener);
       window.removeEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
+      window.removeEventListener(TO_UI.SELECTED, selectedListener);
       window.removeEventListener(TO_UI.CAST_COMPLETE, castListener);
       window.removeEventListener(TO_UI.RITE_STATE, riteListener);
       window.removeEventListener(TO_UI.HELP, helpListener);
@@ -262,7 +311,7 @@ export function GrimoireStage() {
         <header className="stage-header">
           <div className="wordmark"><span>Local elemental stage</span><strong>Living Grimoire</strong></div>
           <div className="header-actions">
-            <button className="quiet-button" onClick={() => { setWorkshopOpen(false); setHelpOpen(false); setHandsOpen(true); }} aria-expanded={handsOpen}>Hand mode</button>
+            {!coarsePointer && <button className="quiet-button" onClick={() => { setWorkshopOpen(false); setHelpOpen(false); setHandsOpen(true); }} aria-expanded={handsOpen}>Hand mode</button>}
             <button className="quiet-button" onClick={() => { setHandsOpen(false); setHelpOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>
           </div>
         </header>
@@ -286,10 +335,34 @@ export function GrimoireStage() {
         </section>}
 
         <section className="stage-hud" aria-label="Casting controls">
-          <div className="element-selector" role="group" aria-label="Choose an element">
-            {ELEMENTS.map((entry) => <button key={entry.id} data-element={entry.id} className={entry.id === element ? 'is-active' : ''} aria-pressed={entry.id === element} onClick={() => selectElement(entry.id)}>
-              <i>{entry.sigil}</i><span>{entry.label}</span>
-            </button>)}
+          <div className={`dock ${stageReady ? '' : 'is-waking'}`} data-dock role="group" aria-label="Choose an element">
+            {ELEMENTS.map((entry, index) => {
+              const active = entry.id === element;
+              // The Rite names which elements answer the line in front of you.
+              // Outside a Rite nothing is offered, so nothing is marked — the
+              // slot must not imply a preference the game is not expressing.
+              const offered = rite.phase !== 'free' && rite.phase !== 'close'
+                && rite.elements.includes(entry.id);
+              const dwell = hand.dock === entry.id ? hand.dockHold : 0;
+              return <button
+                key={entry.id}
+                /* Stays on the button, not on a wrapper: `HandInput._trackDock`
+                   finds a slot with `closest('[data-element]')`, and moving the
+                   attribute up one level breaks hand selection in silence. */
+                data-element={entry.id}
+                className={`dock__slot ${active ? 'is-active' : ''} ${offered ? 'is-offered' : ''} ${dwell > 0 ? 'is-dwelling' : ''}`}
+                style={{ '--dwell': dwell, '--slot': entry.color } as CSSProperties}
+                aria-pressed={active}
+                aria-describedby={offered ? 'dock-offered' : undefined}
+                onClick={() => selectElement(entry.id)}
+              >
+                <i aria-hidden="true">{entry.sigil}</i>
+                <span>{entry.label}</span>
+                <kbd aria-hidden="true">{index + 1}</kbd>
+                <u aria-hidden="true" />
+              </button>;
+            })}
+            <p id="dock-offered" hidden>Answers the line in front of you.</p>
           </div>
           <button className="cast-button" disabled={!stageReady} onClick={() => emit(TO_ENGINE.CAST)}><span>{stageReady ? 'Cast' : 'Waking'}</span><b>{currentElement.label}</b></button>
           <button

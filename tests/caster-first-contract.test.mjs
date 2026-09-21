@@ -79,7 +79,10 @@ test('help is reachable by button and by key, and lands in one place', async () 
   // `H` is bound in the engine's InputManager. It used to call a HUD method
   // that reached for markup React has never rendered, so the key did nothing.
   // It now forwards, and the key and the button open the same panel.
-  assert.match(app, /case 'toggleHelp'.*grimoire:help/s);
+  // Through the shared contract, not a literal: `events.js` below pins the wire
+  // name, and this pins that the engine reaches it by the constant.
+  assert.match(app, /case 'toggleHelp'.*TO_UI\.HELP/s);
+  assert.doesNotMatch(app, /'grimoire:/);
   assert.doesNotMatch(app, /case 'toggleHelp': this\.hud\.toggleHelp/);
   assert.match(events, /HELP: 'grimoire:help'/);
   assert.match(stage, /TO_UI\.HELP/);

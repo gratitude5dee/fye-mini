@@ -15,10 +15,32 @@
 /* Every direct child opts back in. The previous per-child rule missed .cast-button,
    which left the stage's primary action unclickable. */
 .stage-hud > * { pointer-events: auto; }
-.element-selector { display: flex; gap: 3px; padding: 4px; border: 1px solid rgb(246 241 232 / .2); border-radius: 18px; background: rgb(10 12 15 / .68); box-shadow: 0 16px 38px #0008; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
-.element-selector button { display: grid; min-width: 61px; gap: 3px; border: 0; border-radius: 13px; padding: 7px 9px; color: #c6c4bf; background: transparent; font: 700 9px/1 var(--font-sans); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
-.element-selector button i { color: var(--accent); font: 23px/1 Georgia, serif; font-style: normal; text-shadow: 0 0 14px var(--accent); }
-.element-selector button.is-active { color: var(--ink); background: color-mix(in srgb, var(--accent) 19%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent); }
+/* --- The dock ----------------------------------------------------------- */
+/* Four slots, each carrying what the player needs to decide: the sigil, the
+   name, the key that reaches it, whether it is in hand, whether the Rite's
+   current line answers to it, and — for a hand — how far its dwell has filled.
+   The slot's own hue comes from `--slot`, not from `--accent`: `--accent` is
+   whatever is in hand, so painting every sigil with it made three of the four
+   sigils lie about which element they were. */
+.dock { display: flex; gap: 3px; padding: 4px; border: 1px solid rgb(246 241 232 / .2); border-radius: 18px; background: rgb(10 12 15 / .68); box-shadow: 0 16px 38px #0008; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+/* Readiness, shown rather than enforced: a slot clicked while the stage is
+   still waking is replayed the moment it is ready, so the slot stays live. */
+.dock.is-waking { opacity: .62; }
+.dock__slot { position: relative; display: grid; min-width: 61px; gap: 3px; border: 0; border-radius: 13px; padding: 7px 9px; color: #c6c4bf; background: transparent; font: 700 9px/1 var(--font-sans); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; transition: background var(--g-base) ease, color var(--g-base) ease; }
+.dock__slot i { color: var(--slot); font: 23px/1 Georgia, serif; font-style: normal; text-shadow: 0 0 14px color-mix(in srgb, var(--slot) 60%, transparent); }
+.dock__slot kbd { position: absolute; top: 3px; right: 4px; min-width: 0; border: 0; padding: 0; background: none; color: var(--muted); font: 700 8px/1 var(--font-sans); opacity: .6; }
+.dock__slot.is-active { color: var(--ink); background: color-mix(in srgb, var(--slot) 19%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 75%, transparent); }
+.dock__slot.is-active kbd { opacity: 1; }
+.dock__slot:hover:not(.is-active) { background: rgb(246 241 232 / .06); }
+/* Offered: the Rite's current line answers to this element. A steady mark, not
+   an animation — it is a fact about the line, not a thing asking to be pressed.
+   Outside a Rite no slot carries it. */
+.dock__slot.is-offered::before { position: absolute; top: 4px; left: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--slot); box-shadow: 0 0 9px var(--slot); content: ''; }
+/* The dwell ring: the same 400 ms fill the pose ring uses, so the two hand
+   affordances read as one language. `<u>` because it carries no meaning of its
+   own — the state it draws is already in the button's class and aria. */
+.dock__slot u { position: absolute; inset: 1px; border: 2px solid var(--slot); border-radius: 12px; clip-path: inset(0 calc((1 - var(--dwell, 0)) * 100%) 0 0); filter: drop-shadow(0 0 5px var(--slot)); opacity: 0; }
+.dock__slot.is-dwelling u { opacity: 1; }
 .cast-button { min-width: 148px; border: 1px solid color-mix(in srgb, var(--accent) 78%, white); border-radius: 14px; padding: 12px 19px; color: #0e1215; background: var(--accent); box-shadow: 0 8px 32px color-mix(in srgb, var(--accent) 42%, transparent); font: 800 10px/1 var(--font-sans); letter-spacing: .16em; text-transform: uppercase; cursor: pointer; }
 .cast-button b { display: block; margin-top: 4px; font: 600 22px/.9 var(--font-display); letter-spacing: -.02em; text-transform: none; }
 .cast-button:disabled { opacity: .55; cursor: wait; }
@@ -55,8 +77,54 @@
 .hand-mirror { --hand-accent: #bfe8df; position: fixed; z-index: 45; right: 20px; bottom: 20px; width: 164px; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid rgb(246 241 232 / .32); border-radius: 15px; background: #07090b; box-shadow: 0 16px 40px #000b; pointer-events: none; }.hand-mirror video, .hand-mirror canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }.hand-mirror canvas { transform: none; }.hand-mirror span { position: absolute; right: 7px; bottom: 7px; border-radius: 999px; padding: 4px 6px; color: #fff; background: rgb(0 0 0 / .54); font: 700 7px/1 var(--font-sans); letter-spacing: .09em; text-transform: uppercase; }.hand-mirror i { position: absolute; inset: 8px; border: 2px solid var(--hand-accent); border-radius: 50%; clip-path: inset(0 calc((1 - var(--hold, 0)) * 100%) 0 0); filter: drop-shadow(0 0 5px var(--hand-accent)); opacity: 0; transition: opacity .12s ease; }.hand-mirror.is-pose i { opacity: 1; }.hand-mirror.is-tracking { border-color: var(--hand-accent); box-shadow: 0 0 24px -9px var(--hand-accent), 0 16px 40px #000b; }
 .grimoire-stage :is(button, input):focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 @keyframes status-pulse { 50% { transform: scale(.55); opacity: .4; } }
-@media (max-width: 680px) { .stage-header { padding: 17px; }.wordmark strong { font-size: 28px; }.header-actions { gap: 5px; }.quiet-button { padding: 9px 10px; font-size: 9px; }.stage-message { top: 24%; }.element-selector button { min-width: 54px; padding: 7px 5px; }.element-selector button i { font-size: 20px; }.side-sheet { top: auto; right: 9px; bottom: 9px; width: calc(100vw - 18px); max-height: min(680px, calc(100dvh - 18px)); transform: none; }.hand-mirror { right: 12px; bottom: 166px; width: 132px; }.intro__copy h1 { font-size: clamp(43px, 13vw, 74px); }.intro__copy span { max-width: 260px; }.intro__skip { right: 13px; bottom: 13px; } }
-@media (pointer: coarse) { .element-selector button, .quiet-button, .ride-button, .intro__skip { min-height: 42px; }.cast-button { min-height: 52px; } }
+/* --- Three layouts, not one -------------------------------------------- */
+/* One 680px breakpoint was not enough for a product whose primary input is a
+   drag across the stage: the amount of stage a drag has to cross is the whole
+   difficulty curve, and it is different on each of these. */
+
+/* Phone. The dock becomes a bottom bar inside the thumb arc, spanning the
+   viewport so the far slot is still reachable one-handed, and the sheets take
+   the full width because a 360px column beside a 360px viewport is not a
+   panel. The hand mirror is never shown: a phone never gets the camera. */
+@media (max-width: 679px) {
+  .stage-header { padding: 17px; }
+  .wordmark strong { font-size: 28px; }
+  .header-actions { gap: 5px; }
+  .quiet-button { padding: 9px 10px; font-size: 9px; }
+  .stage-message { top: 22%; }
+  .stage-hud { right: 0; bottom: 0; left: 0; gap: 7px; padding: 0 0 max(10px, env(safe-area-inset-bottom)); }
+  .dock { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 0; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .dock__slot { flex: 1 1 0; min-width: 0; padding: 7px 4px; }
+  .dock__slot i { font-size: 20px; }
+  /* The key hint is a desktop affordance. A phone has no keyboard to press it
+     with, so printing it is furniture that costs a line of type. */
+  .dock__slot kbd { display: none; }
+  /* Order: the dock last, so it is the thing the thumb lands on. */
+  .stage-hud .dock { order: 3; }
+  .stage-hud { display: flex; flex-direction: column; align-items: center; }
+  .cast-button { min-width: min(320px, calc(100vw - 32px)); }
+  .side-sheet { top: auto; right: 0; bottom: 0; left: 0; width: 100%; max-height: min(78dvh, calc(100dvh - 18px)); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 22px 22px 0 0; transform: none; }
+  .workshop { right: 0; }
+  .hand-mirror { display: none; }
+  .intro__copy h1 { font-size: clamp(43px, 13vw, 74px); }
+  .intro__copy span { max-width: 260px; }
+  .intro__skip { right: 13px; bottom: 13px; }
+}
+
+/* Tablet. The dock keeps its pill and its bottom-centre position; the sheets
+   become right-hand panels at the width the spec names, which leaves the
+   middle of the stage clear to draw across while one is open. */
+@media (min-width: 680px) and (max-width: 1024px) {
+  .stage-message { top: 26%; }
+  .side-sheet { right: 16px; width: 380px; max-height: min(680px, calc(100dvh - 44px)); }
+  .workshop { right: 16px; }
+  .hand-mirror { bottom: 128px; }
+}
+
+/* Desktop is the layout every rule above is a deviation from, so it carries no
+   block of its own. */
+
+@media (pointer: coarse) { .dock__slot, .quiet-button, .ride-button, .intro__skip { min-height: 42px; }.cast-button { min-height: 52px; } }
 @media (prefers-reduced-motion: reduce) { .grimoire-stage *, .grimoire-stage *::before, .grimoire-stage *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
 
 /* --- The Rite ----------------------------------------------------------- */
@@ -70,7 +138,7 @@
 .ward-stones li.is-lit { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 14px -2px var(--accent); }
 .ward-attempts { color: var(--muted); font: 700 9px/1 var(--font-sans); letter-spacing: .18em; text-transform: uppercase; }
 
-@media (max-width: 680px) { .ward-readout { top: 78px; } }
+@media (max-width: 679px) { .ward-readout { top: 78px; } }
 @media (prefers-reduced-motion: reduce) { .ward-stones li { transition: none; } }
 
 /* --- What the tracker can see ------------------------------------------- */
@@ -105,7 +173,7 @@ kbd { display: inline-block; min-width: 15px; border: 1px solid rgb(246 241 232 
 
 /* The stage dock owns the bottom centre on a phone, so the button steps up out
    of its way rather than sitting on top of the ride control. */
-@media (max-width: 680px) { .help-button { right: 12px; bottom: auto; top: 76px; } }
+@media (max-width: 679px) { .help-button { right: 12px; bottom: auto; top: 76px; } }
 
 /* --- The loading screen ------------------------------------------------- */
 /* Moved here from `src/ui/styles.css`, which was deleted. It is the first thing

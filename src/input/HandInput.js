@@ -1,5 +1,7 @@
 import { Vector2 } from 'three';
 
+import { TO_UI } from '../state/events.js';
+
 const INSET = 0.15;
 const PINCH_DOWN = 0.32;
 const PINCH_UP = 0.48;
@@ -99,7 +101,7 @@ export class HandInput {
     this._startPromise = null;
     this._startAttempt = 0;
     this._onElementAccent = (event) => this._setAccent(event.detail?.element);
-    window.addEventListener('grimoire:selected', this._onElementAccent);
+    window.addEventListener(TO_UI.SELECTED, this._onElementAccent);
   }
 
   async start() {
@@ -312,13 +314,16 @@ export class HandInput {
       this.input.emit('draw:end', this.filtered);
     }
     if (this.isDrawing) this.input.emit('draw:move', this.filtered);
-    this._publish(now, 'found');
 
     if (!this.isDrawing) {
       this._trackPose(landmarks, now);
       this._trackDock(rawX, rawY, now);
     }
     else this._resetPose();
+    // Published last, so what the panel mirrors is this frame's pose and this
+    // frame's dwell. Publishing before the two trackers ran meant the rings on
+    // screen were always one frame behind the hand that drove them.
+    this._publish(now, 'found');
   }
 
   _handleDropout(now) {
@@ -368,6 +373,13 @@ export class HandInput {
       pinch: this.isDrawing ? 1 : 0,
       lift: this.lift,
       spread: this.spread,
+      // The slot the hand is resting over, and how far its dwell has filled.
+      // Without these the dock's 400 ms dwell was invisible until it fired,
+      // which reads as the interface choosing an element on its own.
+      dock: this.dockElement,
+      dockHold: this.dockElement && !this.dockTriggered
+        ? clamp((now - this.dockStartedAt) / DOCK_DWELL_MS, 0, 1)
+        : (this.dockTriggered ? 1 : 0),
       tracking,
       delegate: this._delegate
     });
@@ -418,7 +430,11 @@ export class HandInput {
 
   _trackDock(rawX, rawY, now) {
     const target = document.elementFromPoint(rawX * window.innerWidth, rawY * window.innerHeight)?.closest?.('[data-element]');
-    const next = target?.dataset?.element ?? null;
+    // Scoped to the dock. The Workshop's preset tiles carry `data-element` too,
+    // so a hand resting over one used to take that element after 400 ms without
+    // applying the preset it was resting on — half of an action nobody asked
+    // for. Only a slot inside `[data-dock]` counts.
+    const next = target?.closest?.('[data-dock]') ? (target.dataset?.element ?? null) : null;
     if (next !== this.dockElement) {
       this.dockElement = next;
       this.dockStartedAt = now;
@@ -503,10 +519,25 @@ export class HandInput {
     this._context = null;
     this._filter = null;
     this._delegate = null;
+    // These pointed into the mirror that was just removed.
+    this._label = null;
+    this._ring = null;
+    this.dockElement = null;
+    this.dockStartedAt = 0;
+    this.dockTriggered = false;
+    // One last word, so the panel stops asserting things that are no longer
+    // true. `_publish` would be swallowed by its own throttle here, and the
+    // point of this call is that it is the final one.
+    this._publishedAt = 0;
+    this.onState?.({
+      engaged: false, wake: 0, pose: null, hold: 0, pinch: 0,
+      lift: 0, spread: 0, dock: null, dockHold: 0,
+      tracking: 'lost', delegate: null
+    });
   }
 
   dispose() {
     this.stop();
-    window.removeEventListener('grimoire:selected', this._onElementAccent);
+    window.removeEventListener(TO_UI.SELECTED, this._onElementAccent);
   }
 }
