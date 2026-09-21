@@ -40,10 +40,9 @@ test('the public interface is local-only and includes a motion-safe four-panel i
   assert.doesNotMatch(app, /fetch\(/);
   assert.doesNotMatch(packageJson, /mongodb/);
   assert.doesNotMatch(layout, /next\/headers|generateMetadata/);
-  for (const panel of ['fire-fallback.svg', 'water-fallback.svg', 'earth-fallback.svg', 'wind-fallback.svg']) {
-    assert.match(stage, new RegExp(panel.replace('.', '\\.')));
-    await access(new URL(`../public/intro/${panel}`, import.meta.url));
-  }
+  assert.match(stage, /elemental-montage\.png/);
+  await access(new URL('../public/intro/elemental-montage.png', import.meta.url));
+  await access(new URL('../output/imagegen/elemental-montage-source.png', import.meta.url));
   assert.match(stage, /Skip intro/);
   assert.match(css, /prefers-reduced-motion/);
   assert.match(stage, /local-preferences/);

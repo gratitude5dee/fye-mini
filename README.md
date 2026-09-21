@@ -23,7 +23,7 @@ Use the **Hand mode** button on desktop to grant camera access directly from the
 
 The code foundation comes from [AvatarCastingAbilitiesThreeJS](https://github.com/achrefelouafi/AvatarCastingAbilitiesThreeJS), whose source code is MIT licensed. This repository includes its upstream `Standing Idle.fbx` and `spruit_sunrise.hdr` under `public/` for local development. The upstream README says those binary assets retain their original licenses; confirm their public redistribution rights before publishing a production bundle. Substitute independently licensed originals if that confirmation is unavailable.
 
-The four opening panels in `public/intro/` are original SVG fallbacks. The image-generation source slot is `output/imagegen/`; approved original, text-free generated panels can replace these fallbacks when image API billing is available. Do not use franchise characters, logos, symbols, or in-image text.
+The opening montage in `public/intro/elemental-montage.png` was generated with native OpenAI image generation. Its source is retained at `output/imagegen/elemental-montage-source.png`. It depicts original, generic elemental martial artists only—no franchise characters, logos, symbols, or in-image text.
 
 ## Deployment
 

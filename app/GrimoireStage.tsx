@@ -15,11 +15,12 @@ const ELEMENTS: Array<{ id: ElementId; label: string; sigil: string; color: stri
   { id: 'air', label: 'Wind', sigil: '⌁', color: '#bfe8df' }
 ];
 
+const INTRO_ART = '/intro/elemental-montage.png';
 const INTRO_PANELS = [
-  { id: 'fire', title: 'Fire', art: '/intro/fire-fallback.svg' },
-  { id: 'water', title: 'Water', art: '/intro/water-fallback.svg' },
-  { id: 'earth', title: 'Stone', art: '/intro/earth-fallback.svg' },
-  { id: 'air', title: 'Wind', art: '/intro/wind-fallback.svg' }
+  { id: 'fire', title: 'Fire' },
+  { id: 'water', title: 'Water' },
+  { id: 'earth', title: 'Stone' },
+  { id: 'air', title: 'Wind' }
 ] as const;
 
 const DIALS: Record<ElementId, Dial[]> = {
@@ -219,8 +220,9 @@ export function GrimoireStage() {
       </div>
 
       {introVisible && <section className="intro" role="dialog" aria-modal="true" aria-label="Elemental introduction">
+        <img className="intro__art" src={INTRO_ART} alt="" />
         <div className="intro__panels" aria-hidden="true">
-          {INTRO_PANELS.map((panel, index) => <figure key={panel.id} className={`intro__panel intro__panel--${panel.id}`} style={{ '--panel-index': index } as CSSProperties}><img src={panel.art} alt="" /><figcaption>{panel.title}</figcaption></figure>)}
+          {INTRO_PANELS.map((panel, index) => <figure key={panel.id} className={`intro__panel intro__panel--${panel.id}`} style={{ '--panel-index': index } as CSSProperties}><figcaption>{panel.title}</figcaption></figure>)}
         </div>
         <div className="intro__copy"><p>Four forces. One hand.</p><h1>Become the motion.</h1><span>Camera frames and landmarks stay in this browser.</span></div>
         <button className="intro__skip" onClick={dismissIntro}>Skip intro</button>
