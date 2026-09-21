@@ -32,7 +32,8 @@ test('hand tracking remains direct-click, local, mirrored, and fallback-safe', a
   assert.match(stage, /emit\(TO_ENGINE\.ATTUNE\)/);
   assert.match(events, /ATTUNE: 'grimoire:attune'/);
   assert.match(stage, /Mobile never requests your camera/);
-  assert.match(stage, /Hold an open palm until the ring fills/);
+  assert.match(stage, /Guide for \{currentElement\.label\}/);
+  assert.match(stage, /Open palm/);
 });
 
 test('the public interface is local-only and opens with a motion-safe, skippable sequence', async () => {
@@ -43,6 +44,8 @@ test('the public interface is local-only and opens with a motion-safe, skippable
   assert.doesNotMatch(app, /fetch\(/);
   assert.doesNotMatch(packageJson, /mongodb/);
   assert.doesNotMatch(layout, /next\/headers|generateMetadata/);
+  assert.match(layout, /const title = 'FYE'/);
+  assert.match(stage, />FYE</);
   const intro = await text('../src/intro/IntroDirector.js');
   // The opening is the renderer, not a picture of it: it fades the real grade
   // and drives the rig's own settings rather than covering the stage.

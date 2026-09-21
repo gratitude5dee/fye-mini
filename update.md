@@ -1,4 +1,4 @@
-# update.md — The Living Grimoire
+# update.md — FYE
 
 **Target repository:** `gratitude5dee/fye-mini` · branch `claude/epic-hypatia-eyicbk` · deployed at `avatar.wzrd.tech`
 **Audience:** the engineer implementing this directly into the repository.
@@ -8,20 +8,20 @@
 
 ## Build status
 
-Implemented on this branch, verified by `npm test` (54 contract tests) and by driving the real app in a browser:
+Implemented on this branch, verified by `npm test` (82 contract tests) and by driving the real app in a browser:
 
 | Phase | State |
 |---|---|
 | **P0 Foundations** | **Built.** Event contract, preferences with the v2 migration, the session store, the `rite` settings block, the dead-code removal, and all three live bugs. |
 | **P1 Intro** | **Built.** `IntroDirector` fades the renderer's own grade and drives the rig's settings, gated on readiness. The 2.58 MiB montage is deleted. A `sigil` beat was added after the reference video: the element's mark, rasterised and sampled into a mote cloud that converges on the load's own progress and scatters as the stage arrives. The stage chrome is held back until the opening ends. |
 | **P4 The Rite** | **Built.** Generated layouts, the stroke resolver, the Ward, and the session wired into the frame loop. |
-| **P5 Onboarding** | **Partly built.** The ghost line ships and retires after one solve. The trust ladder and the full contextual guide do not. |
+| **P5 Onboarding** | **Partly built.** The ghost line ships and retires after one solve. P7d now supplies the trust ladder and contextual guide; the remaining onboarding work stays outside this release. |
 | **P7a Tracker** | **Built.** All four anti-misfire guards, the lost state, the ratio-based extension, and the throttled state channel. |
 | **P7b Continuous axes** | **Built.** Lift and spread, end to end. Measured: earth flat peaks at 0.00 m and 2.40 m with a raised hand. Hazard clearance is judged against a declared per-element `flightFloor` rather than the live `pathHeight`, because water's altitude reads the clock and the same line could otherwise solve or fail depending on when it was cast. Only fire clears unaided. |
 | **P3 UI system** | **Built.** One `:root` token block, one stylesheet, `src/ui/HUD.js` down to a toast and a loading screen, the dock with slot grammar (sigil, name, bound key, active, offered, dwell ring), and three real layouts at 679/680–1024/above. React now also listens for `SELECTED`, which it never did — keys 1–4, Q/E and every hand gesture changed the engine's element while the dock went on showing the old one. |
 | **P6 Polish** | **Built**, less the debug overlay. Adaptive quality ladder on measured median frame time with hysteresis, calm mode as a preference independent of `prefers-reduced-motion`, MediaPipe cadence with the watchdog lowered in proportion, and `SettingsLease` so the ladder, calm mode and the opening can borrow the same settings tree the editor writes to without reverting a dial the player moved. The photosensitivity cap shipped in P0 and is now rate-limited without ever dimming a live flash. |
 | P7c Two hands | Not built. Needs the handedness mirror fix (§11, hazard 6) and stroke identity (hazard 7) first. The quality ladder already refuses it on the conservative tier, which is where §10 put it. |
-| P7d Guide and trust ladder | Not built. The hand sheet mirrors the tracker's live state, but the contextual per-slot guide does not exist. |
+| P7d Guide and trust ladder | **Built.** The dock offers hands only after two pointer successes, the pre-permission sheet has an equal-weight Not now path, and the selected slot drives a live, lost-aware gesture guide. |
 
 **The prototype gate in §14 was never run.** Nobody has watched five people play this. Everything below is still
 the plan; the table above is what exists.
@@ -62,7 +62,7 @@ it in order.
 | 10 | Performance, accessibility, privacy, release |
 | 11 | Implementation hazards |
 | 12 | Test contract changes |
-| 13 | Release blockers |
+| 13 | Release checks |
 | 14 | Implementation phases |
 | 15 | Out of scope |
 | 16 | Appendix — the complete copy deck |
@@ -78,7 +78,7 @@ npm test             # node --test over tests/*.test.mjs
 
 ## 1. Executive summary
 
-The Living Grimoire is a genuinely good VFX engine wearing a product that gives nobody a reason to stay. A visitor
+FYE is a genuinely good VFX engine wearing a product that gives nobody a reason to stay. A visitor
 draws a stroke, a beautiful elemental effect travels it, a caster performs the motion, and then nothing happens and
 nothing has changed. There is no goal, no target, no progression, no failure, and no second minute.
 
@@ -800,7 +800,7 @@ can never outrun the load or wait on an empty screen. `LoadingScreen.setProgress
 
 | Beat | Gate | Duration | What is on screen |
 |---|---|---|---|
-| **0 — Dark** | first paint | 0–400 ms | Black. One line of type fades up: *The Living Grimoire*. No canvas yet; nothing is loading that the player can see. |
+| **0 — Dark** | first paint | 0–400 ms | Black. One line of type fades up: *FYE*. No canvas yet; nothing is loading that the player can see. |
 | **1 — The ground** | HDR + FBX resolved (`progress >= 0.53`) | ~1200 ms | The real canvas fades in from black via `GradeShader.uLift`. Camera high and far (`distance 22`, `polar 0.45`). `DustMotes` already drifting. The caster is a silhouette. |
 | **2 — Four answers** | `abilities.warm()` done (`progress >= 0.62`) | 4 × 900 ms | Four scripted casts from the **real** `AbilityManager` along four fixed curves. The **real** `CasterPerformance` runs gather → aim → release → recovery for each. The camera pushes in one step per element. |
 | **3 — The wordmark** | `compileAsync` resolved (`progress >= 0.85`) | 900 ms | Title holds over the settled stage, then dissolves. Camera arrives at the play framing (`settings.camera.distance 11.5`, `targetHeight 1.35`). |
@@ -828,7 +828,7 @@ its own regression, for the least replayed seven seconds in the product.
 
 | Beat | Gate | Duration | What is on screen |
 |---|---|---|---|
-| **0 — Dark** | first paint | 0–400 ms | Black. One line of type fades up: *The Living Grimoire*. |
+| **0 — Dark** | first paint | 0–400 ms | Black. One line of type fades up: *FYE*. |
 | **1 — The ground** | `progress >= 0.53` (HDR and rig resolved) | ~1000 ms | The real canvas fades up from black through `GradeShader.uLift`. Dust already drifting. The caster is a silhouette. |
 | **2 — The problem** | `progress === 1` | 400 ms | The first layout burns into the ground. The HUD staggers in. The camera is already at the play framing. |
 
@@ -958,7 +958,7 @@ Rewritten alongside §8. The old version taught tracing; this one teaches the ve
 
 | t | What the player does | What the product does |
 |---|---|---|
-| 0–2 s | Watches | The stage fades up. One line of type: *The Living Grimoire* (§5) |
+| 0–2 s | Watches | The stage fades up. One line of type: *FYE* (§5) |
 | ~2 s | — | One waystone lights on the ground, a few metres from the caster. A **ghost line** curves from the caster to it |
 | 2–8 s | Draws | `PathTrail` follows the finger. The ghost brightens where the stroke runs near it and dims where it does not — the correction is spatial, not textual |
 | ~8 s | Releases | The element travels their line. The waystone lights. **First success, inside ten seconds.** |
@@ -1941,17 +1941,11 @@ all of `src/` and `app/` to also reject `XMLHttpRequest`,
   allowlist for the two MediaPipe CDN URLs until they are self-hosted. That test is the privacy claim's only
   enforcement, and it is cheap.
 
-### Release blocker: asset licensing
-`README.md` states the upstream binaries retain their original licences and that redistribution rights are
-unconfirmed. `public/models/Standing Idle.fbx` (2.27 MiB) and `public/hdri/spruit_sunrise.hdr` (5.66 MiB) are both
-shipped. This is a **release blocker**, not a nit, and it is the owner's decision:
-
-| Option | Cost | Note |
-|---|---|---|
-| Confirm rights upstream | hours | Cheapest if the answer is yes. Do this first. |
-| Replace the HDR | ~1 hour | Polyhaven publishes CC0 HDRIs; `spruit_sunrise` itself originates there. Confirm and cite the licence. The stage uses it at `envIntensity 0.3` as a probe only, so almost any comparable outdoor HDRI substitutes. |
-| Replace the FBX | ~1 day | Mixamo's own licence terms govern the rig. `CasterPerformance` maps 12 named joints and `tests` assert `Standing Idle.fbx` by name, so a swap touches `JOINTS`, `CharacterController` and one test line. |
-| Procedural caster | ~1 week | `ProceduralGeometry.js` exists; a stylised jointed figure removes 2.27 MiB and the licence question together, and would suit the ritual tone. Highest cost, cleanest outcome. |
+### Asset-rights record
+The project owner confirmed redistribution rights for the bundled assets for FYE on 2026-09-21.
+`public/models/Standing Idle.fbx` (2.27 MiB) and `public/hdri/spruit_sunrise.hdr` (5.66 MiB) remain shipped with
+their provenance and notices. This resolves the asset-rights release check for these exact files; any replacement
+must receive the same review before it is bundled.
 
 ### Degradation paths
 - **No WebGL2**: `LoadingScreen.fail()` currently prints a raw error message in red. Give it designed copy.
@@ -2190,12 +2184,11 @@ used in `app/` and `src/`, so a typo is a build failure rather than a silent no-
 
 ---
 
-## 13. Release blockers
+## 13. Release checks
 
-**The asset licensing gate is a release blocker, not a nit.** `README.md` states that the upstream binary assets
-retain their original licences and that redistribution rights are unconfirmed, and both are shipped:
-`public/models/Standing Idle.fbx` (2.27 MiB) and `public/hdri/spruit_sunrise.hdr` (5.66 MiB). The decision table is in
-section 10. Resolve it or hold the release on it explicitly; do not ship on the assumption that it is fine.
+**Asset rights confirmed.** The project owner confirmed distribution rights for the bundled
+`public/models/Standing Idle.fbx` (2.27 MiB) and `public/hdri/spruit_sunrise.hdr` (5.66 MiB) on 2026-09-21. This is
+not a release blocker for FYE; preserve the notices and review any replacement before it is bundled.
 
 **There is no MediaPipe version blocker.** An earlier draft listed one; `package-lock.json` resolves
 `@mediapipe/tasks-vision` to **0.10.35**, exactly the version the WASM URL hardcodes. See §10 for the real,
@@ -2421,7 +2414,7 @@ and a player who declines never sees the offer again that session.
 5. `prefers-reduced-motion` has a designed alternative for every new animation, not a disabled one.
 6. 60 fps on a mid laptop at the `high` tier; the ladder holds 30 fps on a mid phone.
 7. `public/` is smaller than it is today.
-8. The asset licensing gate is resolved, or the release is explicitly held on it.
+8. The bundled assets retain their recorded provenance and approved distribution rights.
 
 ---
 
@@ -2476,7 +2469,7 @@ Three lines already get it right and should not be touched: *"Two stones stayed 
 | Where | Today | Ship |
 |---|---|---|
 | Wordmark eyebrow | Local elemental stage | Nothing. The wordmark carries it. |
-| Wordmark | Living Grimoire | The Living Grimoire |
+| Wordmark | FYE | FYE |
 | Intro line 1 | Four forces. One hand. | Four forces answer one hand. |
 | Intro line 2 | Become the motion. | *(cut — the sequence now shows it)* |
 | Intro footnote | Camera frames and landmarks stay in this browser. | Nothing leaves this tab. |

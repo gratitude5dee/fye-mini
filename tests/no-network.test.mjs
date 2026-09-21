@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { extname, join, relative } from 'node:path';
 
 /**
  * The privacy claim's only enforcement.
@@ -13,6 +13,8 @@ import { extname, join } from 'node:path';
 
 const ROOTS = ['../src', '../app'];
 const CODE = new Set(['.js', '.mjs', '.ts', '.tsx']);
+const PROJECT_ROOT = new URL('..', import.meta.url).pathname;
+const projectPath = (path) => relative(PROJECT_ROOT, path).replaceAll('\\', '/');
 
 /**
  * The two runtime fetches that are allowed, and why.
@@ -50,7 +52,7 @@ test('nothing in src/ or app/ can put a byte on the network', async () => {
   for (const root of ROOTS) {
     const base = new URL(root, import.meta.url).pathname;
     for await (const path of walk(base)) {
-      const relative = path.slice(path.indexOf('/fye-mini/') + '/fye-mini/'.length);
+      const relative = projectPath(path);
       const source = await readFile(path, 'utf8');
       for (const { name, pattern } of FORBIDDEN) {
         if (!pattern.test(source)) continue;
@@ -83,7 +85,7 @@ test('only the two designated modules touch storage', async () => {
   for (const root of ROOTS) {
     const base = new URL(root, import.meta.url).pathname;
     for await (const path of walk(base)) {
-      const relative = path.slice(path.indexOf('/fye-mini/') + '/fye-mini/'.length);
+      const relative = projectPath(path);
       if (STORAGE_OWNERS.has(relative)) continue;
       const source = await readFile(path, 'utf8');
       if (/\blocalStorage\b|\bsessionStorage\b/.test(source)) offenders.push(relative);

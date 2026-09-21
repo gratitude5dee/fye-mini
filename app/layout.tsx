@@ -1,14 +1,14 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-const title = 'Living Grimoire';
-const description = 'A local-first elemental casting stage with a visible 3D caster and on-device hand tracking.';
+const title = 'FYE';
+const description = 'FYE is a local-first elemental casting stage with a visible 3D caster and on-device hand tracking.';
 
 export const metadata: Metadata = {
   title,
   description,
   icons: { icon: '/favicon.svg' },
-  openGraph: { title, description, siteName: title, images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Living Grimoire casting stage' }] },
+  openGraph: { title, description, siteName: title, images: [{ url: '/og.png', width: 1200, height: 630, alt: 'FYE elemental casting stage' }] },
   twitter: { card: 'summary_large_image', title, description, images: ['/og.png'] }
 };
 

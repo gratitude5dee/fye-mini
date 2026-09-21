@@ -31,6 +31,9 @@ export interface GrimoireEventMap {
     pinch?: number;
     lift?: number;
     spread?: number;
+    dock?: ElementId | null;
+    dockHold?: number;
+    offHand?: ElementId | null;
     tracking?: TrackingState;
     delegate?: 'GPU' | 'CPU';
   };

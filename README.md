@@ -1,6 +1,6 @@
-# Living Grimoire
+# FYE
 
-Living Grimoire is a local-first elemental casting stage with a game in it. The ritual ground poses a problem —
+FYE is a local-first elemental casting stage with a game in it. The ritual ground poses a problem —
 waystones to reach, hazards to avoid — and you solve it with one drawn line. Your line is your own: four players
 solve the same layout four different ways, and every one of them is right.
 
@@ -71,7 +71,12 @@ can reach the network, that only two designated modules touch storage, that game
 cosmetic preset, that every generated layout is solvable, and that the hand's lift is summed everywhere it has to
 be.
 
-## Local assets and attribution gate
+## Prototype gate
+
+Before a production promotion, five people must play the core loop in person. This cannot be passed by automated
+checks; use [PROTOTYPE_GATE.md](./PROTOTYPE_GATE.md) to record the sessions and review them before release.
+
+## Local assets and attribution
 
 The code foundation comes from [AvatarCastingAbilitiesThreeJS](https://github.com/achrefelouafi/AvatarCastingAbilitiesThreeJS),
 whose source is MIT licensed. Ideas for targeting, hit resolution and the hand-tracking state machine were read
@@ -79,9 +84,9 @@ from its two siblings, [LinearAbiltyCastingExtendedThreeJS](https://github.com/a
 and [HandCastAbilityThreeJS](https://github.com/achrefelouafi/HandCastAbilityThreeJS), both MIT,
 Copyright (c) 2026 mohamedachrefelouafi. See `THIRD_PARTY_NOTICES.md`.
 
-This repository includes upstream `Standing Idle.fbx` and `spruit_sunrise.hdr` under `public/`. **Their
-redistribution rights are unconfirmed, and that is a release blocker** — confirm them or substitute
-independently licensed originals before publishing. See section 13 of `update.md`.
+This repository includes upstream `Standing Idle.fbx` and `spruit_sunrise.hdr` under `public/`. The project owner
+confirmed redistribution rights for FYE on 2026-09-21. Keep their provenance and notices intact; any replacement
+asset needs the same distribution-rights review. See section 13 of `update.md`.
 
 ## Deployment
 

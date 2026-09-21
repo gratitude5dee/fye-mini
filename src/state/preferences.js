@@ -36,6 +36,8 @@ const DEFAULTS = Object.freeze({
   onboarding: Object.freeze({
     firstSolve: false,
     firstElementChange: false,
+    /** Successful pointer-drawn Rite lines. The hand offer waits for two. */
+    pointerSuccesses: 0,
     handsOffered: false,
     handsGranted: false,
     handsDeclined: false
@@ -97,6 +99,9 @@ function normalise(raw) {
     onboarding: {
       firstSolve: clean(onboarding.firstSolve, false),
       firstElementChange: clean(onboarding.firstElementChange, false),
+      pointerSuccesses: Number.isFinite(onboarding.pointerSuccesses)
+        ? Math.min(2, Math.max(0, Math.floor(onboarding.pointerSuccesses)))
+        : 0,
       handsOffered: clean(onboarding.handsOffered, false),
       handsGranted: clean(onboarding.handsGranted, false),
       handsDeclined: clean(onboarding.handsDeclined, false)

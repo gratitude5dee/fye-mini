@@ -1,6 +1,6 @@
 import {
   WebGLRenderer,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   ACESFilmicToneMapping,
   SRGBColorSpace
 } from 'three';
@@ -28,7 +28,7 @@ export class Renderer {
     this.gl.setSize(window.innerWidth, window.innerHeight, false);
 
     this.gl.shadowMap.enabled = true;
-    this.gl.shadowMap.type = PCFSoftShadowMap;
+    this.gl.shadowMap.type = PCFShadowMap;
     // The frame renders the scene several times (depth prepass, distortion,
     // contact shadows, main pass). Automatic updates would rebuild the cascade
     // shadow maps for every one of them, so the app flags a single update per

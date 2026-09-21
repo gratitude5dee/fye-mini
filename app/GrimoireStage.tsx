@@ -38,11 +38,18 @@ type HandDetail = {
   state?: InputState;
   engaged?: boolean;
   wake?: number;
+  pose?: ElementId | null;
+  hold?: number;
+  pinch?: number;
   lift?: number;
   spread?: number;
   dock?: string | null;
   dockHold?: number;
+  tracking?: 'seeking' | 'found' | 'lost';
 };
+
+type GestureLive = 'wake' | 'pinch' | 'lift' | 'pose' | 'lost';
+type GestureRow = { mark: string; name: string; does: string; live: GestureLive };
 
 /**
  * The one place an element's name and colour are written.
@@ -57,6 +64,42 @@ const ELEMENTS: Array<{ id: ElementId; label: string; sigil: string; color: stri
   { id: 'earth', label: 'Stone', sigil: '◆', color: '#c6a372' },
   { id: 'air', label: 'Wind', sigil: '⌁', color: '#bfe8df' }
 ];
+
+/**
+ * The guide is deliberately a slot companion, not a fixed legend. The one
+ * gesture that changes with the selected element is always named in the same
+ * place and lights only when the tracker sees that exact pose.
+ */
+const GESTURE_GUIDES: Record<ElementId, GestureRow[]> = {
+  fire: [
+    { mark: '○', name: 'Open palm', does: 'hold to attune', live: 'wake' },
+    { mark: '↗', name: 'Pinch', does: 'draw a fire line', live: 'pinch' },
+    { mark: '↑', name: 'Raise', does: 'take fire over a hazard', live: 'lift' },
+    { mark: '✦', name: 'Horns', does: 'hold Fire in hand', live: 'pose' },
+    { mark: '↓', name: 'Lower', does: 'rest and re-attune', live: 'lost' }
+  ],
+  water: [
+    { mark: '○', name: 'Open palm', does: 'hold to attune', live: 'wake' },
+    { mark: '↗', name: 'Pinch', does: 'draw a water line', live: 'pinch' },
+    { mark: '↑', name: 'Raise', does: 'take water over a hazard', live: 'lift' },
+    { mark: '◒', name: 'Two fingers', does: 'hold Water in hand', live: 'pose' },
+    { mark: '↓', name: 'Lower', does: 'rest and re-attune', live: 'lost' }
+  ],
+  earth: [
+    { mark: '○', name: 'Open palm', does: 'hold to attune', live: 'wake' },
+    { mark: '↗', name: 'Pinch', does: 'draw a stone line', live: 'pinch' },
+    { mark: '↑', name: 'Raise', does: 'take stone over a hazard', live: 'lift' },
+    { mark: '◆', name: 'Fist', does: 'hold Stone in hand', live: 'pose' },
+    { mark: '↓', name: 'Lower', does: 'rest and re-attune', live: 'lost' }
+  ],
+  air: [
+    { mark: '○', name: 'Open palm', does: 'hold to attune', live: 'wake' },
+    { mark: '↗', name: 'Pinch', does: 'draw a wind line', live: 'pinch' },
+    { mark: '↑', name: 'Raise', does: 'take wind over a hazard', live: 'lift' },
+    { mark: '⌁', name: 'Open hand', does: 'hold Wind in hand', live: 'pose' },
+    { mark: '↓', name: 'Lower', does: 'rest and re-attune', live: 'lost' }
+  ]
+};
 
 const DIALS: Record<ElementId, Dial[]> = {
   fire: [
@@ -90,6 +133,9 @@ function emit(name: string, detail?: unknown) {
 
 export function GrimoireStage() {
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const pointerSuccessesRef = useRef(0);
+  const previousWardRef = useRef(0);
+  const trackerActiveRef = useRef(false);
   const [introVisible, setIntroVisible] = useState(true);
   const [stageReady, setStageReady] = useState(false);
   const [element, setElement] = useState<ElementId>('air');
@@ -111,12 +157,15 @@ export function GrimoireStage() {
    * rectangle. It is lowered again the moment the opening finishes.
    */
   const [openingHolds, setOpeningHolds] = useState(false);
-  const [hand, setHand] = useState({ engaged: false, wake: 0, lift: 0, spread: 0, dock: null as string | null, dockHold: 0 });
+  const [hand, setHand] = useState({ engaged: false, wake: 0, pose: null as ElementId | null, hold: 0, pinch: 0, lift: 0, spread: 0, dock: null as string | null, dockHold: 0, tracking: 'lost' as 'seeking' | 'found' | 'lost' });
   const [helpOpen, setHelpOpen] = useState(false);
   // A phone never gets the camera — `enableHands` refuses on a coarse pointer.
   // Offering the button anyway is an invitation the product declines, so the
   // same query that refuses it also decides whether it is there to press.
   const [coarsePointer, setCoarsePointer] = useState(false);
+  const [pointerSuccesses, setPointerSuccesses] = useState(0);
+  const [handsGranted, setHandsGranted] = useState(false);
+  const [handOfferDismissed, setHandOfferDismissed] = useState(false);
   const [calm, setCalm] = useState(false);
   // What the quality ladder settled on, said once and only in the Workshop.
   // Never a toast: a stage that interrupts you to announce it is coping badly
@@ -124,6 +173,16 @@ export function GrimoireStage() {
   const [quality, setQuality] = useState<{ tier: string; cadence: number } | null>(null);
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
+  const gestureGuide = GESTURE_GUIDES[element];
+  const handOfferVisible = !coarsePointer && !handsGranted && !handOfferDismissed && pointerSuccesses >= 2;
+
+  const guideRowIsLive = (row: GestureRow) => {
+    if (row.live === 'wake') return !hand.engaged && hand.wake > 0;
+    if (row.live === 'pinch') return hand.pinch > 0;
+    if (row.live === 'lift') return hand.lift > 0.4;
+    if (row.live === 'pose') return hand.pose === element;
+    return hand.tracking === 'lost' && inputState === 'tracking';
+  };
 
   /**
    * What the world is saying, if it is saying anything.
@@ -152,6 +211,10 @@ export function GrimoireStage() {
     setDialValues(preferences.dials);
     setCalm(preferences.calm);
     setStorageAvailable(isPersistent());
+    const successes = preferences.onboarding?.pointerSuccesses ?? 0;
+    pointerSuccessesRef.current = successes;
+    setPointerSuccesses(successes);
+    setHandsGranted(Boolean(preferences.onboarding?.handsGranted));
   }, []);
 
   useEffect(() => {
@@ -169,12 +232,21 @@ export function GrimoireStage() {
       // health message, and the throttled continuous state. Only the former
       // carries a message, so an absent one must not blank the status line.
       if (detail?.message) setInputStatus(detail.message);
-      if (detail?.state) setInputState(detail.state);
+      if (detail?.state) {
+        setInputState(detail.state);
+        trackerActiveRef.current = detail.state === 'requesting' || detail.state === 'ready' || detail.state === 'tracking';
+        if (detail.state === 'ready' || detail.state === 'tracking') {
+          setHandsGranted(true);
+          persistPreferences({ onboarding: { handsGranted: true } });
+        }
+      }
       if (typeof detail?.wake === 'number') {
         setHand({
           engaged: Boolean(detail.engaged), wake: detail.wake,
+          pose: detail.pose ?? null, hold: detail.hold ?? 0, pinch: detail.pinch ?? 0,
           lift: detail.lift ?? 0, spread: detail.spread ?? 0,
-          dock: detail.dock ?? null, dockHold: detail.dockHold ?? 0
+          dock: detail.dock ?? null, dockHold: detail.dockHold ?? 0,
+          tracking: detail.tracking ?? 'found'
         });
       }
     };
@@ -189,7 +261,18 @@ export function GrimoireStage() {
     window.addEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
     const riteListener = (event: Event) => {
       const detail = (event as CustomEvent<RiteState>).detail;
-      if (detail) setRite(detail);
+      if (!detail) return;
+      setRite(detail);
+      const solved = detail.ward.filter(Boolean).length;
+      if (detail.phase === 'open' || solved === 0) previousWardRef.current = 0;
+      if (!trackerActiveRef.current && solved > previousWardRef.current) {
+        const gained = solved - previousWardRef.current;
+        const next = Math.min(2, pointerSuccessesRef.current + gained);
+        pointerSuccessesRef.current = next;
+        setPointerSuccesses(next);
+        persistPreferences({ onboarding: { pointerSuccesses: next } });
+      }
+      previousWardRef.current = solved;
     };
     const selectedListener = (event: Event) => {
       const chosen = (event as CustomEvent<{ element?: ElementId }>).detail?.element;
@@ -251,6 +334,19 @@ export function GrimoireStage() {
   const closeHelp = useCallback(() => setHelpOpen(false), []);
   const closeHands = useCallback(() => setHandsOpen(false), []);
   const closeWorkshop = useCallback(() => setWorkshopOpen(false), []);
+
+  const openHands = () => {
+    setWorkshopOpen(false);
+    setHelpOpen(false);
+    setHandsOpen(true);
+    persistPreferences({ onboarding: { handsOffered: true } });
+  };
+
+  const declineHands = () => {
+    setHandOfferDismissed(true);
+    setHandsOpen(false);
+    setInputStatus('Pointer casting stays exactly as it is.');
+  };
 
   const dismissIntro = useCallback(() => {
     // Skip only shortens what is already running; the director lands in the
@@ -323,6 +419,7 @@ export function GrimoireStage() {
 
   const stopHands = () => {
     emit(TO_ENGINE.STOP_HANDS);
+    trackerActiveRef.current = false;
     setHandsOpen(false);
     setInputState('idle');
     setInputStatus('Pointer casting is ready.');
@@ -338,7 +435,7 @@ export function GrimoireStage() {
         <div id="loader" className="loader" aria-live="polite">
           <div className="loader__inner">
             <div className="loader__sigil"><span className="sigil sigil--fire" /><span className="sigil sigil--water" /><span className="sigil sigil--earth" /><span className="sigil sigil--air" /></div>
-            <h1 className="loader__title">The Living Grimoire</h1>
+            <h1 className="loader__title">FYE</h1>
             <div className="loader__bar"><i id="loader-fill" /></div>
             <p className="loader__status" id="loader-status">Preparing the caster…</p>
           </div>
@@ -346,9 +443,9 @@ export function GrimoireStage() {
         <div id="hud" className="hud" aria-live="polite" />
 
         <header className="stage-header">
-          <div className="wordmark"><span>Local elemental stage</span><strong>Living Grimoire</strong></div>
+          <div className="wordmark"><span>Local elemental stage</span><strong>FYE</strong></div>
           <div className="header-actions">
-            {!coarsePointer && <button className="quiet-button" onClick={() => { setWorkshopOpen(false); setHelpOpen(false); setHandsOpen(true); }} aria-expanded={handsOpen}>Hand mode</button>}
+            {!coarsePointer && (handsGranted || inputState === 'ready' || inputState === 'tracking') && <button className="quiet-button" onClick={openHands} aria-expanded={handsOpen}>Hand mode</button>}
             <button className="quiet-button" onClick={() => { setHandsOpen(false); setHelpOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>
           </div>
         </header>
@@ -372,6 +469,9 @@ export function GrimoireStage() {
         </section>}
 
         <section className="stage-hud" aria-label="Casting controls">
+          {handOfferVisible && <button className="hand-offer" onClick={openHands}>
+            <strong>Cast with your hands.</strong><span>Your camera never leaves this tab.</span>
+          </button>}
           <div className={`dock ${stageReady ? '' : 'is-waking'}`} data-dock role="group" aria-label="Choose an element">
             {ELEMENTS.map((entry, index) => {
               const active = entry.id === element;
@@ -414,7 +514,7 @@ export function GrimoireStage() {
         className={`intro intro--${introBeat}`}
         role="dialog"
         aria-modal="true"
-        aria-label="The Living Grimoire is opening"
+        aria-label="FYE is opening"
         ref={introRef}
         tabIndex={-1}
       >
@@ -438,21 +538,25 @@ export function GrimoireStage() {
       {handsOpen && <section className="side-sheet" role="dialog" aria-modal="true" aria-labelledby="hands-title" ref={handsRef} tabIndex={-1}>
         <button className="sheet-close" onClick={closeHands} aria-label="Close hand input panel">×</button>
         <p className="eyebrow">Camera-first desktop input</p><h2 id="hands-title">Cast with your hands.</h2>
-        <p className="sheet-copy">Enable the camera with the button below. The live mirror and landmarks are processed in this browser only; no video, frames, or landmarks are saved.</p>
+        <p className="sheet-copy">FYE uses the position of one hand. The live mirror and landmarks stay in this browser; no video is recorded, sent, or stored. Declining leaves pointer casting unchanged.</p>
         <div className={`input-health input-health--${inputState}`}><i /><span>{inputStatus}</span></div>
-        <ol className="gesture-guide">
-          <li className={hand.engaged ? 'is-done' : 'is-live'}><b>1</b><span><strong>Wake</strong> Hold an open palm until the ring fills.</span></li>
-          <li className={hand.engaged ? 'is-live' : ''}><b>2</b><span><strong>Draw</strong> Pinch thumb to finger, draw, then open.</span></li>
-          <li className={hand.lift > 0.4 ? 'is-live' : ''}><b>3</b><span><strong>Lift</strong> Raise your hand and the line leaves the ground. A mouse cannot.</span></li>
-          <li><b>4</b><span><strong>Choose</strong> Fist = stone · two fingers = water · horns = fire · open hand = wind.</span></li>
-          <li><b>5</b><span><strong>Rest</strong> Lower your hand. Raise it to go on.</span></li>
+        <p className="gesture-guide__title">Guide for {currentElement.label}</p>
+        <ol className="gesture-guide" aria-live="polite">
+          {gestureGuide.map((row) => <li key={row.name} className={guideRowIsLive(row) ? 'is-live' : (row.live === 'wake' && hand.engaged ? 'is-done' : '')}>
+            <b aria-hidden="true">{row.mark}</b><span><strong>{row.name}</strong> {row.does}</span>
+          </li>)}
         </ol>
         {(inputState === 'ready' || inputState === 'tracking') && <div className="hand-meters" aria-hidden="true">
           <label><span>Wake</span><i style={{ '--v': hand.wake } as CSSProperties} /></label>
           <label><span>Lift</span><i style={{ '--v': Math.min(1, hand.lift / 2.6) } as CSSProperties} /></label>
           <label><span>Spread</span><i style={{ '--v': hand.spread } as CSSProperties} /></label>
         </div>}
-        <div className="sheet-actions"><button className="cast-button" onClick={enableHands}>{inputState === 'ready' || inputState === 'tracking' ? 'Calibrate pose' : 'Enable hands'}</button>{(inputState === 'ready' || inputState === 'tracking' || inputState === 'requesting') && <button className="quiet-button" onClick={stopHands}>Use pointer instead</button>}</div>
+        <div className="sheet-actions">
+          <button className="cast-button" onClick={enableHands}>{inputState === 'ready' || inputState === 'tracking' ? 'Calibrate pose' : 'Enable hands'}</button>
+          {(inputState === 'idle' || inputState === 'fallback' || inputState === 'unavailable') && !handsGranted
+            ? <button className="cast-button cast-button--secondary" onClick={declineHands}>Not now</button>
+            : <button className="quiet-button" onClick={stopHands}>Use pointer instead</button>}
+        </div>
       </section>}
 
       {workshopOpen && <section className="side-sheet workshop" role="dialog" aria-modal="true" aria-labelledby="workshop-title" ref={workshopRef} tabIndex={-1}>

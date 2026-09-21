@@ -74,6 +74,8 @@ export function HelpSheet({ onClose, open }: Props) {
         Desktop only, and never required. Everything below works with a pointer except the lift, which is the
         reason hands are here at all.
       </p>
+      <p className="sheet-copy">After two pointer successes, FYE offers hand casting in the dock. It explains the
+        local-only camera use before the browser asks, and <strong>Not now</strong> leaves pointer casting unchanged.</p>
       <ul className="help-notes">
         <li><strong>Wake it.</strong> Hold an open palm until the ring fills. Nothing casts before that.</li>
         <li><strong>Draw.</strong> Pinch thumb to finger, move, then open.</li>

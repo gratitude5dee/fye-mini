@@ -156,6 +156,30 @@ test('the tracker publishes its state, throttled, never per frame', async () => 
   assert.match(publish, /lift: this\.lift/);
   assert.match(publish, /spread: this\.spread/);
   assert.match(publish, /wake: this\.wake/);
+  assert.match(publish, /pose: this\.pose/, 'the contextual guide needs the live pose');
+  assert.match(publish, /tracking,/, 'the contextual guide needs the lost state');
+});
+
+test('the hand offer waits for pointer confidence and the guide follows the armed slot', async () => {
+  const [stage, preferences] = await Promise.all([
+    source('../app/GrimoireStage.tsx'), source('../src/state/preferences.js')
+  ]);
+
+  // Asking for the camera at first paint is a trust cliff. Two successful
+  // pointer lines earn the one-line dock offer; a decline hides it for this
+  // session without changing pointer casting.
+  assert.match(preferences, /pointerSuccesses/);
+  assert.match(stage, /pointerSuccesses >= 2/);
+  assert.match(stage, /Cast with your hands\./);
+  assert.match(stage, /Not now/);
+  assert.match(stage, /setHandOfferDismissed\(true\)/);
+
+  // A fixed legend turns live tracker state into a manual. The selected element
+  // chooses the rows, while pose and loss light the relevant one.
+  assert.match(stage, /GESTURE_GUIDES/);
+  assert.match(stage, /const gestureGuide = GESTURE_GUIDES\[element\]/);
+  assert.match(stage, /hand\.pose === element/);
+  assert.match(stage, /hand\.tracking === 'lost'/);
 });
 
 test('the two things fye-mini does better than either reference survive', async () => {
