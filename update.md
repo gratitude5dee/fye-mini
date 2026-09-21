@@ -247,8 +247,15 @@ three events — `start`, `cast` and `cancel` — and `App` listens to **only `c
 ### Dead / dormant code (verified by grep, not assumed)
 - `src/ui/HUD.js` queries `.element-card`, `.mode-card`, `[data-stat="fps|particles|calls|abilities"]`, `.hud__help`,
   `[data-blurb]`, `.hud__elements`. React renders only `<div id="hud" className="hud" aria-live="polite" />` with no
-  children. Therefore `setElement`, `setMode`, `toggleHelp` and the entire stats readout are **inert**; only
-  `showToast` works, because `root.innerHTML` writes the toast node itself.
+  children. So `setMode` and `toggleHelp` are genuinely **inert**, and the stats readout is *visually* inert —
+  but two things still work and a careless cut breaks both:
+  - **`setElement` is NOT inert.** Its `this.cards` loop is a no-op over an empty `Map`, but its last line calls
+    `this.showToast(...)`, so every element change — including the `selectElement('wind')` in the `App`
+    constructor — currently shows "Gale selected" / "Fire selected". Cut `HUD.js` to `showToast` only and that
+    toast silently disappears unless React re-emits it.
+  - **The stats readout still costs.** `HUD.update` calls `collect()` — which walks `particles.countLive()` —
+    **before** the `if (!this.stats.fps) return;` bailout, so that work is paid about 2.5 times a second for
+    nothing.
 - **Two competing stylesheets ship at once, and one of them is load-bearing.** `app/globals.css:1` does
   `@import '../src/ui/styles.css'` — 437 lines of a "standalone UI shell" with its own token set (`--ui-bg`,
   `--ui-bg-solid`, `--ui-border`, `--ui-text`, `--ui-text-dim`, `--ui-accent`). Its `.element-card`,
@@ -256,8 +263,13 @@ three events — `start`, `cast` and `cancel` — and `App` listens to **only `c
   never renders, so those are dead. **But `.loader`, `.loader__inner`, `.loader__sigil`, `.loader__title`,
   `.loader__bar`, `.loader__status`, `.sigil`, `.sigil--fire|water|earth|air` and `.lil-gui` are live** — React
   renders every one of those classes, and `app/grimoire-stage.css` contains **zero** references to `loader` or
-  `sigil`. **Deleting `src/ui/styles.css` would leave the loading screen and the editor completely unstyled.**
-  Split it, do not delete it.
+  `sigil`. **Deleting `src/ui/styles.css` would leave the loading screen, the toast and the editor completely
+  unstyled.** Split it, do not delete it. The live set is larger than the loader:
+  `.hud`, **`.hud__toast` and `.hud__toast.is-visible`** (which `showToast` writes and which supply its opacity,
+  pill, position and transition), the `:root` `--ui-*` block those consume, the global `* { box-sizing }` and
+  `html, body` reset, a **second `#viewport` rule** competing with `app/grimoire-stage.css:3`, the `.loader*`
+  and `.sigil*` families, and `.lil-gui`. Dead: `.element-card*`, `.mode-card*`, `.hud__elements`,
+  `.hud__modes*`, `.hud__stats`, `.hud__help`, `.hud__panel`, `.hud__title`.
 - `src/ui/glyphs.js` — **no importers anywhere.** Dead.
 - `src/world/ContactShadows.js` — **no importers anywhere.** Dead, even though `src/core/Layers.js` documents a
   `CONTACT` layer for it and `settings.environment.contactShadow` (0.55) exists.
@@ -1056,16 +1068,23 @@ control at the foot of the Workshop, not buried in a keyboard chord.
 values. Two token systems ship.
 
 **Do not delete `src/ui/styles.css`.** It is half dead and half load-bearing, and the split is not where you would
-guess. Its `.element-card`, `.mode-card`, `.hud__elements`, `.hud__modes`, `.hud__stats` and `.hud__help` rules
-style markup React never renders. Its `.loader`, `.loader__inner`, `.loader__sigil`, `.loader__title`,
-`.loader__bar`, `.loader__status`, `.sigil`, `.sigil--fire|water|earth|air` and `.lil-gui` rules are the **only**
-styling those elements have — `app/grimoire-stage.css` contains zero references to `loader` or `sigil`, and React
-renders all of them.
+guess. | Live — must be migrated | Dead — safe to delete |
+|---|---|
+| `.loader`, `.loader__inner`, `.loader__sigil`, `.loader__title`, `.loader__bar`, `.loader__status` | `.element-card`, `.element-card__glyph/__key/__label` |
+| `.sigil`, `.sigil--fire\|water\|earth\|air` | `.mode-card`, `.mode-card__glyph` |
+| **`.hud`, `.hud__toast`, `.hud__toast.is-visible`** | `.hud__elements`, `.hud__modes`, `.hud__modes-key` |
+| `.lil-gui` | `.hud__stats`, `.hud__help`, `.hud__panel`, `.hud__title` |
+| `:root` `--ui-*` (consumed by `.hud__toast`) | |
+| `* { box-sizing }` and the `html, body` reset | |
+| `#viewport` — a **second** rule competing with `app/grimoire-stage.css:3` | |
 
-The migration is therefore: move the loader, sigil and `lil-gui` rules into `app/grimoire-stage.css` (rewritten
-against the new tokens), delete the rest of the file along with the `@import`, and only then hoist the single
-`:root` token block below. **Verify the loading screen still looks right before deleting anything** — it is the
-first thing every visitor sees and the last thing anyone thinks to check.
+`app/grimoire-stage.css` contains **zero** `loader`, `sigil` or `hud__` rules, so everything in the left column is
+the only styling those elements have, and React renders all of them.
+
+The migration is therefore: move the left column into `app/grimoire-stage.css` (rewritten against the new tokens),
+delete the right column along with the `@import`, and only then hoist the `:root` token block below. **Verify the
+loading screen and a toast still look right before deleting anything** — they are the first thing every visitor
+sees and the last thing anyone thinks to check.
 
 ### Tokens
 Dark-only, stated deliberately: the stage is a near-black ritual ground (`environment.backgroundColor #14181d`,
@@ -1133,8 +1152,14 @@ and a dwell ring for hand input. **`data-element` must stay on the button itself
 silently breaks hand selection. The dwell ring is the same 400 ms `DOCK_DWELL_MS` fill as the pose ring, so the
 two hand affordances share one visual language.
 
-### Targeting indicators: world-space, not DOM
-Two new pooled ground quads, following the reference repos' construction exactly (§4):
+### Targeting indicators — **deferred, not cut from the record**
+§14 cuts the targeting phase: §8's loop needs no arrow and no circle, and building them is the largest avoidable
+cost in the plan. The construction is kept here and in §4.1 so a later version does not have to rediscover it.
+
+<details>
+<summary>The indicator design, for whoever needs it later</summary>
+
+Two pooled ground quads, following the reference repos' construction exactly (§4):
 - **`AimIndicator`** — one SDF in a ground quad; shaft **0.42 m wide regardless of distance**; outline, chevrons
   and the range-cap arc all derived from the one distance field.
 - **`ZoneIndicator`** — a footprint quad whose fragment shader remaps UV into *metres from target* so the boundary
@@ -1143,6 +1168,14 @@ Two new pooled ground quads, following the reference repos' construction exactly
 
 Both belong on `LAYER.VFX` (the camera enables it explicitly; `LAYER.WORLD` would put them in the depth prepass and
 the distortion pass). Colour comes from `--accent`'s engine twin, not from a fifth copy of the palette.
+
+</details>
+
+**What §8's loop actually needs on the ground** is much smaller and should be built instead: a **waystone ring**
+and a **hazard region**, both pooled `GroundDecals` entries. The decal system already has `SHOCKWAVE` for the
+ring and `RIPPLE` or `DUSTRING` for the hazard, and both already take `uColorA` / `uColorB` / `uWidth` / `uAge`.
+The same "metres remapped from `vUv`, never UV fractions" rule applies (§11, hazard 4) so a ring's thickness does
+not change with its radius.
 
 ### The feedback stack
 Today a cast produces one `aria-live` sentence. Replace with a layered response, each layer already built:
@@ -1491,8 +1524,12 @@ InputManager ──point/confirm──> AimController ───┘        └─
 HandInput ────draw:*/pose─────> (either, by mode)
 ```
 
-Why this and not "replace PathDrawer with AimController": drawing is the product's primary verb (§8). The
-`AimController` is added **beside** `PathDrawer`, not over it, and `CastRouter` is the only thing `App` talks to.
+**As of §14 the `AimController` branch is deferred**, so the router ships with one source. It is specified this way
+regardless, because the shape is what keeps a second source from ever becoming a second `abilities.cast` call
+site — and because the `cast-contract` test in §12.2 enforces exactly that.
+
+Drawing is and stays the product's primary verb (§8). Any `AimController` is added **beside** `PathDrawer`, never
+over it, and `CastRouter` is the only thing `App` talks to.
 `Ability`, `AbilityManager` and the four element files are **not touched** — verified: `Ability.spawn(curve)` calls
 only `getLength()`, `getPointAt()` and `getTangentAt()` (`src/abilities/Ability.js:129-152`), which `LineCurve3`
 satisfies. This is the same conclusion the `LinearAbilty...` README reaches for its own codebase.
@@ -1613,9 +1650,10 @@ error on write, and a corrupt/foreign value. Everything else in this update pers
   residue from the deleted API era. Keep `RANGES`, `SPELLWRIGHT_COLOR_PATHS`, `enginePath`. Keep `deriveGenome` and
   actually use it (§7).
 - `src/ui/glyphs.js` and `src/world/ContactShadows.js` — no importers anywhere.
-- `src/ui/styles.css` — **partially**. Its `.element-card` / `.mode-card` / `.hud__*` rules are dead and its
-  `--ui-*` token set conflicts with `app/grimoire-stage.css`, but its loader, sigil and `lil-gui` rules are the
-  only styling the loading screen and the editor have. Split it as §7 describes; do not delete it wholesale.
+- `src/ui/styles.css` — **partially**, and the split is not where you would guess. Its `.element-card`,
+  `.mode-card`, `.hud__elements/__modes/__stats/__help/__panel/__title` rules are dead, but its `.loader*`,
+  `.sigil*`, **`.hud` and `.hud__toast`**, `.lil-gui`, `--ui-*` and global-reset rules are live. Split it exactly
+  as §7's table describes; do not delete it wholesale.
 - `public/intro/*` — all five files (§5).
 - The three dead keybindings: either give `toggleHelp`, `togglePose` and `toggleMode` real cases in
   `App._handleAction` or stop emitting them from `InputManager`. Do not leave them advertised and inert.
@@ -1656,18 +1694,23 @@ Measured frame time over a rolling 90-frame window, never a user-agent sniff.
 | **conservative** | > 24 ms | pixel ratio 1.0; bloom off; particles ×0.4; shadows off; distortion pass off; MediaPipe every 3rd frame; two-handed tracking refused |
 
 It announces itself **once**, quietly, in the Workshop ("Running in balanced mode for a steady frame rate"), never
-as a toast and never repeatedly. It must also raise the existing `HandInput` 15 fps watchdog threshold when it
-steps down, or the two systems fight: the ladder slows inference to save frames, the watchdog reads the lower
-inference rate as failure and kills hand tracking entirely.
+as a toast and never repeatedly. It must also **lower** the existing `HandInput` watchdog threshold in
+proportion to the cadence divisor when it steps down, or suspend the watchdog while the ladder is stepping.
+`src/input/HandInput.js:189` is `if (fps < 15) { … this.stop(); }` and that `fps` counts **inference passes**, so
+dropping to every second or third frame makes the measured rate fall. Raising the threshold would make the
+watchdog kill tracking *sooner*, which is the opposite of the intent. (An earlier draft said "raise". It was
+wrong.)
 
 ### MediaPipe
 - Inference currently runs every `requestAnimationFrame` while active (`HandInput._loop`). Decouple to a cadence.
   **The One-Euro filter must be fed the real elapsed time, not a fixed step** — it already computes
   `delta = (now - this._filter.at) / 1000` clamped to `[1/240, 0.1]`, so it is correct under a variable rate as
   long as `now` stays `performance.now()`. Do not "fix" it to a constant.
-- **Version skew, verified**: `package.json` pins `@mediapipe/tasks-vision@^0.10.22-rc.20250304`, but
-  `HandInput._start` fetches WASM from `cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm`. The JS API and
-  the WASM are from different builds. Pin them to the same version or self-host both.
+- **There is no version skew — an earlier draft of this document claimed one and was wrong.** `package.json`
+  ranges `@mediapipe/tasks-vision@^0.10.22-rc.20250304`, but `package-lock.json` resolves it to exactly
+  **0.10.35**, which is the version `HandInput._start` hardcodes in its WASM URL. The JavaScript and the WASM are
+  from the same build. What remains is a **fragility, not a bug**: the URL is hardcoded rather than derived from
+  the installed version, so an `npm update` can silently separate them. Derive it, or self-host both.
 - Self-hosting the WASM + the `hand_landmarker.task` model into `public/` removes two runtime third-party fetches.
   It **strengthens** the local-first claim rather than weakening it: today the tab tells Google's CDN that someone
   opened the hand tracker. Weigh that against `public/` already being 13 MiB, and do it as part of the asset diet
@@ -1935,10 +1978,9 @@ retain their original licences and that redistribution rights are unconfirmed, a
 `public/models/Standing Idle.fbx` (2.27 MiB) and `public/hdri/spruit_sunrise.hdr` (5.66 MiB). The decision table is in
 section 10. Resolve it or hold the release on it explicitly; do not ship on the assumption that it is fine.
 
-**The MediaPipe version skew is a correctness bug.** `package.json` pins
-`@mediapipe/tasks-vision@^0.10.22-rc.20250304` while `src/input/HandInput.js` fetches WASM from
-`cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm`. The JavaScript API and the WASM binary are from
-different builds. Pin them together or self-host both.
+**There is no MediaPipe version blocker.** An earlier draft listed one; `package-lock.json` resolves
+`@mediapipe/tasks-vision` to **0.10.35**, exactly the version the WASM URL hardcodes. See §10 for the real,
+much smaller issue: the URL is hardcoded rather than derived, which an `npm update` can break.
 
 ---
 
