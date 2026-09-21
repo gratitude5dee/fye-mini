@@ -1109,7 +1109,9 @@ control at the foot of the Workshop, not buried in a keyboard chord.
 values. Two token systems ship.
 
 **Do not delete `src/ui/styles.css`.** It is half dead and half load-bearing, and the split is not where you would
-guess. | Live — must be migrated | Dead — safe to delete |
+guess.
+
+| Live — must be migrated | Dead — safe to delete |
 |---|---|
 | `.loader`, `.loader__inner`, `.loader__sigil`, `.loader__title`, `.loader__bar`, `.loader__status` | `.element-card`, `.element-card__glyph/__key/__label` |
 | `.sigil`, `.sigil--fire\|water\|earth\|air` | `.mode-card`, `.mode-card__glyph` |
