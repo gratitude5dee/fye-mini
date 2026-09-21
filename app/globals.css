@@ -1,7 +1,81 @@
-@import '../src/ui/styles.css';
+/**
+ * The one token set.
+ *
+ * There used to be two. `src/ui/styles.css` shipped a `--ui-*` scale for a
+ * standalone shell whose markup React never rendered, while this file and
+ * `grimoire-stage.css` carried unrelated literals — so the loading screen and
+ * the stage were styled by different systems that disagreed. That file is gone;
+ * the rules of it that were load-bearing moved into `grimoire-stage.css`.
+ *
+ * Dark only, deliberately. The stage is a near-black ritual ground
+ * (`environment.backgroundColor` is `#14181d`, fog to the same colour, ambient
+ * at 0.12), and the elemental effects are the brightest things on screen by
+ * design. A light theme would have to fight the renderer, and the renderer
+ * would win.
+ */
 
 :root {
   color-scheme: dark;
+
+  /* Surface — sampled to sit above the stage without competing with the VFX. */
+  --g-void: #08090a;
+  --g-stage: #101318;
+  --g-panel: rgb(12 15 18 / .78);
+  --g-panel-solid: rgb(12 16 22 / .94);
+  --g-line: rgb(246 241 232 / .16);
+  --g-line-strong: rgb(246 241 232 / .34);
+
+  /* Ink. */
+  --ink: #f6f1e8;
+  --muted: #d8d0c2;
+  --faint: rgb(246 241 232 / .42);
+
+  /* Elements — the only hues in the product. The live value of `--accent` is
+     set per-element on `.grimoire-stage`; these are the source it draws from
+     and they must match `ELEMENTS` in `GrimoireStage.tsx`. */
+  --g-fire: #ff6a3c;
+  --g-water: #3fb8c9;
+  --g-earth: #c6a372;
+  --g-air: #bfe8df;
+  --accent: var(--g-air);
+
+  /* Type. */
   --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
   --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+  /* Radii and elevation. */
+  --g-r-sm: 8px;
+  --g-r-md: 15px;
+  --g-r-pill: 999px;
+  --g-blur: blur(12px);
+  --g-shadow: 0 16px 40px rgb(0 0 0 / .72);
+
+  /* Motion. */
+  --g-fast: 120ms;
+  --g-base: 240ms;
+  --g-slow: 420ms;
+  --g-ease: cubic-bezier(.2, .8, .2, 1);
+
+  /* Layers. Named because they were ad hoc, and because `.hud` sits *below*
+     the stage chrome rather than above it — mapping it to 30 would silently
+     raise the toast over the panels it is meant to sit behind. */
+  --g-z-world: 0;
+  --g-z-hud: 20;
+  --g-z-chrome: 30;
+  --g-z-mirror: 45;
+  --g-z-help: 40;
+  --g-z-loader: 100;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--g-void);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }

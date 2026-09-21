@@ -1,6 +1,6 @@
-.grimoire-stage { --ink: #f6f1e8; --muted: #d8d0c2; --panel: rgb(12 15 18 / .78); min-height: 100dvh; overflow: hidden; color: var(--ink); background: #101318; font-family: var(--font-sans); }
+.grimoire-stage { --panel: var(--g-panel); min-height: 100dvh; overflow: hidden; color: var(--ink); background: var(--g-stage); font-family: var(--font-sans); }
 .grimoire-stage__surface { min-height: 100dvh; }
-#viewport { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+#viewport { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
 .stage-header, .stage-message, .stage-hud, .side-sheet { position: fixed; z-index: 30; }
 .stage-header { inset: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; padding: clamp(17px, 3vw, 30px); pointer-events: none; }
 .header-actions { display: flex; gap: 8px; pointer-events: auto; }
@@ -29,12 +29,12 @@
    what is behind this is the real scene fading up rather than a covered one. */
 .intro { position: fixed; z-index: 100; inset: 0; display: grid; overflow: hidden; pointer-events: none; }
 .intro__skip { pointer-events: auto; }
-/* Type fades with the beat rather than on a timer of its own, so it can never
-   outlast the stage it is introducing. */
-.intro--dark .intro__copy { opacity: 1; }
-.intro--reveal .intro__copy { opacity: .55; }
+/* The line fades with the beat rather than on a timer of its own, so it can
+   never outlast the stage it is introducing. It holds while the loader is up
+   and through the reveal, then goes as the stage settles. */
+.intro--dark .intro__copy, .intro--reveal .intro__copy { opacity: 1; }
 .intro--settle .intro__copy, .intro--play .intro__copy { opacity: 0; }
-.intro__copy { transition: opacity .45s ease; }
+.intro__copy { align-content: end !important; padding-bottom: 12vh !important; transition: opacity var(--g-slow) ease; }
 .intro__copy { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; padding: 28px; text-align: center; pointer-events: none; }
 .intro__copy p, .intro__copy span { margin: 0; color: #fff6e7; font: 700 10px/1.35 var(--font-sans); letter-spacing: .2em; text-transform: uppercase; }
 .intro__copy h1 { max-width: 620px; margin: 14px 0; font: 500 clamp(45px, 9vw, 112px)/.82 var(--font-display); letter-spacing: -.07em; text-shadow: 0 5px 44px #000; }
@@ -106,3 +106,34 @@ kbd { display: inline-block; min-width: 15px; border: 1px solid rgb(246 241 232 
 /* The stage dock owns the bottom centre on a phone, so the button steps up out
    of its way rather than sitting on top of the ride control. */
 @media (max-width: 680px) { .help-button { right: 12px; bottom: auto; top: 76px; } }
+
+/* --- The loading screen ------------------------------------------------- */
+/* Moved here from `src/ui/styles.css`, which was deleted. It is the first thing
+   every visitor sees and it was the only thing styling it, so this is the one
+   part of that file that had to survive intact. React renders the markup and
+   `LoadingScreen` in `src/ui/HUD.js` mutates it by id. */
+.loader { position: fixed; z-index: var(--g-z-loader); inset: 0; display: grid; place-items: center; background: radial-gradient(120% 120% at 50% 30%, #16202c 0%, var(--g-void) 70%); transition: opacity .7s ease, visibility .7s; }
+.loader.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.loader__inner { width: min(420px, 80vw); text-align: center; }
+.loader__title { margin: 22px 0 18px; font: 600 26px/1.2 var(--font-display); letter-spacing: .12em; }
+.loader__sigil { display: flex; justify-content: center; gap: 14px; }
+.sigil { width: 17px; height: 17px; border-radius: 4px; opacity: .85; animation: sigil-pulse 2.6s ease-in-out infinite; }
+.sigil--fire { background: var(--g-fire); }
+.sigil--water { background: var(--g-water); animation-delay: .2s; }
+.sigil--earth { background: var(--g-earth); animation-delay: .4s; }
+.sigil--air { background: var(--g-air); animation-delay: .6s; }
+@keyframes sigil-pulse { 0%, 100% { transform: scale(1); opacity: .55; } 50% { transform: scale(1.35); opacity: 1; } }
+.loader__bar { overflow: hidden; width: 100%; height: 3px; margin: 8px 0 12px; border-radius: 999px; background: rgb(246 241 232 / .12); }
+.loader__bar i { display: block; width: 0; height: 100%; border-radius: 999px; background: var(--accent); transition: width .25s ease; }
+.loader__status { margin: 0; color: var(--muted); font: 400 12px/1.4 var(--font-sans); letter-spacing: .04em; }
+
+/* --- The toast ---------------------------------------------------------- */
+/* The only surviving output of `src/ui/HUD.js`. It sits on the HUD layer, which
+   is below the stage chrome on purpose. */
+.hud { position: fixed; z-index: var(--g-z-hud); inset: 0; pointer-events: none; font-size: 13px; }
+.hud__toast { position: absolute; top: 76px; left: 50%; transform: translate(-50%, -12px); padding: 9px 18px; border: 1px solid var(--g-line); border-radius: var(--g-r-pill); background: var(--g-panel-solid); box-shadow: var(--g-shadow); opacity: 0; font-size: 12px; letter-spacing: .04em; transition: opacity var(--g-base) ease, transform var(--g-base) ease; }
+.hud__toast.is-visible { transform: translate(-50%, 0); opacity: 1; }
+
+/* --- The live editor ---------------------------------------------------- */
+.lil-gui.autoPlace { z-index: var(--g-z-chrome); top: 64px; right: 14px; max-height: calc(100dvh - 96px); }
+.lil-gui.lil-root > .title, .lil-gui.root > .title { font-family: var(--font-sans); letter-spacing: .1em; text-transform: uppercase; }

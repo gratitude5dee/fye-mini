@@ -308,7 +308,10 @@ export function GrimoireStage() {
         ref={introRef}
         tabIndex={-1}
       >
-        <div className="intro__copy"><h1>The Living Grimoire</h1><span>Nothing leaves this tab.</span></div>
+        {/* No wordmark here: the loading screen already renders one, at the same
+            z-index, and the two drew on top of each other. The loader owns the
+            title card; this overlay owns the fade and the one line under it. */}
+        <div className="intro__copy"><span>Nothing leaves this tab.</span></div>
         <button className="intro__skip" onClick={dismissIntro}>Skip intro</button>
       </section>}
 

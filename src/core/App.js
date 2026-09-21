@@ -178,7 +178,6 @@ export class App {
       this._recordCast(length);
     });
 
-    this.hud.onSelect = (element) => this.selectElement(element);
   }
 
   _bindGrimoireEvents() {
@@ -300,7 +299,10 @@ export class App {
   selectElement(element) {
     if (!element) return;
     this.abilities.select(element);
-    this.hud.setElement(element);
+    // `HUD.setElement` used to do this. Its card loop was a no-op over an empty
+    // map, but this toast was real, and cutting the method without moving the
+    // line would have silently deleted a visible behaviour.
+    this.hud.showToast(`${element === 'wind' ? 'Gale' : element[0].toUpperCase() + element.slice(1)} selected`);
     window.dispatchEvent(new CustomEvent('grimoire:selected', { detail: { element: element === 'wind' ? 'air' : element } }));
   }
 
@@ -408,9 +410,7 @@ export class App {
     }
     this.post.sync(this.elapsed, this.flash);
     this.post.render();
-    this.hud.update(raw, () => ({
-      particles: this.particles.countLive(this.elapsed), calls: gl.info.render.calls, abilities: this.abilities.active.length
-    }));
+
   }
 
   dispose() {
@@ -432,6 +432,7 @@ export class App {
     this.dust.dispose();
     this.post.dispose();
     this.environment.dispose();
+    this.hud.dispose();
     this.editor.dispose();
     this.rig.dispose();
     this.renderer.dispose();
