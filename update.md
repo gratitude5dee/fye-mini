@@ -157,7 +157,14 @@ invisible / will leak into the distortion pass.
 `samplesPerUnit 3.0` -> `PathTrail.setPoints` -> on `end`, if `samples.length >= 3 && length >= minPathLength 1.6`,
 `emit('cast', curve, resampled, count, length)` -> `App` sets `release`, calls `abilities.cast(curve)`,
 dispatches `grimoire:cast-complete`.
-**A stroke shorter than 1.6 world units is silently discarded with no feedback whatsoever** (`emit('cancel')` has no listener).
+**A stroke shorter than 1.6 world units is silently discarded with no feedback whatsoever.** `PathDrawer` emits
+three events — `start`, `cast` and `cancel` — and `App` listens to **only `cast`** (`src/core/App.js:124`). So:
+- `cancel` (too short, or fewer than three samples) produces nothing at all. No toast, no trail flourish, no sound.
+- `start` is also unlistened, and it is the event that fires when the pointer *successfully* projects onto the
+  ground. It is the natural, free hook for ghost-sigil feedback.
+- Because `App` sets the caster's `gather` pose from `InputManager`'s `draw:start` (`:110-112`) rather than from
+  `PathDrawer`'s `start`, **a pointer-down above the horizon makes the caster gather for a stroke that never
+  begins** — `PathDrawer.begin()` returns early when the raycast misses the ground plane.
 
 ### HandInput (src/input/HandInput.js)
 - MediaPipe `HandLandmarker`, `numHands: 1`, `runningMode: 'VIDEO'`, GPU delegate with CPU fallback.
@@ -1034,21 +1041,35 @@ uniform write and nothing else.
   close is quieter. That is a beat, not a punishment, and it is the right failure for a product with no enemies.
 
 ### Scoring: fidelity, not damage
-At release, compare the resampled stroke to the sigil's reference polyline. Both are arc-length uniform, so the
-comparison is an index-wise distance with no resampling work:
+At release, compare the drawn stroke to the sigil's reference polyline.
+
+**One correctness trap to avoid.** `PathDrawer` resamples to a count that depends on the stroke's length —
+`wanted = clamp(round(length * settings.input.samplesPerUnit), 2, 320)` with `samplesPerUnit: 3.0`
+(`src/input/PathDrawer.js:_rebuild`). A 4 m stroke yields 12 samples and a 20 m stroke yields 60, so **sample `i`
+of the stroke does not correspond to sample `i` of the sigil**. The scorer must resample both to the same fixed
+count first. Use `curve.getPointAt(i / (N - 1))`, which is arc-length parameterised in three.js, with `N = 64`
+into two preallocated buffers — the same discipline `PathDrawer` already applies to its own 320-`Vector3` buffer.
 
 ```js
 /**
- * Mean normalised deviation of a drawn stroke from a reference sigil.
+ * Fidelity of a drawn stroke against a reference sigil.
  *
- * Both polylines are arc-length uniform, so sample i of one corresponds to
- * sample i of the other. The stroke is compared in both directions and the
- * better score wins: drawing a sigil backwards is a different hand, not a
- * worse one.
+ * Both curves are resampled to SAMPLES points by arc length before comparison,
+ * because `PathDrawer`'s own sample count scales with stroke length and two
+ * strokes of different lengths would otherwise not line up index for index.
  *
- * @returns {number} 0..1, where 1 is a perfect trace
+ * The stroke is scored in both directions and the better result wins: drawing a
+ * sigil backwards is a different hand, not a worse one.
+ *
+ * Allocates nothing — both buffers are module-level and reused, matching the
+ * discipline in `PathDrawer`.
+ *
+ * @param {THREE.Curve} stroke    what the player drew
+ * @param {THREE.Curve} sigil     what the Grimoire asked for
+ * @param {number} tolerance      metres of deviation scored as zero fidelity
+ * @returns {{ line: number, flow: number, closure: number }} each 0..1
  */
-export function scoreTrace(stroke, strokeCount, sigil, tolerance) { /* ... */ }
+export function scoreTrace(stroke, sigil, tolerance) { /* ... */ }
 ```
 
 Three published components, because a single opaque number teaches nothing:
