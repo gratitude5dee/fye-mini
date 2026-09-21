@@ -30,6 +30,10 @@ import { TO_UI } from '../state/events.js';
 /** Beat durations in seconds: [normal, reduced motion, skipped]. */
 const BEATS = {
   dark: [0.4, 0.4, 0.05],
+  // The sigil, once the load is done: a held moment on the assembled shape,
+  // then it lets go. Under reduced motion it is barely a beat — the cloud is
+  // already crisp by then and holding it is the only part that is motion.
+  sigil: [0.9, 0.25, 0.08],
   reveal: [1.0, 0.6, 0.12],
   settle: [0.4, 0.4, 0.05]
 };
@@ -54,6 +58,9 @@ export class IntroDirector {
     this.beat = 'dark';
     this._elapsed = 0;
     this._ready = false;
+    /** How far the load has got, 0..1. Drives the sigil's convergence. */
+    this._progress = 0;
+    this._assembled = 0;
 
     // Remembered so the stage is handed back exactly as it was authored.
     this._restore = {
@@ -92,9 +99,21 @@ export class IntroDirector {
     return this.returning ? normal * 0.6 : normal;
   }
 
+  /**
+   * How far the load has got.
+   *
+   * The sigil converges on this, so the loading bar is not a bar beside the
+   * picture — it *is* the picture, and there is nothing else to say about how
+   * far through it is.
+   */
+  onProgress(ratio) {
+    this._progress = MathUtils.clamp(ratio, 0, 1);
+  }
+
   /** The stage is playable. Until this lands, `dark` simply holds. */
   onStageReady() {
     this._ready = true;
+    this._progress = 1;
   }
 
   /** Collapse what is left. Never a cut, and never a different ending. */
@@ -107,18 +126,37 @@ export class IntroDirector {
     this._elapsed += dt;
 
     if (this.beat === 'dark') {
+      // The sigil assembles on the load's own progress, and eases rather than
+      // snapping: a load that jumps from 5% to 62% in one step should not make
+      // the cloud teleport.
+      this._assembled += (this._progress - this._assembled) * Math.min(1, dt * 3.2);
+      this.ctx.sigil?.set(this._assembled, Math.min(1, this._elapsed * 2.4));
       // Hold on the gate rather than on a clock: the stage is not allowed to
       // claim it is opening before it can be played.
-      if (this._elapsed >= this._duration('dark') && this._ready) this._advance('reveal');
+      if (this._elapsed >= this._duration('dark') && this._ready) this._advance('sigil');
       return;
     }
 
     const duration = this._duration(this.beat);
     const t = MathUtils.clamp(this._elapsed / duration, 0, 1);
 
+    if (this.beat === 'sigil') {
+      // Crisp, and held. The one still moment in the opening, and the only
+      // place the shape is fully legible.
+      this._assembled += (1 - this._assembled) * Math.min(1, dt * 6);
+      this.ctx.sigil?.set(this._assembled, 1);
+      if (t >= 1) this._advance('reveal');
+      return;
+    }
+
     if (this.beat === 'reveal') {
       // Ease out, so the stage arrives and settles rather than creeping in.
       const eased = 1 - (1 - t) ** 3;
+      // The sigil lets go as the stage arrives: it scatters back outward and
+      // fades, so the stage is revealed *through* it rather than after it. It
+      // scatters rather than simply fading because a cloud that dims in place
+      // reads as a mistake, and one that disperses reads as an ending.
+      this.ctx.sigil?.set(1 - eased, 1 - eased ** 0.7);
       this._write('post', 'gain', this._restore.gain * eased);
       if (this._wantsCameraMove) {
         this._write('camera', 'distance', MathUtils.lerp(OPENING_DISTANCE, this._restore.distance, eased));
@@ -127,7 +165,10 @@ export class IntroDirector {
       return;
     }
 
-    if (this.beat === 'settle' && t >= 1) this._finish();
+    if (this.beat === 'settle') {
+      this.ctx.sigil?.set(0, 0);
+      if (t >= 1) this._finish();
+    }
   }
 
   _advance(beat) {
@@ -150,6 +191,9 @@ export class IntroDirector {
   }
 
   _finish() {
+    // Whatever beat this was called from — including a skip straight out of
+    // `dark` — the cloud is not left on the stage.
+    this.ctx.sigil?.set(0, 0);
     // Restore what the director is still holding, so nothing it touched
     // survives it — and nothing the player did during it is thrown away.
     this._release('post', 'gain');

@@ -184,7 +184,12 @@ kbd { display: inline-block; min-width: 15px; border: 1px solid rgb(246 241 232 
    every visitor sees and it was the only thing styling it, so this is the one
    part of that file that had to survive intact. React renders the markup and
    `LoadingScreen` in `src/ui/HUD.js` mutates it by id. */
-.loader { position: fixed; z-index: var(--g-z-loader); inset: 0; display: grid; place-items: center; background: radial-gradient(120% 120% at 50% 30%, #16202c 0%, var(--g-void) 70%); transition: opacity .7s ease, visibility .7s; }
+/* No background of its own. The canvas behind it is opaque black from the
+   first paint (`alpha: false`), and the sigil assembles on that canvas *while*
+   this is still up — so an opaque panel here would hide the loading animation
+   for the whole of the load it is reporting on. The wordmark and the status
+   line sit over the assembling motes, which is the composition. */
+.loader { position: fixed; z-index: var(--g-z-loader); inset: 0; display: grid; place-items: center; background: transparent; transition: opacity .7s ease, visibility .7s; }
 .loader.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 .loader__inner { width: min(420px, 80vw); text-align: center; }
 .loader__title { margin: 22px 0 18px; font: 600 26px/1.2 var(--font-display); letter-spacing: .12em; }
@@ -222,3 +227,21 @@ kbd { display: inline-block; min-width: 15px; border: 1px solid rgb(246 241 232 
 .switch span { color: var(--muted); font: 400 11px/1.45 var(--font-sans); }
 .switch strong { display: block; color: var(--ink); font: 600 12px/1.3 var(--font-sans); }
 .stage-settings__note { margin: 0; color: var(--muted); font: 400 11px/1.45 var(--font-sans); opacity: .8; }
+
+/* --- The opening holds the chrome back ---------------------------------- */
+/* The sigil assembling out of the dark is the whole of the opening, and it was
+   sharing the screen with a lit header, a dock and a Cast button — so the one
+   thing the player was meant to be looking at was the one thing competing for
+   attention. The interface arrives when the stage does.
+
+   `is-opening` is only ever set by hearing from the director, so a page whose
+   renderer never loads shows its interface rather than a black rectangle. The
+   skip button is deliberately exempt: it is the way out of the thing that is
+   holding everything else back. */
+.grimoire-stage.is-opening :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .help-button) {
+  opacity: 0;
+  pointer-events: none;
+}
+.grimoire-stage :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .help-button) {
+  transition: opacity var(--g-slow) ease;
+}

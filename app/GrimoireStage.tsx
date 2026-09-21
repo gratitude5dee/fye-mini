@@ -103,6 +103,14 @@ export function GrimoireStage() {
   const [storageAvailable, setStorageAvailable] = useState(true);
   const [rite, setRite] = useState<RiteState>(IDLE_RITE);
   const [introBeat, setIntroBeat] = useState('dark');
+  /**
+   * Whether the stage chrome is held back for the opening.
+   *
+   * Starts `false` and is only ever raised by hearing from the director, so a
+   * page whose renderer never loads shows its interface rather than a black
+   * rectangle. It is lowered again the moment the opening finishes.
+   */
+  const [openingHolds, setOpeningHolds] = useState(false);
   const [hand, setHand] = useState({ engaged: false, wake: 0, lift: 0, spread: 0, dock: null as string | null, dockHold: 0 });
   const [helpOpen, setHelpOpen] = useState(false);
   // A phone never gets the camera — `enableHands` refuses on a coarse pointer.
@@ -259,6 +267,7 @@ export function GrimoireStage() {
       const detail = (event as CustomEvent<{ beat: string; finished: boolean }>).detail;
       if (!detail) return;
       setIntroBeat(detail.beat);
+      setOpeningHolds(!detail.finished);
       if (detail.finished) {
         setIntroVisible(false);
         persistPreferences({ introSeen: true });
@@ -320,7 +329,10 @@ export function GrimoireStage() {
   };
 
   return (
-    <main className="grimoire-stage" style={{ '--accent': currentElement.color } as CSSProperties}>
+    <main
+      className={`grimoire-stage ${openingHolds ? 'is-opening' : ''}`}
+      style={{ '--accent': currentElement.color } as CSSProperties}
+    >
       <div className="grimoire-stage__surface" ref={surfaceRef}>
         <canvas id="viewport" aria-label="Elemental casting stage with an animated caster" />
         <div id="loader" className="loader" aria-live="polite">

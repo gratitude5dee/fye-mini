@@ -13,7 +13,7 @@ Implemented on this branch, verified by `npm test` (54 contract tests) and by dr
 | Phase | State |
 |---|---|
 | **P0 Foundations** | **Built.** Event contract, preferences with the v2 migration, the session store, the `rite` settings block, the dead-code removal, and all three live bugs. |
-| **P1 Intro** | **Built.** `IntroDirector` fades the renderer's own grade and drives the rig's settings, gated on readiness. The 2.58 MiB montage is deleted. |
+| **P1 Intro** | **Built.** `IntroDirector` fades the renderer's own grade and drives the rig's settings, gated on readiness. The 2.58 MiB montage is deleted. A `sigil` beat was added after the reference video: the element's mark, rasterised and sampled into a mote cloud that converges on the load's own progress and scatters as the stage arrives. The stage chrome is held back until the opening ends. |
 | **P4 The Rite** | **Built.** Generated layouts, the stroke resolver, the Ward, and the session wired into the frame loop. |
 | **P5 Onboarding** | **Partly built.** The ghost line ships and retires after one solve. The trust ladder and the full contextual guide do not. |
 | **P7a Tracker** | **Built.** All four anti-misfire guards, the lost state, the ratio-based extension, and the throttled state channel. |

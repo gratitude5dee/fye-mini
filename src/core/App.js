@@ -29,9 +29,26 @@ import { settings, ELEMENTS } from '../config/settings.js';
 import { RANGES, SPELLWRIGHT_COLOR_PATHS, enginePath } from '../config/spell-contract.js';
 import { Rite } from '../game/Rite.js';
 import { IntroDirector } from '../intro/IntroDirector.js';
+import { SigilCloud } from '../intro/SigilCloud.js';
 import { TO_ENGINE, TO_UI } from '../state/events.js';
 import { QualityLadder } from './QualityLadder.js';
 import { CalmMode } from './CalmMode.js';
+
+/**
+ * The mark each element assembles as, while the stage loads.
+ *
+ * The same glyphs the dock draws, in the same face, so what resolves out of the
+ * dark is the thing the player will go on pressing. `warm` is the speckle
+ * through the cloud rather than a second element: one flat colour reads as a
+ * swatch, and the minority hue is what makes it read as a swarm.
+ */
+const SIGIL = {
+  fire: { glyph: '\u2726', cool: '#ff6a3c', warm: '#ffd8a8' },
+  water: { glyph: '\u25d2', cool: '#3fb8c9', warm: '#bfe8df' },
+  earth: { glyph: '\u25c6', cool: '#c6a372', warm: '#ffe7bd' },
+  air: { glyph: '\u2301', cool: '#bfe8df', warm: '#9ba9ff' },
+  wind: { glyph: '\u2301', cool: '#bfe8df', warm: '#9ba9ff' }
+};
 
 /** Owns the local stage, input sources, caster performance, and effects. */
 export class App {
@@ -53,9 +70,16 @@ export class App {
 
     this.ground = new Ground(this.environment);
     this.dust = new DustMotes();
+    // The mark that assembles while the stage loads. Beside the dust because it
+    // is the same kind of thing — one additive Points cloud sharing its pixel
+    // ratio and its clock — and because it has to exist before the first frame,
+    // which is the frame the load begins on.
+    this.sigil = new SigilCloud();
     this.stageAnchor = new Vector3();
     this.scene.add(this.ground.mesh, this.dust.points);
     this.dust.setPixelRatio(this.renderer.gl.getPixelRatio());
+    this.sigil.setPixelRatio(this.renderer.gl.getPixelRatio());
+    this._dressSigil(options.element);
 
     this.particles = new ParticleEngine(this.scene);
     this.lights = new LightPool(this.scene);
@@ -124,7 +148,7 @@ export class App {
 
     // Constructed before the first frame so the stage is black from the very
     // first paint rather than flashing a lit scene and then fading in.
-    this.intro = new IntroDirector({ rig: this.rig }, {
+    this.intro = new IntroDirector({ rig: this.rig, sigil: this.sigil }, {
       reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
       returning: Boolean(options.returning)
     });
@@ -132,7 +156,8 @@ export class App {
     settings.mode = 'casting';
     this._bindEvents();
     this._bindGrimoireEvents();
-    this.selectElement('wind');
+    // The stage's opening element. Silent: nothing has been chosen yet.
+    this.selectElement(options.element === 'air' ? 'wind' : (options.element ?? 'wind'), { announce: false });
   }
 
   _bindEvents() {
@@ -140,6 +165,7 @@ export class App {
       this.rig.resize(width, height);
       this.post.setSize(width, height, pixelRatio);
       this.dust.setPixelRatio(pixelRatio);
+      this.sigil.setPixelRatio(pixelRatio);
     });
 
     this.input.on('draw:start', (pointer) => {
@@ -201,6 +227,25 @@ export class App {
       this._recordCast(length);
     });
 
+  }
+
+  /**
+   * Point the loading sigil at the element the player last held.
+   *
+   * A returning player's stage opens in their own colour, on their own mark. It
+   * costs nothing - the preference is already read to select the element - and
+   * it is the difference between a loading screen and *their* loading screen.
+   * A first visit gets air, which is what the stage opens on anyway.
+   */
+  _dressSigil(element) {
+    const meta = SIGIL[element] ?? SIGIL.air;
+    if (!this.sigil.setGlyph(meta.glyph)) {
+      // No glyph in any available font. Better a plain fade than a tofu box
+      // assembling out of the dark with great ceremony.
+      this.sigil.set(0, 0);
+      return;
+    }
+    this.sigil.setAccent(meta.cool, meta.warm);
   }
 
   /**
@@ -395,13 +440,21 @@ export class App {
     }
   }
 
-  selectElement(element) {
+  /**
+   * @param {string} element
+   * @param {{ announce?: boolean }} [options] `announce: false` for a selection
+   *   the player did not make — the one at boot, which used to put a toast over
+   *   the opening saying the stage had chosen the element it always starts on.
+   */
+  selectElement(element, { announce = true } = {}) {
     if (!element) return;
     this.abilities.select(element);
     // `HUD.setElement` used to do this. Its card loop was a no-op over an empty
     // map, but this toast was real, and cutting the method without moving the
     // line would have silently deleted a visible behaviour.
-    this.hud.showToast(`${element === 'wind' ? 'Gale' : element[0].toUpperCase() + element.slice(1)} selected`);
+    if (announce) {
+      this.hud.showToast(`${element === 'wind' ? 'Gale' : element[0].toUpperCase() + element.slice(1)} selected`);
+    }
     window.dispatchEvent(new CustomEvent(TO_UI.SELECTED, { detail: { element: element === 'wind' ? 'air' : element } }));
   }
 
@@ -417,10 +470,17 @@ export class App {
   }
 
   async load() {
-    this.loading.setProgress(.05, 'Calling the caster…');
+    // Reported to both: the DOM loader still owns the words, and the sigil takes
+    // the number and turns it into the only progress indicator that is also the
+    // thing you are waiting for.
+    const report = (ratio, message) => {
+      this.loading.setProgress(ratio, message);
+      this.intro.onProgress(ratio);
+    };
+    report(.05, 'Calling the caster…');
     this.assets.onProgress((ratio, url) => {
       const message = url.includes('.fbx') ? 'Preparing the caster…' : 'Lighting the ritual ground…';
-      this.loading.setProgress(.05 + ratio * .48, message);
+      report(.05 + ratio * .48, message);
     });
     const characterLoad = this.character.load(this.assets);
     const hdrLoad = this.assets.loadHDR('/hdri/spruit_sunrise.hdr');
@@ -437,11 +497,11 @@ export class App {
     this.character.setFacing(0);
     frame.uEnvMap.value = this.environment.equirect;
 
-    this.loading.setProgress(.62, 'Warming the elements…');
+    report(.62, 'Warming the elements…');
     this.abilities.warm();
-    this.loading.setProgress(.85, 'Setting the performance…');
+    report(.85, 'Setting the performance…');
     await this.renderer.gl.compileAsync(this.scene, this.camera);
-    this.loading.setProgress(1, 'Ready');
+    report(1, 'Ready');
     // The stage is genuinely playable here: assets are loaded, pools are warm
     // and shaders are compiled. Announcing readiness before `hide()` — which
     // schedules a 220ms timeout into a 0.7s fade — is what stops the interface
@@ -481,6 +541,8 @@ export class App {
     this.environment.update();
     this.ground.update(this.elapsed);
     this.dust.update(this.elapsed, this.stageAnchor);
+    this.sigil.update(this.elapsed);
+    this.sigil.faceCamera(this.camera);
     this.pathDrawer.update(raw);
     this.abilities.update(dt);
     this.character.update(dt);
@@ -510,6 +572,10 @@ export class App {
     }
     this.post.sync(this.elapsed, this.flash);
     this.post.render();
+    // After the composer, straight to the frame buffer: during the opening the
+    // grade is at zero gain, and anything inside it is multiplied to black —
+    // including the thing that is supposed to be the only light in the room.
+    this.sigil.render(this.renderer.gl, this.camera);
 
   }
 
@@ -530,6 +596,7 @@ export class App {
     this.lights.dispose();
     this.ground.dispose();
     this.dust.dispose();
+    this.sigil.dispose();
     this.post.dispose();
     this.environment.dispose();
     this.hud.dispose();

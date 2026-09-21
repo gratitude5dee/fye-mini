@@ -15,8 +15,11 @@ export async function boot() {
   try {
     // A returning visitor gets the same opening, briskly. Read here rather
     // than inside the director so `src/` keeps one door onto storage.
-    const returning = readPreferences().introSeen;
-    const app = new App(canvas, { returning });
+    const preferences = readPreferences();
+    const returning = preferences.introSeen;
+    // The element they last held, so the loading sigil is their mark in their
+    // colour. First visit gets the default, which is what the stage opens on.
+    const app = new App(canvas, { returning, element: preferences.element });
     // Handy for poking at the scene from the console. Assigned before the load
     // so it is reachable while assets are still streaming.
     window.app = app;
