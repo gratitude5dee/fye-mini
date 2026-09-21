@@ -236,13 +236,19 @@ export const settings = {
     /** Each failed attempt widens it by this factor. The player is never told. */
     waystoneForgiveness: 1.18,
     /** Visible radius of a hazard region, metres. */
-    hazardRadius: 1.6,
+    hazardRadius: 1.25,
     /** A stroke sample above this height clears a hazard instead of clipping it. */
     hazardClearance: 1.2,
     /** Ring of the ritual ground the generator places on, metres. */
     fieldRadius: 7.0,
-    /** Shortest allowed gap between two generated features, metres. */
-    featureSpacing: 2.4
+    /**
+     * Shortest allowed gap between two waystones, metres.
+     *
+     * Must exceed `2 * waystoneRadius + 2 * hazardRadius` or a hazard can never
+     * sit between a pair without swallowing one of them, and every tier comes
+     * out short of the hazards it asked for.
+     */
+    featureSpacing: 5.2
   },
 
   /* ------------------------------------------------------------------ */
