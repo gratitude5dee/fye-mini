@@ -34,9 +34,12 @@ const BEATS = {
   // then it lets go. Under reduced motion it is barely a beat — the cloud is
   // already crisp by then and holding it is the only part that is motion.
   sigil: [1.1, 0.25, 0.08],
-  // The live stage is still the exit; the film simply gives its fade a richer
-  // eight-second surface on capable, motion-permitting devices.
-  reveal: [6.1, 0.6, 0.12],
+  // The live stage is still the exit; the film gives its fade a full
+  // fifteen-second surface on capable, motion-permitting devices. The last
+  // beat is deliberately held for the HTML title rather than asking a video
+  // model to draw lettering.
+  reveal: [11.6, 0.6, 0.12],
+  title: [2.0, 0.25, 0.08],
   settle: [0.4, 0.4, 0.05]
 };
 
@@ -163,6 +166,15 @@ export class IntroDirector {
       if (this._wantsCameraMove) {
         this._write('camera', 'distance', MathUtils.lerp(OPENING_DISTANCE, this._restore.distance, eased));
       }
+      if (t >= 1) this._advance('title');
+      return;
+    }
+
+    if (this.beat === 'title') {
+      // Keep the generated final frame clean and reserve this beat for the
+      // real FYE title, which is sharp, selectable by assistive tech, and
+      // never subject to image-model typography drift.
+      this.ctx.sigil?.set(0, 0);
       if (t >= 1) this._advance('settle');
       return;
     }

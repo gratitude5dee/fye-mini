@@ -58,8 +58,11 @@ test('the public interface keeps camera data local and opens with a motion-safe,
   assert.match(intro, /onStageReady/);
   assert.match(stage, /Skip intro/);
   assert.match(stage, /INTRO_VIDEO_URL/);
+  assert.match(stage, /className="intro__title">FYE/);
   assert.match(stage, /muted/);
   assert.match(css, /intro__video/);
+  assert.match(css, /intro--title \.intro__title/);
+  assert.match(intro, /title: \[2\.0, 0\.25, 0\.08\]/);
   await access(new URL('../public/intro/elemental-arrival.mp4', import.meta.url));
   // And the raster montage it replaced is gone from the bundle and the repo.
   assert.doesNotMatch(stage, /elemental-montage/);

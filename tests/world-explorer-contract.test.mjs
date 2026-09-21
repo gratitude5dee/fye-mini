@@ -63,8 +63,8 @@ test('world rendering applies Marble alignment and disposes the prior world', as
 });
 
 test('third-person controls coexist with casting, air travel, and opt-in hands', async () => {
-  const [app, locomotion, stage] = await Promise.all([
-    source('../src/core/App.js'), source('../src/animation/LocomotionController.js'), source('../app/GrimoireStage.tsx')
+  const [app, locomotion, stage, css] = await Promise.all([
+    source('../src/core/App.js'), source('../src/animation/LocomotionController.js'), source('../app/GrimoireStage.tsx'), source('../app/grimoire-stage.css')
   ]);
   for (const key of ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft']) assert.match(locomotion, new RegExp(key));
   assert.match(locomotion, /camera\.getWorldDirection/);
@@ -79,4 +79,7 @@ test('third-person controls coexist with casting, air travel, and opt-in hands',
   assert.match(stage, /Mobile never requests your camera/);
   assert.match(stage, /movement-hint/);
   assert.match(stage, /world-drawer/);
+  assert.match(stage, /WORLD_PREVIEWS\.map/);
+  assert.match(stage, /LOCAL_WORLD\n  \]/);
+  assert.match(css, /cursor: not-allowed/);
 });

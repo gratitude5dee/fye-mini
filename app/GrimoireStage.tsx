@@ -201,9 +201,13 @@ export function GrimoireStage() {
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
   const activeWorld = worlds.find((world) => world.slug === selectedWorld) ?? LOCAL_WORLD;
+  // Keep the destination sequence stable whether the catalog is still
+  // preparing, partially ready, or fully published. The local fallback is
+  // intentionally last: it is a dependable way back, not the first place we
+  // ask a new explorer to choose.
   const catalogCards = [
-    ...worlds,
-    ...WORLD_PREVIEWS.filter((preview) => !worlds.some((world) => world.slug === preview.slug))
+    ...WORLD_PREVIEWS.map((preview) => worlds.find((world) => world.slug === preview.slug) ?? preview),
+    LOCAL_WORLD
   ];
   const gestureGuide = GESTURE_GUIDES[element];
 
@@ -270,7 +274,7 @@ export function GrimoireStage() {
       .then((payload: { worlds?: WorldCatalogEntry[] }) => {
         if (!alive) return;
         const ready = Array.isArray(payload.worlds) ? payload.worlds : [];
-        setWorlds([LOCAL_WORLD, ...ready]);
+        setWorlds([...ready, LOCAL_WORLD]);
         setWorldStatus(ready.length ? 'Choose a prepared world.' : 'Ritual Stage is ready while new worlds are prepared.');
       })
       .catch(() => {
@@ -634,10 +638,10 @@ export function GrimoireStage() {
           preload="auto"
           aria-hidden="true"
         />
-        {/* No wordmark here: the loading screen already renders one, at the same
-            z-index, and the two drew on top of each other. The loader owns the
-            title card; this overlay owns the fade and the one line under it. */}
-        <div className="intro__copy"><span>Your camera stays on this device. Selected worlds stream when you enter them.</span></div>
+        <div className="intro__copy">
+          <h1 className="intro__title">FYE</h1>
+          <span>Your camera stays on this device. Selected worlds stream when you enter them.</span>
+        </div>
         <button className="intro__skip" onClick={dismissIntro}>Skip intro</button>
       </section>}
 
@@ -666,13 +670,14 @@ export function GrimoireStage() {
               onClick={() => ready && selectWorld(world)}
               disabled={!ready || !stageReady}
               aria-pressed={selectedWorld === world.slug}
+              title={ready ? `Enter ${world.title}` : `${world.title} is being calibrated for safe exploration.`}
             >
               {image ? <img src={image} alt="" /> : <span className="world-card__local" aria-hidden="true">✦</span>}
               <span><small>{ready ? (world.kind === 'ritual' ? 'Local fallback' : 'Ready to explore') : 'Preparing'}</small><strong>{world.title}</strong><em>{world.summary}</em></span>
             </button>;
           })}
         </div>
-        <p className="world-picker__note">Ready worlds use 500k splats on capable desktops and a 100k fallback on constrained devices.</p>
+        <p className="world-picker__note">Ready worlds use 500k splats on capable desktops and a 100k fallback on constrained devices. Destinations marked “Preparing” are not enterable yet; Ritual Stage remains available at the end of the list.</p>
       </section>}
 
       {handsOpen && <section className="side-sheet" role="dialog" aria-modal="true" aria-labelledby="hands-title" ref={handsRef} tabIndex={-1}>
