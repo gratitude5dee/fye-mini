@@ -8,7 +8,9 @@ const GESTURES = new Set(['idle', 'gather', 'aim', 'release', 'recovery']);
 const JOINTS = [
   'mixamorig:Hips', 'mixamorig:Spine', 'mixamorig:Spine1', 'mixamorig:Spine2',
   'mixamorig:LeftShoulder', 'mixamorig:LeftArm', 'mixamorig:LeftForeArm', 'mixamorig:LeftHand',
-  'mixamorig:RightShoulder', 'mixamorig:RightArm', 'mixamorig:RightForeArm', 'mixamorig:RightHand'
+  'mixamorig:RightShoulder', 'mixamorig:RightArm', 'mixamorig:RightForeArm', 'mixamorig:RightHand',
+  'mixamorig:LeftUpLeg', 'mixamorig:LeftLeg', 'mixamorig:LeftFoot',
+  'mixamorig:RightUpLeg', 'mixamorig:RightLeg', 'mixamorig:RightFoot'
 ];
 
 const COLORLESS = Object.freeze({ fire: 1, water: .82, earth: .72, wind: 1 });
@@ -62,7 +64,7 @@ export class CasterPerformance {
     joint.quaternion.copy(rest).multiply(_delta);
   }
 
-  update(dt, isRiding = false) {
+  update(dt, isRiding = false, locomotion = {}) {
     if (this.joints.size === 0) return;
     this.elapsed += dt;
     if (isRiding) return;
@@ -71,6 +73,8 @@ export class CasterPerformance {
     const pulse = 1 + Math.sin(this.elapsed * 3.2) * .045;
     const elementWeight = COLORLESS[this.element] ?? 1;
     const strength = this.intensity * elementWeight;
+    const gait = locomotion.moving ? Math.sin(this.elapsed * (locomotion.sprinting ? 11 : 7.4)) : 0;
+    const gaitWeight = locomotion.moving ? (locomotion.sprinting ? .78 : .52) : 0;
 
     let gather = 0;
     let aim = 0;
@@ -98,6 +102,16 @@ export class CasterPerformance {
     this._joint('mixamorig:LeftArm', -.22 * trail, -.06 * trail, .4 * trail, strength);
     this._joint('mixamorig:LeftForeArm', -.2 * trail, 0, .45 * trail, strength);
     this._joint('mixamorig:LeftHand', -.06 * trail, -.1 * release, .16 * trail, strength);
+
+    // The asset only ships an idle clip. A restrained lower-body cycle makes
+    // direct movement readable while deliberately leaving the casting arms in
+    // charge of every gather, aim, release, and recovery silhouette.
+    this._joint('mixamorig:LeftUpLeg', gait * gaitWeight, 0, 0);
+    this._joint('mixamorig:RightUpLeg', -gait * gaitWeight, 0, 0);
+    this._joint('mixamorig:LeftLeg', -Math.max(0, gait) * gaitWeight * .5, 0, 0);
+    this._joint('mixamorig:RightLeg', Math.min(0, gait) * gaitWeight * .5, 0, 0);
+    this._joint('mixamorig:LeftFoot', -Math.min(0, gait) * gaitWeight * .2, 0, 0);
+    this._joint('mixamorig:RightFoot', Math.max(0, gait) * gaitWeight * .2, 0, 0);
 
     // Release is intentionally short; then the live figure visibly settles.
     if (this.gesture === 'release' && t > .28) this.setGesture('recovery');

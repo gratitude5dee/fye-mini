@@ -160,19 +160,17 @@ test('the tracker publishes its state, throttled, never per frame', async () => 
   assert.match(publish, /tracking,/, 'the contextual guide needs the lost state');
 });
 
-test('the hand offer waits for pointer confidence and the guide follows the armed slot', async () => {
-  const [stage, preferences] = await Promise.all([
-    source('../app/GrimoireStage.tsx'), source('../src/state/preferences.js')
-  ]);
+test('hand mode is visibly available and the guide follows the armed slot', async () => {
+  const stage = await source('../app/GrimoireStage.tsx');
 
-  // Asking for the camera at first paint is a trust cliff. Two successful
-  // pointer lines earn the one-line dock offer; a decline hides it for this
-  // session without changing pointer casting.
-  assert.match(preferences, /pointerSuccesses/);
-  assert.match(stage, /pointerSuccesses >= 2/);
-  assert.match(stage, /Cast with your hands\./);
+  // The consent sheet remains opt-in and camera permission is still reached
+  // only through Enable hands. The old two-success invitation is gone: users
+  // do not have to discover a hidden prerequisite before finding the control.
+  assert.match(stage, /!coarsePointer && <button[^>]*>Hand mode<\/button>/);
+  assert.match(stage, /Enable hands/);
   assert.match(stage, /Not now/);
-  assert.match(stage, /setHandOfferDismissed\(true\)/);
+  assert.doesNotMatch(stage, /pointerSuccesses >= 2/);
+  assert.doesNotMatch(stage, /handOfferVisible/);
 
   // A fixed legend turns live tracker state into a manual. The selected element
   // chooses the rows, while pose and loss light the relevant one.

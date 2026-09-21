@@ -6,9 +6,9 @@ import { extname, join, relative } from 'node:path';
 /**
  * The privacy claim's only enforcement.
  *
- * "Nothing leaves this tab" is the product's trust anchor, and an assertion is
- * the only thing standing between that sentence and someone adding a fetch in
- * good faith. The original test guarded two files; this guards the tree.
+ * Camera and landmark privacy are the product's trust anchor. An assertion is
+ * the only thing standing between that sentence and someone adding a network
+ * call in good faith. The original test guarded two files; this guards the tree.
  */
 
 const ROOTS = ['../src', '../app'];
@@ -17,15 +17,18 @@ const PROJECT_ROOT = new URL('..', import.meta.url).pathname;
 const projectPath = (path) => relative(PROJECT_ROOT, path).replaceAll('\\', '/');
 
 /**
- * The two runtime fetches that are allowed, and why.
+ * The three runtime fetch locations that are allowed, and why.
  *
  * MediaPipe's WASM and its hand-landmark model are pulled from a CDN at the
  * moment the visitor opts into hand tracking. They are a documented exception
  * rather than an oversight, and self-hosting them would remove even this.
  */
 const ALLOWED = [
-  { file: 'src/input/HandInput.js', pattern: /cdn\.jsdelivr\.net\/npm\/@mediapipe\/tasks-vision/ },
-  { file: 'src/input/HandInput.js', pattern: /storage\.googleapis\.com\/mediapipe-models/ }
+ { file: 'src/input/HandInput.js', pattern: /cdn\.jsdelivr\.net\/npm\/@mediapipe\/tasks-vision/ },
+  { file: 'src/input/HandInput.js', pattern: /storage\.googleapis\.com\/mediapipe-models/ },
+  // Public, read-only catalog metadata. It never accepts player input, sends
+  // camera data, or starts a World Labs job.
+  { file: 'app/GrimoireStage.tsx', pattern: /fetch\('\/api\/worlds'\)/ }
 ];
 
 /** Anything here would put a byte on the network. */
@@ -47,7 +50,7 @@ async function* walk(dir) {
   }
 }
 
-test('nothing in src/ or app/ can put a byte on the network', async () => {
+test('only documented client network calls can leave src/ or app/', async () => {
   const offenders = [];
   for (const root of ROOTS) {
     const base = new URL(root, import.meta.url).pathname;
@@ -65,9 +68,9 @@ test('nothing in src/ or app/ can put a byte on the network', async () => {
   assert.deepEqual(offenders, [], `network API used outside the documented MediaPipe exception:\n${offenders.join('\n')}`);
 });
 
-test('the MediaPipe CDN exception is still the only one, and still documented', async () => {
+test('the MediaPipe CDN exceptions are still present and documented', async () => {
   const hand = await readFile(new URL('../src/input/HandInput.js', import.meta.url), 'utf8');
-  for (const { pattern } of ALLOWED) assert.match(hand, pattern);
+  for (const { pattern } of ALLOWED.filter((rule) => rule.file === 'src/input/HandInput.js')) assert.match(hand, pattern);
 });
 
 /**

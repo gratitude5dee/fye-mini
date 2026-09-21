@@ -14,7 +14,9 @@ export class Renderer {
   constructor(canvas) {
     this.gl = new WebGLRenderer({
       canvas,
-      antialias: true,
+      // Spark performs its own Gaussian accumulation. MSAA does not improve
+      // splats and costs a material amount of fill rate on world scenes.
+      antialias: false,
       powerPreference: 'high-performance',
       stencil: false,
       alpha: false,

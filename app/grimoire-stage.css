@@ -1,7 +1,7 @@
 .grimoire-stage { --panel: var(--g-panel); min-height: 100dvh; overflow: hidden; color: var(--ink); background: var(--g-stage); font-family: var(--font-sans); }
 .grimoire-stage__surface { min-height: 100dvh; }
 #viewport { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
-.stage-header, .stage-message, .stage-hud, .side-sheet { position: fixed; z-index: 30; }
+.stage-header, .stage-message, .stage-hud, .side-sheet, .world-drawer, .movement-hint { position: fixed; z-index: 30; }
 .stage-header { inset: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; padding: clamp(17px, 3vw, 30px); pointer-events: none; }
 .header-actions { display: flex; gap: 8px; pointer-events: auto; }
 .wordmark { display: grid; gap: 6px; text-shadow: 0 3px 18px #000; }
@@ -11,7 +11,12 @@
 .quiet-button:hover, .ride-button:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, #101318); }
 .stage-message { top: 31%; left: 50%; max-width: min(390px, calc(100vw - 42px)); transform: translateX(-50%); color: var(--muted); font: 500 12px/1.35 var(--font-sans); text-align: center; text-shadow: 0 2px 12px #000; pointer-events: none; }
 .stage-message__dot { display: inline-block; width: 6px; height: 6px; margin: 0 8px 1px 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 13px var(--accent); }
-.stage-hud { right: 0; bottom: 22px; left: 0; display: grid; justify-items: center; gap: 9px; pointer-events: none; }
+.world-drawer { bottom: 22px; left: 22px; max-width: min(250px, calc(100vw - 44px)); }
+.world-drawer__open { display: grid; gap: 4px; width: 100%; border: 1px solid rgb(246 241 232 / .22); border-radius: 14px; padding: 10px 12px; color: var(--ink); background: rgb(10 12 15 / .68); box-shadow: 0 12px 36px #0008; text-align: left; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); cursor: pointer; }
+.world-drawer__open:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, #101318); }
+.world-drawer__eyebrow { color: var(--accent); font: 700 8px/1 var(--font-sans); letter-spacing: .17em; text-transform: uppercase; }.world-drawer__open strong { font: 500 19px/.95 var(--font-display); }.world-drawer__open small { overflow: hidden; color: var(--muted); font: 500 10px/1.25 var(--font-sans); text-overflow: ellipsis; white-space: nowrap; }
+.movement-hint { bottom: 24px; left: 50%; display: flex; gap: 11px; align-items: center; transform: translateX(-50%); color: #dcd7ce; font: 700 9px/1 var(--font-sans); letter-spacing: .07em; text-shadow: 0 2px 12px #000; text-transform: uppercase; pointer-events: none; }.movement-hint span { display: inline-flex; gap: 3px; align-items: center; white-space: nowrap; }.movement-hint kbd { min-width: 0; padding: 2px 4px; font-size: 8px; }
+.stage-hud { right: 22px; bottom: 22px; left: auto; display: grid; justify-items: center; gap: 9px; pointer-events: none; }
 /* Every direct child opts back in. The previous per-child rule missed .cast-button,
    which left the stage's primary action unclickable. */
 .stage-hud > * { pointer-events: auto; }
@@ -65,6 +70,8 @@
 .intro__copy span { color: #f4ead9c7; font-size: 9px; letter-spacing: .11em; text-transform: none; }
 .intro__skip { position: absolute; z-index: 1; right: 24px; bottom: 22px; border: 1px solid rgb(255 255 255 / .42); border-radius: 999px; padding: 10px 14px; color: #fff; background: rgb(0 0 0 / .32); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font: 700 10px/1 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
 .side-sheet { top: 50%; right: 22px; width: min(360px, calc(100vw - 36px)); max-height: min(680px, calc(100dvh - 50px)); overflow: auto; transform: translateY(-50%); border: 1px solid rgb(246 241 232 / .22); border-radius: 22px; padding: 23px; background: linear-gradient(145deg, rgb(25 30 34 / .96), rgb(11 14 17 / .97)); box-shadow: 0 24px 84px #000a; -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
+.world-picker { position: fixed; z-index: 70; top: 50%; left: 50%; width: min(860px, calc(100vw - 40px)); max-height: min(720px, calc(100dvh - 44px)); overflow: auto; transform: translate(-50%, -50%); border: 1px solid rgb(246 241 232 / .26); border-radius: 24px; padding: 26px; color: var(--ink); background: linear-gradient(145deg, rgb(24 29 33 / .98), rgb(8 11 14 / .985)); box-shadow: 0 28px 100px #000c; -webkit-backdrop-filter: blur(26px); backdrop-filter: blur(26px); }.world-picker h2 { max-width: 440px; margin: 7px 0 12px; font: 500 clamp(31px, 4vw, 49px)/.92 var(--font-display); letter-spacing: -.055em; }
+.world-picker__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 19px; }.world-card { display: grid; overflow: hidden; border: 1px solid rgb(246 241 232 / .16); border-radius: 14px; padding: 0; color: var(--ink); background: rgb(255 255 255 / .035); text-align: left; cursor: pointer; transition: border-color var(--g-base) ease, transform var(--g-base) ease, background var(--g-base) ease; }.world-card:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); transform: translateY(-2px); }.world-card:disabled { opacity: .48; cursor: wait; }.world-card.is-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }.world-card img { width: 100%; aspect-ratio: 2 / 1; object-fit: cover; }.world-card__local { display: grid; aspect-ratio: 2 / 1; place-items: center; color: var(--accent); background: radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 57%), #11161a; font: 38px/1 Georgia, serif; }.world-card > span { display: grid; gap: 5px; padding: 11px; }.world-card small { color: var(--accent); font: 700 8px/1 var(--font-sans); letter-spacing: .13em; text-transform: uppercase; }.world-card strong { font: 500 20px/.96 var(--font-display); }.world-card em { color: var(--muted); font: 400 10px/1.35 var(--font-sans); font-style: normal; }.world-picker__note { margin: 14px 0 0; color: var(--muted); font: 400 10px/1.4 var(--font-sans); }
 .sheet-close { position: absolute; top: 12px; right: 12px; display: grid; width: 32px; height: 32px; place-items: center; padding: 0; color: var(--muted); font: 300 25px/1 var(--font-sans); }
 .side-sheet h2 { max-width: 280px; margin: 7px 0 12px; font: 500 31px/.98 var(--font-display); letter-spacing: -.045em; }
 .sheet-copy { margin: 0; color: #ddd9d0; font: 400 13px/1.55 var(--font-sans); }
@@ -99,6 +106,8 @@
   .quiet-button { padding: 9px 9px; font-size: 9px; white-space: nowrap; }
   .wordmark span { white-space: nowrap; }
   .stage-message { top: 22%; }
+  .world-drawer { bottom: auto; top: 118px; left: 12px; max-width: min(196px, calc(100vw - 78px)); }.world-drawer__open { padding: 8px 10px; }.world-drawer__open strong { font-size: 17px; }.world-drawer__open small { font-size: 9px; }
+  .movement-hint { bottom: 154px; width: 100%; justify-content: center; gap: 7px; font-size: 8px; }
   .stage-hud { right: 0; bottom: 0; left: 0; gap: 7px; padding: 0 0 max(10px, env(safe-area-inset-bottom)); }
   .dock { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 0; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
   .dock__slot { flex: 1 1 0; min-width: 0; padding: 7px 4px; }
@@ -111,6 +120,7 @@
   .stage-hud { display: flex; flex-direction: column; align-items: center; }
   .cast-button { min-width: min(320px, calc(100vw - 32px)); }
   .side-sheet { top: auto; right: 0; bottom: 0; left: 0; width: 100%; max-height: min(78dvh, calc(100dvh - 18px)); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 22px 22px 0 0; transform: none; }
+  .world-picker { top: auto; bottom: 0; left: 0; width: 100%; max-height: min(88dvh, calc(100dvh - 12px)); transform: none; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 22px 22px 0 0; padding: 22px 18px; }.world-picker__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workshop { right: 0; }
   .hand-mirror { display: none; }
   .intro__copy h1 { font-size: clamp(43px, 13vw, 74px); }
@@ -165,7 +175,7 @@
 /* --- Help --------------------------------------------------------------- */
 /* Bottom right, out of the thumb arc on a phone and out of the way of the
    stage dock, which owns the bottom centre. */
-.help-button { position: fixed; z-index: 40; right: 20px; bottom: 20px; width: 38px; height: 38px; border: 1px solid rgb(246 241 232 / .26); border-radius: 50%; color: var(--ink); background: rgb(10 12 15 / .68); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font: 700 15px/1 var(--font-sans); cursor: pointer; }
+.help-button { position: fixed; z-index: 40; top: 82px; right: 20px; width: 38px; height: 38px; border: 1px solid rgb(246 241 232 / .26); border-radius: 50%; color: var(--ink); background: rgb(10 12 15 / .68); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font: 700 15px/1 var(--font-sans); cursor: pointer; }
 .help-button:hover { border-color: var(--accent); color: var(--accent); }
 .help-sheet h3 { margin: 18px 0 6px; color: var(--ink); font: 600 15px/1.2 var(--font-display); }
 .help-sheet h3:first-of-type { margin-top: 12px; }
@@ -241,10 +251,10 @@ kbd { display: inline-block; min-width: 15px; border: 1px solid rgb(246 241 232 
    renderer never loads shows its interface rather than a black rectangle. The
    skip button is deliberately exempt: it is the way out of the thing that is
    holding everything else back. */
-.grimoire-stage.is-opening :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .help-button) {
+.grimoire-stage.is-opening :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .world-drawer, .movement-hint, .help-button) {
   opacity: 0;
   pointer-events: none;
 }
-.grimoire-stage :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .help-button) {
+.grimoire-stage :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .world-drawer, .movement-hint, .help-button) {
   transition: opacity var(--g-slow) ease;
 }

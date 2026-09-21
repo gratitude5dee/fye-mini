@@ -36,11 +36,11 @@ test('hand tracking remains direct-click, local, mirrored, and fallback-safe', a
   assert.match(stage, /Open palm/);
 });
 
-test('the public interface is local-only and opens with a motion-safe, skippable sequence', async () => {
+test('the public interface keeps camera data local and opens with a motion-safe, skippable sequence', async () => {
   const [stage, css, app, packageJson, layout] = await Promise.all([
     text('../app/GrimoireStage.tsx'), text('../app/grimoire-stage.css'), text('../src/core/App.js'), text('../package.json'), text('../app/layout.tsx')
   ]);
-  assert.doesNotMatch(stage, /fetch\(/);
+  assert.match(stage, /fetch\('\/api\/worlds'\)/);
   assert.doesNotMatch(app, /fetch\(/);
   assert.doesNotMatch(packageJson, /mongodb/);
   assert.doesNotMatch(layout, /next\/headers|generateMetadata/);
@@ -96,7 +96,7 @@ test('help is reachable by button and by key, and lands in one place', async () 
   assert.match(help, /useDialog/);
 
   // And it documents the rules a player would otherwise have to lose to learn.
-  for (const rule of ['crosses a hazard on its own', 'Three attempts per line', 'leaves the ground', 'never leaves this tab']) {
+  for (const rule of ['crosses a hazard on its own', 'Three attempts per line', 'leaves the ground', 'Camera frames and landmarks remain']) {
     assert.ok(help.includes(rule), `help must explain: ${rule}`);
   }
 });

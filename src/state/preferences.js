@@ -2,8 +2,9 @@
  * The only module that touches `localStorage`.
  *
  * Everything the product remembers lives here: which element was last held,
- * which dials were moved, how far onboarding got, and which layouts have been
- * solved. Nothing here ever leaves the browser, and the product says so.
+ * which dials were moved, which approved world last loaded, how far onboarding
+ * got, and which layouts have been solved. These preferences stay in the
+ * browser; selected worlds separately fetch their public rendering assets.
  *
  * Storage is treated as genuinely optional rather than probably-present. A
  * private window, blocked site data, or a full quota must leave casting
@@ -24,6 +25,8 @@ const DEFAULTS = Object.freeze({
   introSeen: false,
   /** Public element id — `air`, never the engine's `wind`. */
   element: 'air',
+  /** Last successfully selected approved world, or the local fallback. */
+  lastWorld: 'ritual-stage',
   /** Flat `block.key` → number, already clamped by the engine on apply. */
   dials: {},
   /**
@@ -90,6 +93,9 @@ function normalise(raw) {
     version: 3,
     introSeen: clean(raw.introSeen, DEFAULTS.introSeen),
     element: ELEMENTS.includes(raw.element) ? raw.element : DEFAULTS.element,
+    lastWorld: typeof raw.lastWorld === 'string' && /^[a-z-]{2,64}$/.test(raw.lastWorld)
+      ? raw.lastWorld
+      : DEFAULTS.lastWorld,
     // Absent from every blob written before calm mode existed, which `clean`
     // resolves to `false` — so no version bump and no migration.
     calm: clean(raw.calm, DEFAULTS.calm),

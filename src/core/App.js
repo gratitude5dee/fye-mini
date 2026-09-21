@@ -23,6 +23,8 @@ import { AssetLoader } from '../loaders/AssetLoader.js';
 import { CharacterController } from '../animation/CharacterController.js';
 import { WalkController } from '../animation/WalkController.js';
 import { CasterPerformance } from '../animation/CasterPerformance.js';
+import { LocomotionController } from '../animation/LocomotionController.js';
+import { WorldManager } from '../world/WorldManager.js';
 import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { Editor } from '../ui/Editor.js';
 import { settings, ELEMENTS } from '../config/settings.js';
@@ -60,6 +62,7 @@ export class App {
     this._raf = 0;
     this.rideNextStroke = false;
     this._shadowClock = 0;
+    this.worldLoading = false;
 
     this.renderer = new Renderer(canvas);
     this.rig = new CameraRig(canvas);
@@ -115,6 +118,7 @@ export class App {
     this.character = new CharacterController(this.environment);
     this.walk = null;
     this.caster = null;
+    this.locomotion = null;
 
     // Watches measured frame time and steps the stage down when it has to.
     // Constructed before the tracker, which reads its cadence every frame.
@@ -137,6 +141,10 @@ export class App {
     });
     this.pathDrawer = new PathDrawer(this.camera);
     this.scene.add(this.pathDrawer.object3D);
+    this.worlds = new WorldManager({ renderer: this.renderer, scene: this.scene });
+    // A Marble collider becomes the ray target when a world is active.  The
+    // local stage intentionally retains its existing planar path behaviour.
+    this.pathDrawer.setProjector((ray, out) => this.worlds.projectRay(ray, out));
 
     this.post = new PostProcessing(this.renderer, this.scene, this.camera);
     this.loading = new LoadingScreen();
@@ -338,8 +346,13 @@ export class App {
     this._onGrimoireSkipIntro = () => this.intro.skip();
     this._onGrimoireRite = (event) => {
       if (event.detail?.action === 'aside') this.rite.setAside();
-      else this.rite.begin();
+      else if (this.worlds.active && !this.worlds.isWithinRitualArea(this.character.position)) {
+        this.hud.showToast('Return to the landing mark to begin a Rite.');
+      } else this.rite.begin();
     };
+    this._onGrimoireWorld = (event) => void this._selectWorld(event.detail?.world, {
+      silent: Boolean(event.detail?.silent)
+    });
     this._onGrimoireRide = () => {
       this.rideNextStroke = !this.rideNextStroke;
       window.dispatchEvent(new CustomEvent(TO_UI.RIDE_STATUS, { detail: { active: this.rideNextStroke } }));
@@ -354,6 +367,44 @@ export class App {
     window.addEventListener(TO_ENGINE.RITE, this._onGrimoireRite);
     window.addEventListener(TO_ENGINE.CALM, this._onGrimoireCalm);
     window.addEventListener(TO_ENGINE.SKIP_INTRO, this._onGrimoireSkipIntro);
+    window.addEventListener(TO_ENGINE.SELECT_WORLD, this._onGrimoireWorld);
+  }
+
+  async _selectWorld(world, { silent = false } = {}) {
+    if (!world || this.worldLoading) return;
+    this.worldLoading = true;
+    this.rite.setAside();
+    this.clearEffects();
+    window.dispatchEvent(new CustomEvent(TO_UI.WORLD_STATUS, {
+      detail: { state: 'loading', world: world.slug, title: world.title }
+    }));
+
+    try {
+      if (world.kind === 'ritual' || world.slug === 'ritual-stage') {
+        this.worlds.unload();
+        this.ground.mesh.visible = true;
+        this.locomotion?.setSpawn({ x: 0, y: 0, z: 0, yaw: 0 });
+        if (!silent) this.hud.showToast('Ritual Stage restored.');
+      } else {
+        await this.worlds.load(world);
+        this.ground.mesh.visible = false;
+        this.locomotion?.setSpawn(world.spawn);
+        if (!silent) this.hud.showToast(`${world.title} is ready.`);
+      }
+      window.dispatchEvent(new CustomEvent(TO_UI.WORLD_STATUS, {
+        detail: { state: 'ready', world: world.slug, title: world.title }
+      }));
+    } catch (error) {
+      this.worlds.unload();
+      this.ground.mesh.visible = true;
+      this.locomotion?.setSpawn({ x: 0, y: 0, z: 0, yaw: 0 });
+      this.hud.showToast('That world could not load. The Ritual Stage is ready.');
+      window.dispatchEvent(new CustomEvent(TO_UI.WORLD_STATUS, {
+        detail: { state: 'failed', world: world.slug, title: world.title }
+      }));
+    } finally {
+      this.worldLoading = false;
+    }
   }
 
   _applyFlatPatch(patch) {
@@ -492,6 +543,8 @@ export class App {
       decals: this.decals, bursts: this.bursts, shake: this.shake
     });
     this.caster = new CasterPerformance(this.character);
+    this.locomotion = new LocomotionController(this.character, this.camera, this.input, this.worlds);
+    this.locomotion.setSpawn({ x: 0, y: 0, z: 0, yaw: 0 });
     // The default camera sits on the rig's +Z side, so facing +Z keeps the
     // caster's performance readable instead of presenting their back.
     this.character.setFacing(0);
@@ -537,17 +590,21 @@ export class App {
 
     this.intro.update(raw);
     this.renderer.syncSettings();
-    this.environment.setFocus(this.stageAnchor.x, this.stageAnchor.z);
+    const casterPosition = this.character.position;
+    this.environment.setFocus(casterPosition.x, casterPosition.z);
     this.environment.update();
     this.ground.update(this.elapsed);
-    this.dust.update(this.elapsed, this.stageAnchor);
+    this.dust.update(this.elapsed, casterPosition);
     this.sigil.update(this.elapsed);
     this.sigil.faceCamera(this.camera);
     this.pathDrawer.update(raw);
+    this.locomotion?.update(dt, {
+      locked: this.worldLoading || this.paused || this.walk?.active || this.pathDrawer.active
+    });
     this.abilities.update(dt);
     this.character.update(dt);
     this.walk?.update(dt);
-    this.caster?.update(dt, this.walk?.active);
+    this.caster?.update(dt, this.walk?.active, this.locomotion?.state);
     // After the abilities have stepped, so what is tested is what was just
     // drawn, and before the particles are uploaded for the frame.
     this.rite.update(dt);
@@ -558,7 +615,7 @@ export class App {
 
     const focus = this.abilities.focus;
     if (focus) this.rig.lookAt(focus.position, MathUtils.clamp(1 - focus.u * .4, 0, 1));
-    this.rig.setAnchor(this.stageAnchor.x, 0, this.stageAnchor.z);
+    this.rig.setAnchor(casterPosition.x, casterPosition.y, casterPosition.z);
     this.shake.update(raw);
     this.flash.update(raw);
     this.rig.update(raw);
@@ -589,6 +646,8 @@ export class App {
     this.abilities.dispose();
     this.caster?.dispose();
     this.walk?.dispose();
+    this.locomotion?.stop();
+    this.worlds.dispose();
     this.character.dispose();
     this.particles.dispose();
     this.decals.dispose();
@@ -612,5 +671,6 @@ export class App {
     window.removeEventListener(TO_ENGINE.RITE, this._onGrimoireRite);
     window.removeEventListener(TO_ENGINE.CALM, this._onGrimoireCalm);
     window.removeEventListener(TO_ENGINE.SKIP_INTRO, this._onGrimoireSkipIntro);
+    window.removeEventListener(TO_ENGINE.SELECT_WORLD, this._onGrimoireWorld);
   }
 }

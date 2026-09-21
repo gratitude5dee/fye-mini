@@ -25,6 +25,7 @@ export class PathDrawer extends EventEmitter {
     this.camera = camera;
     this.raycaster = new Raycaster();
     this.raycaster.far = 500;
+    this.projector = null;
 
     /** Raw (filtered) samples on the ground. */
     this.samples = [];
@@ -93,7 +94,15 @@ export class PathDrawer extends EventEmitter {
   /** Project a pointer position onto the ground plane. @returns {boolean} hit */
   _project(pointer, out) {
     this.raycaster.setFromCamera(pointer, this.camera);
+    // A terrain projector is optional.  Returning null deliberately means
+    // "use the local ritual plane", so the local fallback never loses casts.
+    if (this.projector && this.projector(this.raycaster.ray, out) !== null) return true;
     return this.raycaster.ray.intersectPlane(GROUND_PLANE, out) !== null;
+  }
+
+  /** Supply a terrain-aware ray projection, or null to use the ritual plane. */
+  setProjector(projector = null) {
+    this.projector = typeof projector === 'function' ? projector : null;
   }
 
   /**

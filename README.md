@@ -90,8 +90,10 @@ asset needs the same distribution-rights review. See section 13 of `update.md`.
 
 ## Deployment
 
-`npm run build` produces a Cloudflare Worker bundle with Sites metadata. There is no database, gateway,
-object store or AI secret to configure, because there is nothing to configure.
+`npm run build` produces a Cloudflare Worker bundle with Sites metadata. The dev Worker has a small D1 catalog
+for fixed World Labs job state and approved world metadata. `WORLD_LABS_API_KEY` and
+`FYE_WORLD_OPERATOR_TOKEN` are Cloudflare secrets only; no player request can create a world.
+Apply catalog migrations with `npx wrangler d1 migrations apply fye-world-catalog-dev --remote --config d1.wrangler.jsonc`.
 
 `npm run deploy:dev` deploys the current tested build to `https://dev.avatar.wzrd.tech` through the separate
 `fye-dev` Worker. It never changes `https://avatar.wzrd.tech`; production promotion is an explicit, separate

@@ -57,6 +57,7 @@ export class CameraRig {
     );
     this.camera.position.set(-6.5, 6.0, 9.5);
     this.camera.layers.enable(LAYER.VFX);
+    this.camera.layers.enable(LAYER.SPLAT);
 
     this.controls = new OrbitControls(this.camera, domElement);
     this.controls.enableDamping = true;

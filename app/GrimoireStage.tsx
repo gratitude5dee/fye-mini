@@ -4,6 +4,7 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from 're
 import { HOUSE_SEED_SPELLS } from '../src/config/house-spells';
 import { TO_ENGINE, TO_UI } from '../src/state/events.js';
 import { isPersistent, read as readPreferences, write as persistPreferences } from '../src/state/preferences.js';
+import { RITUAL_WORLD, WORLD_PRIORS } from '../src/world/world-seeds.js';
 import { useDialog } from './useDialog';
 import { HelpSheet } from './HelpSheet';
 import './grimoire-stage.css';
@@ -25,6 +26,26 @@ const IDLE_RITE: RiteState = {
   phase: 'free', lineIndex: 0, lineCount: 0, attemptsLeft: 0, ward: [], elements: [], persistent: true
 };
 type Dial = { label: string; path: string; min: number; max: number; step: number; value: number };
+type WorldCatalogEntry = {
+  id?: string;
+  slug: string;
+  title: string;
+  summary: string;
+  imagePath?: string | null;
+  thumbnailUrl?: string | null;
+  splat100kUrl?: string;
+  splat500kUrl?: string;
+  colliderUrl?: string;
+  metricScaleFactor?: number;
+  groundPlaneOffset?: number;
+  colliderTransform?: Record<string, number>;
+  spawn?: { x?: number; y?: number; z?: number; yaw?: number };
+  ritualAnchor?: { x?: number; y?: number; z?: number; radius?: number };
+  kind?: 'ritual';
+};
+
+const LOCAL_WORLD = RITUAL_WORLD as WorldCatalogEntry;
+const WORLD_PREVIEWS = WORLD_PRIORS.map((world) => world as WorldCatalogEntry);
 
 /**
  * What the tracker publishes through `INPUT_STATUS`.
@@ -133,9 +154,8 @@ function emit(name: string, detail?: unknown) {
 
 export function GrimoireStage() {
   const surfaceRef = useRef<HTMLDivElement>(null);
-  const pointerSuccessesRef = useRef(0);
-  const previousWardRef = useRef(0);
   const trackerActiveRef = useRef(false);
+  const restoredWorldRef = useRef(false);
   const [introVisible, setIntroVisible] = useState(true);
   const [stageReady, setStageReady] = useState(false);
   const [element, setElement] = useState<ElementId>('air');
@@ -159,13 +179,17 @@ export function GrimoireStage() {
   const [openingHolds, setOpeningHolds] = useState(false);
   const [hand, setHand] = useState({ engaged: false, wake: 0, pose: null as ElementId | null, hold: 0, pinch: 0, lift: 0, spread: 0, dock: null as string | null, dockHold: 0, tracking: 'lost' as 'seeking' | 'found' | 'lost' });
   const [helpOpen, setHelpOpen] = useState(false);
+  const [worldPickerOpen, setWorldPickerOpen] = useState(false);
+  const [worlds, setWorlds] = useState<WorldCatalogEntry[]>([LOCAL_WORLD]);
+  const [worldsLoaded, setWorldsLoaded] = useState(false);
+  const [worldStatus, setWorldStatus] = useState('Ritual Stage is ready.');
+  const [selectedWorld, setSelectedWorld] = useState('ritual-stage');
+  const [showChooserOnReady, setShowChooserOnReady] = useState(false);
   // A phone never gets the camera — `enableHands` refuses on a coarse pointer.
   // Offering the button anyway is an invitation the product declines, so the
   // same query that refuses it also decides whether it is there to press.
   const [coarsePointer, setCoarsePointer] = useState(false);
-  const [pointerSuccesses, setPointerSuccesses] = useState(0);
   const [handsGranted, setHandsGranted] = useState(false);
-  const [handOfferDismissed, setHandOfferDismissed] = useState(false);
   const [calm, setCalm] = useState(false);
   // What the quality ladder settled on, said once and only in the Workshop.
   // Never a toast: a stage that interrupts you to announce it is coping badly
@@ -173,8 +197,12 @@ export function GrimoireStage() {
   const [quality, setQuality] = useState<{ tier: string; cadence: number } | null>(null);
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
+  const activeWorld = worlds.find((world) => world.slug === selectedWorld) ?? LOCAL_WORLD;
+  const catalogCards = [
+    ...worlds,
+    ...WORLD_PREVIEWS.filter((preview) => !worlds.some((world) => world.slug === preview.slug))
+  ];
   const gestureGuide = GESTURE_GUIDES[element];
-  const handOfferVisible = !coarsePointer && !handsGranted && !handOfferDismissed && pointerSuccesses >= 2;
 
   const guideRowIsLive = (row: GestureRow) => {
     if (row.live === 'wake') return !hand.engaged && hand.wake > 0;
@@ -211,10 +239,28 @@ export function GrimoireStage() {
     setDialValues(preferences.dials);
     setCalm(preferences.calm);
     setStorageAvailable(isPersistent());
-    const successes = preferences.onboarding?.pointerSuccesses ?? 0;
-    pointerSuccessesRef.current = successes;
-    setPointerSuccesses(successes);
+    setSelectedWorld(preferences.lastWorld ?? 'ritual-stage');
+    setShowChooserOnReady(!preferences.introSeen);
     setHandsGranted(Boolean(preferences.onboarding?.handsGranted));
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    // This is public catalog metadata only.  Player choices do not create a
+    // World Labs job, and camera/landmark data never participates in this call.
+    void fetch('/api/worlds')
+      .then(async (response) => response.ok ? response.json() : Promise.reject(new Error(`Catalog ${response.status}`)))
+      .then((payload: { worlds?: WorldCatalogEntry[] }) => {
+        if (!alive) return;
+        const ready = Array.isArray(payload.worlds) ? payload.worlds : [];
+        setWorlds([LOCAL_WORLD, ...ready]);
+        setWorldStatus(ready.length ? 'Choose a prepared world.' : 'Ritual Stage is ready while new worlds are prepared.');
+      })
+      .catch(() => {
+        if (alive) setWorldStatus('World catalog is unavailable. Ritual Stage is ready.');
+      })
+      .finally(() => { if (alive) setWorldsLoaded(true); });
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {
@@ -263,16 +309,6 @@ export function GrimoireStage() {
       const detail = (event as CustomEvent<RiteState>).detail;
       if (!detail) return;
       setRite(detail);
-      const solved = detail.ward.filter(Boolean).length;
-      if (detail.phase === 'open' || solved === 0) previousWardRef.current = 0;
-      if (!trackerActiveRef.current && solved > previousWardRef.current) {
-        const gained = solved - previousWardRef.current;
-        const next = Math.min(2, pointerSuccessesRef.current + gained);
-        pointerSuccessesRef.current = next;
-        setPointerSuccesses(next);
-        persistPreferences({ onboarding: { pointerSuccesses: next } });
-      }
-      previousWardRef.current = solved;
     };
     const selectedListener = (event: Event) => {
       const chosen = (event as CustomEvent<{ element?: ElementId }>).detail?.element;
@@ -289,10 +325,22 @@ export function GrimoireStage() {
       const detail = (event as CustomEvent<{ tier?: string; cadence?: number }>).detail;
       if (detail?.tier) setQuality({ tier: detail.tier, cadence: detail.cadence ?? 1 });
     };
+    const worldStatusListener = (event: Event) => {
+      const detail = (event as CustomEvent<{ state?: string; world?: string; title?: string }>).detail;
+      if (!detail?.state) return;
+      if (detail.state === 'loading') setWorldStatus(`Entering ${detail.title ?? detail.world?.replaceAll('-', ' ') ?? 'world'}…`);
+      if (detail.state === 'ready') setWorldStatus(`${detail.title ?? detail.world?.replaceAll('-', ' ') ?? 'World'} is ready.`);
+      if (detail.state === 'failed') {
+        setSelectedWorld('ritual-stage');
+        persistPreferences({ lastWorld: 'ritual-stage' });
+        setWorldStatus('That world could not load. Ritual Stage is ready.');
+      }
+    };
     window.addEventListener(TO_UI.QUALITY, qualityListener);
     window.addEventListener(TO_UI.SELECTED, selectedListener);
     window.addEventListener(TO_UI.CAST_COMPLETE, castListener);
     window.addEventListener(TO_UI.RITE_STATE, riteListener);
+    window.addEventListener(TO_UI.WORLD_STATUS, worldStatusListener);
     // `H` is bound in the engine's InputManager, so the key and the button have
     // to end up in the same place rather than two panels that disagree.
     // Closes the others first, exactly as the buttons do. Without this, `H`
@@ -302,6 +350,7 @@ export function GrimoireStage() {
     const helpListener = () => {
       setHandsOpen(false);
       setWorkshopOpen(false);
+      setWorldPickerOpen(false);
       setHelpOpen((open) => !open);
     };
     window.addEventListener(TO_UI.HELP, helpListener);
@@ -313,6 +362,7 @@ export function GrimoireStage() {
       window.removeEventListener(TO_UI.SELECTED, selectedListener);
       window.removeEventListener(TO_UI.CAST_COMPLETE, castListener);
       window.removeEventListener(TO_UI.RITE_STATE, riteListener);
+      window.removeEventListener(TO_UI.WORLD_STATUS, worldStatusListener);
       window.removeEventListener(TO_UI.HELP, helpListener);
     };
   }, []);
@@ -331,19 +381,34 @@ export function GrimoireStage() {
     if (stageReady) emit(TO_ENGINE.CALM, { enabled: calm });
   }, [calm, stageReady]);
 
+  // The API exposes only calibrated worlds. A remembered world that no
+  // longer exists becomes the local Ritual Stage instead of retrying a stale
+  // or no-longer-approved asset URL.
+  useEffect(() => {
+    if (!stageReady || !worldsLoaded || restoredWorldRef.current) return;
+    const remembered = worlds.find((world) => world.slug === selectedWorld) ?? LOCAL_WORLD;
+    restoredWorldRef.current = true;
+    setSelectedWorld(remembered.slug);
+    emit(TO_ENGINE.SELECT_WORLD, { world: remembered, silent: true });
+    if (showChooserOnReady) {
+      setWorldPickerOpen(true);
+      setShowChooserOnReady(false);
+    }
+  }, [selectedWorld, showChooserOnReady, stageReady, worlds, worldsLoaded]);
+
   const closeHelp = useCallback(() => setHelpOpen(false), []);
   const closeHands = useCallback(() => setHandsOpen(false), []);
   const closeWorkshop = useCallback(() => setWorkshopOpen(false), []);
+  const closeWorldPicker = useCallback(() => setWorldPickerOpen(false), []);
 
   const openHands = () => {
     setWorkshopOpen(false);
     setHelpOpen(false);
+    setWorldPickerOpen(false);
     setHandsOpen(true);
-    persistPreferences({ onboarding: { handsOffered: true } });
   };
 
   const declineHands = () => {
-    setHandOfferDismissed(true);
     setHandsOpen(false);
     setInputStatus('Pointer casting stays exactly as it is.');
   };
@@ -376,6 +441,7 @@ export function GrimoireStage() {
   const introRef = useDialog<HTMLElement>(introVisible, dismissIntro);
   const handsRef = useDialog<HTMLElement>(handsOpen, closeHands);
   const workshopRef = useDialog<HTMLElement>(workshopOpen, closeWorkshop);
+  const worldsRef = useDialog<HTMLElement>(worldPickerOpen, closeWorldPicker);
 
   const selectElement = (next: ElementId) => {
     setElement(next);
@@ -387,6 +453,15 @@ export function GrimoireStage() {
     setCalm(next);
     persistPreferences({ calm: next });
     emit(TO_ENGINE.CALM, { enabled: next });
+  };
+
+  const selectWorld = (world: WorldCatalogEntry) => {
+    if (!stageReady) return;
+    setSelectedWorld(world.slug);
+    persistPreferences({ lastWorld: world.slug });
+    setWorldStatus(`Entering ${world.title}…`);
+    setWorldPickerOpen(false);
+    emit(TO_ENGINE.SELECT_WORLD, { world });
   };
 
   const adjustDial = (dial: Dial, value: number) => {
@@ -443,10 +518,10 @@ export function GrimoireStage() {
         <div id="hud" className="hud" aria-live="polite" />
 
         <header className="stage-header">
-          <div className="wordmark"><span>Local elemental stage</span><strong>FYE</strong></div>
+          <div className="wordmark"><span>Elemental explorer</span><strong>FYE</strong></div>
           <div className="header-actions">
-            {!coarsePointer && (handsGranted || inputState === 'ready' || inputState === 'tracking') && <button className="quiet-button" onClick={openHands} aria-expanded={handsOpen}>Hand mode</button>}
-            <button className="quiet-button" onClick={() => { setHandsOpen(false); setHelpOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>
+            {!coarsePointer && <button className="quiet-button" onClick={openHands} aria-expanded={handsOpen}>Hand mode</button>}
+            <button className="quiet-button" onClick={() => { setHandsOpen(false); setHelpOpen(false); setWorldPickerOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>
           </div>
         </header>
 
@@ -468,10 +543,25 @@ export function GrimoireStage() {
           </span>}
         </section>}
 
+        <section className="world-drawer" aria-label="World selection">
+          <button
+            className="world-drawer__open"
+            onClick={() => { setHandsOpen(false); setWorkshopOpen(false); setHelpOpen(false); setWorldPickerOpen(true); }}
+            aria-expanded={worldPickerOpen}
+          >
+            <span className="world-drawer__eyebrow">Worlds</span>
+            <strong>{activeWorld.title}</strong>
+            <small>{worldStatus}</small>
+          </button>
+        </section>
+
+        <section className="movement-hint" aria-label="Movement controls">
+          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span>
+          <span><kbd>⇧</kbd> sprint</span>
+          <span><kbd>Space</kbd> jump</span>
+        </section>
+
         <section className="stage-hud" aria-label="Casting controls">
-          {handOfferVisible && <button className="hand-offer" onClick={openHands}>
-            <strong>Cast with your hands.</strong><span>Your camera never leaves this tab.</span>
-          </button>}
           <div className={`dock ${stageReady ? '' : 'is-waking'}`} data-dock role="group" aria-label="Choose an element">
             {ELEMENTS.map((entry, index) => {
               const active = entry.id === element;
@@ -521,7 +611,7 @@ export function GrimoireStage() {
         {/* No wordmark here: the loading screen already renders one, at the same
             z-index, and the two drew on top of each other. The loader owns the
             title card; this overlay owns the fade and the one line under it. */}
-        <div className="intro__copy"><span>Nothing leaves this tab.</span></div>
+        <div className="intro__copy"><span>Your camera stays on this device. Selected worlds stream when you enter them.</span></div>
         <button className="intro__skip" onClick={dismissIntro}>Skip intro</button>
       </section>}
 
@@ -534,6 +624,30 @@ export function GrimoireStage() {
       >?</button>
 
       <HelpSheet open={helpOpen} onClose={closeHelp} />
+
+      {worldPickerOpen && <section className="world-picker" role="dialog" aria-modal="true" aria-labelledby="world-picker-title" ref={worldsRef} tabIndex={-1}>
+        <button className="sheet-close" onClick={closeWorldPicker} aria-label="Close world selection">×</button>
+        <p className="eyebrow">Prepared worlds</p>
+        <h2 id="world-picker-title">Choose your ground.</h2>
+        <p className="sheet-copy">Each ready destination streams approved public world assets. FYE never sends camera frames or hand landmarks with your selection.</p>
+        <div className="world-picker__grid">
+          {catalogCards.map((world) => {
+            const ready = world.kind === 'ritual' || worlds.some((entry) => entry.slug === world.slug);
+            const image = world.thumbnailUrl ?? world.imagePath;
+            return <button
+              key={world.slug}
+              className={`world-card ${selectedWorld === world.slug ? 'is-selected' : ''}`}
+              onClick={() => ready && selectWorld(world)}
+              disabled={!ready || !stageReady}
+              aria-pressed={selectedWorld === world.slug}
+            >
+              {image ? <img src={image} alt="" /> : <span className="world-card__local" aria-hidden="true">✦</span>}
+              <span><small>{ready ? (world.kind === 'ritual' ? 'Local fallback' : 'Ready to explore') : 'Preparing'}</small><strong>{world.title}</strong><em>{world.summary}</em></span>
+            </button>;
+          })}
+        </div>
+        <p className="world-picker__note">Ready worlds use 500k splats on capable desktops and a 100k fallback on constrained devices.</p>
+      </section>}
 
       {handsOpen && <section className="side-sheet" role="dialog" aria-modal="true" aria-labelledby="hands-title" ref={handsRef} tabIndex={-1}>
         <button className="sheet-close" onClick={closeHands} aria-label="Close hand input panel">×</button>

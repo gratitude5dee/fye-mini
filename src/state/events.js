@@ -33,7 +33,9 @@ export const TO_ENGINE = Object.freeze({
   /** Calm mode was switched. Carries `{ enabled }`. */
   CALM: 'grimoire:calm',
   /** Collapse the remaining beats of the opening. */
-  SKIP_INTRO: 'grimoire:skip-intro'
+  SKIP_INTRO: 'grimoire:skip-intro',
+  /** Change between the local ritual stage and an approved World Labs world. */
+  SELECT_WORLD: 'grimoire:select-world'
 });
 
 /** Engine → React. */
@@ -57,7 +59,9 @@ export const TO_UI = Object.freeze({
   /** The help key was pressed. The interface owns the panel; the engine owns the key. */
   HELP: 'grimoire:help',
   /** The quality ladder stepped. Named to the player once, in the Workshop. */
-  QUALITY: 'grimoire:quality'
+  QUALITY: 'grimoire:quality',
+  /** Loading, ready, or failure state of an approved world. */
+  WORLD_STATUS: 'grimoire:world-status'
 });
 
 /** Every name, for tests and for the debug overlay. */

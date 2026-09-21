@@ -105,6 +105,10 @@ export class PostProcessing {
     scene.background = null;
     scene.overrideMaterial = this.depthMaterial;
     camera.layers.set(LAYER.WORLD);
+    // World splats are transparent and must not be flattened into an opaque
+    // depth texture. Their calibrated collider is invisible in the beauty pass
+    // but gives particles and trails a truthful ground intersection here.
+    camera.layers.enable(LAYER.COLLIDER);
 
     gl.setRenderTarget(this.depthTarget);
     gl.setClearColor(0xffffff, 1); // "infinitely far"

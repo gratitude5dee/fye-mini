@@ -10,10 +10,14 @@
  *               shadow pass captures it without also capturing grass or VFX.
  */
 export const LAYER = Object.freeze({
-  WORLD: 0,
-  VFX: 1,
-  DISTORTION: 2,
-  CONTACT: 3
+ WORLD: 0,
+ VFX: 1,
+ DISTORTION: 2,
+  CONTACT: 3,
+  /** Spark's transparent splats render in the main pass, never the depth pass. */
+  SPLAT: 4,
+  /** Invisible collider meshes write only to the VFX depth prepass. */
+  COLLIDER: 5
 });
 
 /** Put an object and all of its descendants on a single layer. */

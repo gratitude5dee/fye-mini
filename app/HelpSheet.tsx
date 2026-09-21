@@ -28,6 +28,8 @@ const ELEMENT_ROWS: Array<[string, string, string]> = [
 ];
 
 const KEY_ROWS: Array<[string, string]> = [
+  ['W / A / S / D', 'Move the caster relative to the camera.'],
+  ['Shift / Space', 'Sprint / jump.'],
   ['1 – 4', 'Choose an element. Works mid-stroke.'],
   ['Q / E', 'Cycle elements.'],
   ['M', 'Arm the ride for your next stroke.'],
@@ -74,7 +76,7 @@ export function HelpSheet({ onClose, open }: Props) {
         Desktop only, and never required. Everything below works with a pointer except the lift, which is the
         reason hands are here at all.
       </p>
-      <p className="sheet-copy">After two pointer successes, FYE offers hand casting in the dock. It explains the
+      <p className="sheet-copy">The desktop <strong>Hand mode</strong> button is always available. It explains the
         local-only camera use before the browser asks, and <strong>Not now</strong> leaves pointer casting unchanged.</p>
       <ul className="help-notes">
         <li><strong>Wake it.</strong> Hold an open palm until the ring fills. Nothing casts before that.</li>
@@ -83,8 +85,15 @@ export function HelpSheet({ onClose, open }: Props) {
           cross a hazard. A pointer is flat by construction and cannot do this.</li>
         <li><strong>Spread</strong> your fingers to widen the cast.</li>
         <li><strong>Rest.</strong> Lower your hand. Raise it to go on.</li>
-        <li>Your camera never leaves this tab, and nothing is recorded.</li>
+        <li>Camera frames and landmarks remain in this browser; nothing is recorded.</li>
       </ul>
+
+      <h3>Worlds</h3>
+      <p className="sheet-copy">
+        Open <strong>Worlds</strong> to enter a prepared destination. FYE streams that approved world&rsquo;s public
+        render and collision assets; no player can create a world from this screen. Rites stay near each world&rsquo;s
+        landing mark where their flat layout is safe to draw.
+      </p>
 
       <h3>Riding</h3>
       <p className="sheet-copy">

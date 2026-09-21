@@ -48,6 +48,7 @@ export class InputManager extends EventEmitter {
     window.addEventListener('pointercancel', this._onPointerUp);
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
+    window.addEventListener('blur', this._onBlur);
     this.dom.addEventListener('contextmenu', (event) => event.preventDefault());
   }
 
@@ -86,9 +87,13 @@ export class InputManager extends EventEmitter {
   _onKeyDown = (event) => {
     if (event.repeat) return;
     const target = event.target;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+    if (target && ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'A'].includes(target.tagName || '') || target?.isContentEditable) return;
 
     this.keys.add(event.code);
+
+    // The stage owns locomotion keys.  Preventing their browser defaults keeps
+    // Space from scrolling a page out from under a grounded jump.
+    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight'].includes(event.code)) event.preventDefault();
 
     switch (event.code) {
       // A digit pressed on its own selects. A digit *held* while a stroke is
@@ -138,6 +143,8 @@ export class InputManager extends EventEmitter {
     this.keys.delete(event.code);
   };
 
+  _onBlur = () => this.keys.clear();
+
   dispose() {
     this.dom.removeEventListener('pointerdown', this._onPointerDown);
     window.removeEventListener('pointermove', this._onPointerMove);
@@ -145,6 +152,7 @@ export class InputManager extends EventEmitter {
     window.removeEventListener('pointercancel', this._onPointerUp);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
+    window.removeEventListener('blur', this._onBlur);
     this.clear();
   }
 }
