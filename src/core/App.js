@@ -28,10 +28,11 @@ import { Editor } from '../ui/Editor.js';
 import { settings, ELEMENTS } from '../config/settings.js';
 import { RANGES, SPELLWRIGHT_COLOR_PATHS, enginePath } from '../config/spell-contract.js';
 import { Rite } from '../game/Rite.js';
+import { IntroDirector } from '../intro/IntroDirector.js';
 
 /** Owns the local stage, input sources, caster performance, and effects. */
 export class App {
-  constructor(canvas) {
+  constructor(canvas, options = {}) {
     this.canvas = canvas;
     this.time = new Time();
     this.elapsed = 0;
@@ -98,6 +99,13 @@ export class App {
     this.editor = new Editor({
       onClear: () => this.clearEffects(),
       onToast: (message) => this.hud.showToast(message)
+    });
+
+    // Constructed before the first frame so the stage is black from the very
+    // first paint rather than flashing a lit scene and then fading in.
+    this.intro = new IntroDirector({ rig: this.rig }, {
+      reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+      returning: Boolean(options.returning)
     });
 
     settings.mode = 'casting';
@@ -173,6 +181,7 @@ export class App {
     this._onGrimoireAttune = () => void this.handInput.start();
     this._onGrimoireStopHands = () => this.handInput.stop();
     this._onGrimoireCast = () => this._castStagePreview();
+    this._onGrimoireSkipIntro = () => this.intro.skip();
     this._onGrimoireRite = (event) => {
       if (event.detail?.action === 'aside') this.rite.setAside();
       else this.rite.begin();
@@ -189,6 +198,7 @@ export class App {
     window.addEventListener('grimoire:cast', this._onGrimoireCast);
     window.addEventListener('grimoire:ride', this._onGrimoireRide);
     window.addEventListener('grimoire:rite', this._onGrimoireRite);
+    window.addEventListener('grimoire:skip-intro', this._onGrimoireSkipIntro);
   }
 
   _applyFlatPatch(patch) {
@@ -322,6 +332,7 @@ export class App {
     // spending most of a second insisting the stage is still waking while the
     // loader dissolves over a live scene.
     window.dispatchEvent(new CustomEvent('grimoire:ready', { detail: { app: this } }));
+    this.intro.onStageReady();
     this.loading.hide();
     this.start();
   }
@@ -347,6 +358,7 @@ export class App {
     frame.uCameraNear.value = this.camera.near;
     frame.uCameraFar.value = this.camera.far;
 
+    this.intro.update(raw);
     this.renderer.syncSettings();
     this.environment.setFocus(this.stageAnchor.x, this.stageAnchor.z);
     this.environment.update();
@@ -391,6 +403,7 @@ export class App {
     this.input.dispose();
     this.handInput.dispose();
     this.pathDrawer.dispose();
+    this.intro.dispose();
     this.rite.dispose();
     this.abilities.dispose();
     this.caster?.dispose();
@@ -414,5 +427,6 @@ export class App {
     window.removeEventListener('grimoire:cast', this._onGrimoireCast);
     window.removeEventListener('grimoire:ride', this._onGrimoireRide);
     window.removeEventListener('grimoire:rite', this._onGrimoireRite);
+    window.removeEventListener('grimoire:skip-intro', this._onGrimoireSkipIntro);
   }
 }

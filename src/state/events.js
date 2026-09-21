@@ -29,13 +29,17 @@ export const TO_ENGINE = Object.freeze({
   /** Arm the air-scooter ride for the next stroke. */
   RIDE: 'grimoire:ride',
   /** Begin a Rite, or set one aside. */
-  RITE: 'grimoire:rite'
+  RITE: 'grimoire:rite',
+  /** Collapse the remaining beats of the opening. */
+  SKIP_INTRO: 'grimoire:skip-intro'
 });
 
 /** Engine → React. */
 export const TO_UI = Object.freeze({
   /** The stage is playable. Dispatched by `App.load()` before the loader hides. */
   READY: 'grimoire:ready',
+  /** Which beat the opening is on, and whether it has handed the stage back. */
+  INTRO: 'grimoire:intro',
   /** Hand-input health, with a `state` the interface styles itself from. */
   INPUT_STATUS: 'grimoire:input-status',
   /** Whether the next stroke will be ridden rather than cast. */

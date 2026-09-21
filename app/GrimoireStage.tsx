@@ -39,14 +39,6 @@ const ELEMENTS: Array<{ id: ElementId; label: string; sigil: string; color: stri
   { id: 'air', label: 'Wind', sigil: '⌁', color: '#bfe8df' }
 ];
 
-const INTRO_ART = '/intro/elemental-montage.png';
-const INTRO_PANELS = [
-  { id: 'fire', title: 'Fire' },
-  { id: 'water', title: 'Water' },
-  { id: 'earth', title: 'Stone' },
-  { id: 'air', title: 'Wind' }
-] as const;
-
 const DIALS: Record<ElementId, Dial[]> = {
   fire: [
     { label: 'Pace', path: 'fire.speed', min: 4, max: 26, step: .1, value: 11.5 },
@@ -91,6 +83,7 @@ export function GrimoireStage() {
   const [dialValues, setDialValues] = useState<Record<string, number>>({});
   const [storageAvailable, setStorageAvailable] = useState(true);
   const [rite, setRite] = useState<RiteState>(IDLE_RITE);
+  const [introBeat, setIntroBeat] = useState('dark');
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
 
@@ -168,17 +161,29 @@ export function GrimoireStage() {
   const closeHands = useCallback(() => setHandsOpen(false), []);
   const closeWorkshop = useCallback(() => setWorkshopOpen(false), []);
 
-  const dismissIntro = () => {
+  const dismissIntro = useCallback(() => {
+    // Skip only shortens what is already running; the director lands in the
+    // same state either way, and dismisses this overlay when it gets there.
+    emit(TO_ENGINE.SKIP_INTRO);
     persistPreferences({ introSeen: true });
-    setIntroVisible(false);
-  };
+  }, []);
 
   useEffect(() => {
-    if (!introVisible) return;
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const timer = window.setTimeout(dismissIntro, reduceMotion ? 900 : 7600);
-    return () => window.clearTimeout(timer);
-  }, [introVisible]);
+    // The opening used to dismiss itself on a fixed 7600ms timer that had no
+    // relationship to the load it was covering. It now follows the director,
+    // which cannot advance until the stage is genuinely playable.
+    const onIntro = (event: Event) => {
+      const detail = (event as CustomEvent<{ beat: string; finished: boolean }>).detail;
+      if (!detail) return;
+      setIntroBeat(detail.beat);
+      if (detail.finished) {
+        setIntroVisible(false);
+        persistPreferences({ introSeen: true });
+      }
+    };
+    window.addEventListener(TO_UI.INTRO, onIntro);
+    return () => window.removeEventListener(TO_UI.INTRO, onIntro);
+  }, []);
 
   const introRef = useDialog<HTMLElement>(introVisible, dismissIntro);
   const handsRef = useDialog<HTMLElement>(handsOpen, closeHands);
@@ -280,12 +285,15 @@ export function GrimoireStage() {
         </section>
       </div>
 
-      {introVisible && <section className="intro" role="dialog" aria-modal="true" aria-label="Elemental introduction" ref={introRef} tabIndex={-1}>
-        <img className="intro__art" src={INTRO_ART} alt="" />
-        <div className="intro__panels" aria-hidden="true">
-          {INTRO_PANELS.map((panel, index) => <figure key={panel.id} className={`intro__panel intro__panel--${panel.id}`} style={{ '--panel-index': index } as CSSProperties}><figcaption>{panel.title}</figcaption></figure>)}
-        </div>
-        <div className="intro__copy"><p>Four forces. One hand.</p><h1>Become the motion.</h1><span>Camera frames and landmarks stay in this browser.</span></div>
+      {introVisible && <section
+        className={`intro intro--${introBeat}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="The Living Grimoire is opening"
+        ref={introRef}
+        tabIndex={-1}
+      >
+        <div className="intro__copy"><h1>The Living Grimoire</h1><span>Nothing leaves this tab.</span></div>
         <button className="intro__skip" onClick={dismissIntro}>Skip intro</button>
       </section>}
 

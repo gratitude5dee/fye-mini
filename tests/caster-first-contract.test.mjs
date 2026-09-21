@@ -35,7 +35,7 @@ test('hand tracking remains direct-click, local, mirrored, and fallback-safe', a
   assert.match(stage, /Hold an open palm until the ring fills/);
 });
 
-test('the public interface is local-only and includes a motion-safe four-panel intro', async () => {
+test('the public interface is local-only and opens with a motion-safe, skippable sequence', async () => {
   const [stage, css, app, packageJson, layout] = await Promise.all([
     text('../app/GrimoireStage.tsx'), text('../app/grimoire-stage.css'), text('../src/core/App.js'), text('../package.json'), text('../app/layout.tsx')
   ]);
@@ -43,10 +43,21 @@ test('the public interface is local-only and includes a motion-safe four-panel i
   assert.doesNotMatch(app, /fetch\(/);
   assert.doesNotMatch(packageJson, /mongodb/);
   assert.doesNotMatch(layout, /next\/headers|generateMetadata/);
-  assert.match(stage, /elemental-montage\.png/);
-  await access(new URL('../public/intro/elemental-montage.png', import.meta.url));
-  await access(new URL('../output/imagegen/elemental-montage-source.png', import.meta.url));
+  const intro = await text('../src/intro/IntroDirector.js');
+  // The opening is the renderer, not a picture of it: it fades the real grade
+  // and drives the rig's own settings rather than covering the stage.
+  assert.match(intro, /settings\.post\.gain/);
+  assert.match(intro, /settings\.camera\.distance/);
+  // An assignment, not a mention — the file's own comment explains why writing
+  // the camera directly does not work, and that explanation must not trip this.
+  assert.doesNotMatch(intro, /camera\.position\s*[.=]/);
+  // It cannot advance until the stage is genuinely playable.
+  assert.match(intro, /onStageReady/);
   assert.match(stage, /Skip intro/);
+  // And the raster montage it replaced is gone from the bundle and the repo.
+  assert.doesNotMatch(stage, /elemental-montage/);
+  await assert.rejects(access(new URL('../public/intro/elemental-montage.png', import.meta.url)));
+  await assert.rejects(access(new URL('../output/imagegen/elemental-montage-source.png', import.meta.url)));
   assert.match(css, /prefers-reduced-motion/);
   const preferences = await text('../src/state/preferences.js');
   assert.match(preferences, /local-preferences/);
