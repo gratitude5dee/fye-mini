@@ -2140,7 +2140,7 @@ The boring PR that makes the other five cheap. Ship it first and alone.
   - `&& !fingers.thumb` on the fist test, so a thumbs-up stops selecting Stone.
   - Drive the loader's reveal and React's `stageReady` from one signal, so the Cast button stops reading
     "Waking" for up to 920 ms over a live stage.
-- Also cheap and here: the raw engine key leaking at `app/GrimoireStage.tsx:244`, the missing
+- Also cheap and here: the unlabelled element id shown as copy at `app/GrimoireStage.tsx:244`, the missing
   `-webkit-backdrop-filter`, and removing the engine's ability to open a React dialog (§11, hazards 27, 29, 30).
 - **Done when**: `npm test` passes and the product looks and behaves identically **except that the Cast button now
   works**. Do **not** expect a smaller bundle: `glyphs.js` and `ContactShadows.js` have no importers and the seven
