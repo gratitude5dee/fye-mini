@@ -17,7 +17,27 @@ actual source, which is cloned and read, not from their READMEs — in two place
 section 4 says how.
 
 Sections 5 through 8 are the four tracks the brief asks for. Section 9 is the shared skeleton they all hang on,
-and it must be built first. Section 13 is the phased plan; work it in order.
+and it must be built first. **Read section 11 before writing any targeting or hand-tracking code** — it lists
+twenty-two hazards that produce working-looking code which is subtly wrong. Section 14 is the phased plan; work
+it in order.
+
+| § | Section |
+|---|---|
+| 1–2 | Executive summary and the thesis |
+| 3 | Ground truth about this repository |
+| 4 | What the reference repositories actually do, including the portable targeting spec |
+| 5 | Track A — the intro animation |
+| 6 | Track B — onboarding |
+| 7 | Track C — UI and design system |
+| 8 | Track D — game flow |
+| 9 | Shared architecture |
+| 10 | Performance, accessibility, privacy, release |
+| 11 | Implementation hazards |
+| 12 | Test contract changes |
+| 13 | Release blockers |
+| 14 | Implementation phases |
+| 15 | Out of scope |
+| 16 | Appendix — the complete copy deck |
 
 ```sh
 npm install          # node_modules is NOT in this checkout
@@ -1408,13 +1428,99 @@ No telemetry is allowed and none should be added. Instead:
 
 ---
 
-## 11. Test contract changes
+## 11. Implementation hazards
+
+Each of these will produce working-looking code that is subtly wrong. They are listed separately from the design
+because they are the things an implementer discovers at the worst possible moment.
+
+### Targeting and the frame loop
+
+1. **`CastShape` has three members, not two: `LINE`, `ZONE`, `SUMMON`.** A summon arms and reveals through the
+   same controller so the same gesture fires it, but it must draw **no** indicator
+   (`visible = reveal > 0.001 && shape !== CastShape.SUMMON`) and must **bypass the `minRange` validity check** in
+   `confirm()`. Anything that treats targeting as a two-way branch produces a summon that promises a target it does
+   not have. Even though summons are out of scope (§15), model the enum with three members now so adding one later
+   is not a refactor.
+2. **Update order in `App.frame()` is load-bearing.** `hands.update(raw)` must run **before** `aim.update(raw)` or
+   the indicator trails the hand by a frame. `applyHits()` must run **after** the abilities are stepped, or the
+   volume tested is last frame's.
+3. **Targeting and hand tracking run on the real delta; effects and gameplay run on the scaled one.** In
+   `App.frame()` those are `raw` and `dt` respectively (`src/core/App.js:frame`). Pass `raw` to the aim controller
+   or the indicator freezes the moment someone presses `P`.
+4. **Indicator dimensions must be world metres remapped from `vUv`, never UV fractions.** That is the whole reason
+   a 0.42 m shaft and a 0.34 m boundary stay physically constant across a 3 m and a 26 m cast. Do not implement
+   the indicators as scaled sprites or textures.
+5. **Only one indicator visible at a time**, and swapping slots mid-reveal hides the other **outright** rather than
+   letting it fade in place.
+
+### Hand tracking
+
+6. **MediaPipe handedness is mirror-relative, and `HandInput` never mirrors it.** It mirrors x at
+   `src/input/HandInput.js:203` and `:313` but leaves `handedness` alone. **Any Left/Right logic added for a
+   two-handed scheme will be inverted relative to what the player sees** unless explicitly flipped. This is the
+   single most likely bug in the two-handed work.
+7. **`PathDrawer` is a singleton with one `samples` array** (`src/core/App.js:85`, `src/input/PathDrawer.js:28`).
+   Two hands emitting into one `draw:*` channel **interleave into a single corrupt stroke**. Adding a second
+   drawing hand requires a stroke identity on the draw events first.
+8. **Do not give `HandInput` its own `EventEmitter`.** It re-emits into the shared `InputManager` instance
+   precisely so that pointer and hand are indistinguishable downstream. New state belongs on the shared input
+   object.
+9. **The four anti-misfire guards are required together, not à la carte**: boot disengaged behind a ~600 ms
+   open-palm wake gate; Schmitt-trigger every pose threshold; require ~4 consecutive agreeing frames before a pose
+   emits; and open a ~400 ms refractory both after a cast and at the moment of engagement. Shipping two of the four
+   produces a demo that fires on its own.
+10. **The discrete confirm is refractory-gated; the continuous grab signal is not.** A held fist must report true
+    for as long as it is shut, and false the instant the hand is lost.
+11. **Element stepping by hand must emit a relative sign (+1/−1), never an absolute index.** An absolute slot
+    desynchronises permanently the first time a selection is refused, with no way for the player to notice.
+12. **Never derive finger extension from screen-space y.** fye-mini already does this correctly — `isExtended`
+    compares two distances from the wrist and normalises by the wrist-to-middle-knuckle span
+    (`src/input/HandInput.js:_trackPose`). Keep it that way.
+13. **Retune the FPS watchdog before raising `numHands`.** The `<15 fps over 3 s` hard-stop
+    (`src/input/HandInput.js:185-193`) will trip routinely with two hands on the CPU delegate and silently demote
+    the player to pointer with no diagnostic.
+
+### The engine's own rules
+
+14. **Never copy a settings value into a per-cast record at spawn time.** The entire "editor stays live, even while
+    paused" property depends on every system re-sampling `settings[...]` each frame. Records may hold unitless
+    dice rolls and timestamps, nothing else.
+15. **Any new per-cast state must be reset in `spawn()`** (`src/abilities/Ability.js:129`), which is the pooling
+    reset point. Miss it and a pooled ability inherits the previous cast's charge, combo tier or target.
+16. **The particle system is GPU-simulated and the CPU can never read a particle's position.** Position is
+    computed in the vertex shader from spawn data. No per-particle hit detection, attraction or gameplay is
+    possible without an entirely new CPU-side system. Design the Ward against ability heads, not particles.
+17. **A hold-in-place charge produces a cancel, not a cast.** `PathDrawer.move()` rejects samples closer than
+    `minPointDistance` (0.22) and `end()` cancels strokes under `minPathLength` (1.6) or with fewer than three
+    samples. Define a charge as a pre-draw gather, or explicitly bypass the length guard for charged casts.
+18. **Keep `PathDrawer` a pure draw-to-curve device.** Every mode decision belongs in `App._bindEvents` or the new
+    router, not inside the drawer.
+
+### Existing bugs worth fixing while you are in there
+
+19. **A raw engine key leaks to the UI at `app/GrimoireStage.tsx:244`.** Elements are internally
+    `['fire','water','earth','wind']` and publicly `air` for wind; `enginePath()` / `publicKey()` translate, and
+    `App.js` does it by hand at `:141`, `:201` and `:222`. The React island does not, in that one place.
+20. **The `DIALS` literals at `app/GrimoireStage.tsx:26-47` duplicate engine defaults into React.** That is already
+    a desync bug, not a pattern to copy. `src/config/settings.js` is the single source of truth.
+21. **`app/grimoire-stage.css` uses `backdrop-filter` without the `-webkit-` prefix**, so the panel blur is absent
+    on older WebKit.
+
+### Licensing
+
+22. **Both reference repositories are MIT, Copyright (c) 2026 mohamedachrefelouafi.** Any transplanted file,
+    shader or substantial code fragment must carry attribution. `THIRD_PARTY_NOTICES.md` already exists and is
+    where it goes. Do this in the same commit as the transplant, not afterwards.
+
+---
+
+## 12. Test contract changes
 
 `tests/caster-first-contract.test.mjs` is a source-text-matching contract test — no DOM, no browser, no headless
 anything. It is cheap and deterministic and the new work should extend it in the same style rather than
 introducing a browser test runner.
 
-### 11.1 Assertions that must change, and why that is safe
+### 12.1 Assertions that must change, and why that is safe
 
 | Assertion | Today | Change | Why it is safe |
 |---|---|---|---|
@@ -1430,7 +1536,7 @@ assertions, the `Standing Idle.fbx` and `spruit_sunrise.hdr` assertions, the `si
 assertions, the `mongodb` negative assertion, and the two `assert.rejects(access(...))` calls that keep the
 deleted API and gateway deleted.
 
-### 11.2 New tests to add
+### 12.2 New tests to add
 
 **`tests/no-network.test.mjs`** — the privacy claim's only enforcement. Walk every file under `src/` and `app/`
 and reject `fetch(`, `XMLHttpRequest`, `WebSocket`, `RTCPeerConnection`, `EventSource` and `sendBeacon`, with a
@@ -1449,7 +1555,7 @@ used in `app/` and `src/`, so a typo is a build failure rather than a silent no-
 
 ---
 
-## 12. Release blockers
+## 13. Release blockers
 
 **The asset licensing gate is a release blocker, not a nit.** `README.md` states that the upstream binary assets
 retain their original licences and that redistribution rights are unconfirmed, and both are shipped:
@@ -1463,7 +1569,7 @@ different builds. Pin them together or self-host both.
 
 ---
 
-## 13. Implementation phases
+## 14. Implementation phases
 
 Each phase is PR-sized, independently shippable, and leaves the product working. Do not start a phase until the
 one it depends on is merged.
@@ -1531,7 +1637,7 @@ The boring PR that makes the other five cheap. Ship it first and alone.
 - The debug overlay and the playtest script.
 - Self-host MediaPipe WASM + model, or pin the version skew.
 
-## 14. Out of scope — stated so nobody drifts
+## 15. Out of scope — stated so nobody drifts
 - Any server, account, database, sharing, remixing or lineage. Commit 93a438e deleted all of it deliberately.
 - Summons and drone control. They need an entity, an AI and a second control scheme.
 - The WebRTC phone camera. It needs a signalling server and a TURN relay; this product has neither, and
@@ -1553,7 +1659,7 @@ The boring PR that makes the other five cheap. Ship it first and alone.
 
 ---
 
-## 15. Appendix — the complete copy deck
+## 16. Appendix — the complete copy deck
 
 ### Voice
 Plain, warm, second person, present tense. **The world speaks about the world; the machine speaks about the
