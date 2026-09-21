@@ -72,3 +72,17 @@
 
 @media (max-width: 680px) { .ward-readout { top: 78px; } }
 @media (prefers-reduced-motion: reduce) { .ward-stones li { transition: none; } }
+
+/* --- What the tracker can see ------------------------------------------- */
+/* A mirror, not a manual: the row you are performing lights, and the meters
+   show the two continuous axes a pointer cannot supply. Without these a player
+   has no way to learn that their hand height is doing anything until it already
+   changed the cast. */
+.gesture-guide li.is-live { color: var(--ink); }
+.gesture-guide li.is-live b { border-color: var(--accent); color: #0e1215; background: var(--accent); }
+.gesture-guide li.is-done b { opacity: .45; }
+.hand-meters { display: grid; gap: 7px; margin-top: 12px; }
+.hand-meters label { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 9px; color: var(--muted); font: 700 9px/1 var(--font-sans); letter-spacing: .16em; text-transform: uppercase; }
+.hand-meters i { position: relative; height: 4px; border-radius: 999px; background: rgb(246 241 232 / .12); }
+.hand-meters i::after { position: absolute; inset: 0 auto 0 0; width: calc(var(--v, 0) * 100%); border-radius: 999px; background: var(--accent); box-shadow: 0 0 10px -2px var(--accent); content: ''; transition: width .12s linear; }
+@media (prefers-reduced-motion: reduce) { .hand-meters i::after { transition: none; } }

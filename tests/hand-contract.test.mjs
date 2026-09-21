@@ -93,3 +93,57 @@ test('drawing still allocates nothing per stroke', async () => {
   assert.match(ctor, /new Float32Array\(320\)/);
   assert.equal((ctor.match(/new Float32Array\(320\)/g) ?? []).length, 2, 'both the raw and resampled channels are preallocated');
 });
+
+test('all four anti-misfire guards are present, not two of four', async () => {
+  // The spec is explicit that these only work together: shipping some of them
+  // produces a tracker that fires on its own, which is worse than none.
+  const hand = await source('../src/input/HandInput.js');
+
+  // 1. Boots disengaged behind a held open palm.
+  assert.match(hand, /this\.engaged = false/, 'must boot disengaged');
+  assert.match(hand, /WAKE_MS/, 'must have a wake gate');
+  assert.match(hand, /_isOpenPalm/);
+
+  // 2. Schmitt triggers rather than bare thresholds.
+  assert.match(hand, /PINCH_DOWN/);
+  assert.match(hand, /PINCH_UP/);
+  assert.match(hand, /EXTEND_RATIO/, 'extension must be a ratio, not a bare comparison');
+
+  // 3. A pose must agree with itself before it is believed.
+  assert.match(hand, /AGREE_FRAMES/);
+  assert.match(hand, /_agreed/);
+
+  // 4. A refractory window after a cast and at engagement.
+  assert.match(hand, /REFRACTORY_MS/);
+  assert.match(hand, /_refractoryUntil/);
+});
+
+test('lowering the hand is a control, and disengages rather than erroring', async () => {
+  const hand = await source('../src/input/HandInput.js');
+  assert.match(hand, /LOST_MS/);
+  // Anchored on the definition, not the call site above it.
+  const dropout = hand.slice(hand.indexOf('  _handleDropout(now) {'), hand.indexOf('  _isOpenPalm(landmarks) {'));
+  assert.ok(dropout.length > 80, 'the slice must contain the method body');
+  assert.match(dropout, /this\.engaged = false/, 'a lost hand must have to be woken again');
+});
+
+test('the tracker publishes its state, throttled, never per frame', async () => {
+  const hand = await source('../src/input/HandInput.js');
+  assert.match(hand, /PUBLISH_MS/);
+  const publish = hand.slice(hand.indexOf('  _publish(now, tracking) {'));
+  assert.match(publish, /now - this\._publishedAt < PUBLISH_MS/, 'must be throttled');
+  // The interface cannot show a player that their hand height is doing anything
+  // until these two reach it.
+  assert.match(publish, /lift: this\.lift/);
+  assert.match(publish, /spread: this\.spread/);
+  assert.match(publish, /wake: this\.wake/);
+});
+
+test('the two things fye-mini does better than either reference survive', async () => {
+  // Neither reference repository has a delegate fallback or a frame-rate
+  // watchdog. Porting their model must not quietly drop ours.
+  const hand = await source('../src/input/HandInput.js');
+  assert.match(hand, /delegate: 'GPU'/);
+  assert.match(hand, /delegate: 'CPU'/);
+  assert.match(hand, /fps < 15/);
+});

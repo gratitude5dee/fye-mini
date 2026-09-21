@@ -5,6 +5,28 @@ const PINCH_DOWN = 0.32;
 const PINCH_UP = 0.48;
 const DROPOUT_GRACE_MS = 120;
 const POSE_HOLD_MS = 450;
+/**
+ * The four anti-misfire guards, which are required together.
+ *
+ * Shipping two of the four produces a tracker that fires on its own: a hand
+ * that wanders into frame casts, a pose read for one noisy frame selects an
+ * element, and one closed fist fires twice. Together they make the *state
+ * machine*, not the model, the thing that makes hand casting reliable.
+ *
+ * 1. It boots disengaged. An open palm held for `WAKE_MS` engages it.
+ * 2. Every threshold is a Schmitt trigger — see `PINCH_DOWN`/`PINCH_UP`.
+ * 3. A pose must agree for `AGREE_FRAMES` consecutive frames before it emits.
+ * 4. A refractory window follows a cast, and engagement itself.
+ */
+const WAKE_MS = 600;
+const AGREE_FRAMES = 4;
+const REFRACTORY_MS = 400;
+/** A hand gone this long is lost, rather than momentarily occluded. */
+const LOST_MS = 500;
+/** Extension is a ratio, not a bare comparison, so it does not flip on noise. */
+const EXTEND_RATIO = 1.15;
+/** How often the continuous state is published. Never per frame. */
+const PUBLISH_MS = 100;
 const DOCK_DWELL_MS = 400;
 const ONE_EURO = { minCutoff: 1.2, beta: 0.02, dCutoff: 1.0 };
 /**
@@ -32,10 +54,11 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
  * coordinates already calculated in this browser tab.
  */
 export class HandInput {
-  constructor(input, { onElement, onStatus } = {}) {
+  constructor(input, { onElement, onStatus, onState } = {}) {
     this.input = input;
     this.onElement = onElement;
     this.onStatus = onStatus;
+    this.onState = onState;
     this.pointer = new Vector2();
     this.filtered = new Vector2();
     this.active = false;
@@ -50,6 +73,15 @@ export class HandInput {
     this.pose = null;
     this.poseStartedAt = 0;
     this.poseTriggered = false;
+    /** False until an open palm has been held. Nothing casts before it. */
+    this.engaged = false;
+    /** 0..1 progress toward engaging, for the interface to show. */
+    this.wake = 0;
+    this._wakeStart = 0;
+    this._refractoryUntil = 0;
+    this._candidate = null;
+    this._agreed = 0;
+    this._publishedAt = 0;
     this.dockElement = null;
     this.dockStartedAt = 0;
     this.dockTriggered = false;
@@ -232,6 +264,29 @@ export class HandInput {
     const handScale = Math.max(.0001, distance(landmarks[0], landmarks[9]));
     const pinchRatio = distance(landmarks[4], landmarks[8]) / handScale;
 
+    // Guard 1: it boots disengaged. A hand that simply wanders into frame must
+    // not be able to cast, so an open palm has to be held first.
+    if (!this.engaged) {
+      const open = this._isOpenPalm(landmarks);
+      if (!open) { this._wakeStart = 0; this.wake = 0; }
+      else {
+        if (!this._wakeStart) this._wakeStart = now;
+        this.wake = clamp((now - this._wakeStart) / WAKE_MS, 0, 1);
+        if (this.wake >= 1) {
+          this.engaged = true;
+          // Guard 4: engagement itself opens a refractory window, or the very
+          // palm that woke the tracker immediately reads as a pose.
+          this._refractoryUntil = now + REFRACTORY_MS;
+          this.onStatus?.('Hands are ready. Nothing is recorded.', 'tracking');
+        }
+      }
+      this._ring?.style.setProperty('--hold', `${this.wake}`);
+      this._mirror?.classList.toggle('is-pose', this.wake > 0);
+      if (this._label) this._label.textContent = this.wake > 0 ? 'Hold…' : 'Open your hand';
+      this._publish(now, 'found');
+      return;
+    }
+
     // Height of the wrist in the frame, inverted because image y grows
     // downward. Below the floor the hand is just resting low rather than being
     // raised, so the lift stays at zero and a flat stroke stays flat.
@@ -257,6 +312,7 @@ export class HandInput {
       this.input.emit('draw:end', this.filtered);
     }
     if (this.isDrawing) this.input.emit('draw:move', this.filtered);
+    this._publish(now, 'found');
 
     if (!this.isDrawing) {
       this._trackPose(landmarks, now);
@@ -273,10 +329,56 @@ export class HandInput {
       this.isDrawing = false;
       this.input.emit('draw:end', this.filtered);
     }
+    // Lowering the hand is a control, not an error. Past `LOST_MS` the tracker
+    // disengages and has to be woken again, which is what stops a hand drifting
+    // back into frame from casting on its way past.
+    if (this.engaged && this.lastHandAt && now - this.lastHandAt > LOST_MS) {
+      this.engaged = false;
+      this.wake = 0;
+      this._wakeStart = 0;
+      this.lift = 0;
+      this.spread = 0;
+      this.input.lift = 0;
+      this.input.spread = 0;
+    }
+    this._publish(now, this.engaged ? 'seeking' : 'lost');
+  }
+
+  /** An open palm: four fingers extended, spread apart, thumb clear. */
+  _isOpenPalm(landmarks) {
+    const extended = (tip, pip) =>
+      distance(landmarks[tip], landmarks[0]) > distance(landmarks[pip], landmarks[0]) * EXTEND_RATIO;
+    return extended(8, 6) && extended(12, 10) && extended(16, 14) && extended(20, 18);
+  }
+
+  /**
+   * Publish what the tracker can see, for the interface to mirror.
+   *
+   * Throttled, never per frame: this drives a panel, and a panel does not need
+   * sixty updates a second to be legible.
+   */
+  _publish(now, tracking) {
+    if (now - this._publishedAt < PUBLISH_MS) return;
+    this._publishedAt = now;
+    this.onState?.({
+      engaged: this.engaged,
+      wake: this.wake,
+      pose: this.pose === 'wind' ? 'air' : this.pose,
+      hold: this.pose ? clamp((now - this.poseStartedAt) / POSE_HOLD_MS, 0, 1) : 0,
+      pinch: this.isDrawing ? 1 : 0,
+      lift: this.lift,
+      spread: this.spread,
+      tracking,
+      delegate: this._delegate
+    });
   }
 
   _trackPose(landmarks, now) {
-    const isExtended = (tip, pip) => distance(landmarks[tip], landmarks[0]) > distance(landmarks[pip], landmarks[0]);
+    // A ratio rather than a bare comparison: two distances from the wrist with
+    // no margin flip back and forth on noise near the threshold, which is what
+    // makes a pose read as three different elements in as many frames.
+    const isExtended = (tip, pip) =>
+      distance(landmarks[tip], landmarks[0]) > distance(landmarks[pip], landmarks[0]) * EXTEND_RATIO;
     const fingers = {
       thumb: isExtended(4, 3), index: isExtended(8, 6), middle: isExtended(12, 10), ring: isExtended(16, 14), pinky: isExtended(20, 18)
     };
@@ -289,6 +391,12 @@ export class HandInput {
     else if (fingers.index && fingers.middle && !fingers.ring && !fingers.pinky) next = 'water';
     else if (fingers.index && fingers.pinky && !fingers.middle && !fingers.ring) next = 'fire';
 
+    // Guard 3: a pose has to agree with itself for several consecutive frames
+    // before it is believed at all.
+    if (next === this._candidate) this._agreed += 1;
+    else { this._candidate = next; this._agreed = 1; }
+    if (this._agreed < AGREE_FRAMES) return;
+
     if (next !== this.pose) {
       this.pose = next;
       this.poseStartedAt = now;
@@ -300,8 +408,9 @@ export class HandInput {
     } else {
       this._mirror?.classList.remove('is-pose');
     }
-    if (next && !this.poseTriggered && now - this.poseStartedAt >= POSE_HOLD_MS) {
+    if (next && !this.poseTriggered && now - this.poseStartedAt >= POSE_HOLD_MS && now >= this._refractoryUntil) {
       this.poseTriggered = true;
+      this._refractoryUntil = now + REFRACTORY_MS;
       this.onElement?.(next);
       this.onStatus?.(`${next === 'wind' ? 'Gale' : next[0].toUpperCase() + next.slice(1)} answers your pose.`, 'tracking');
     }
@@ -371,6 +480,9 @@ export class HandInput {
     this.spread = 0;
     this.input.lift = 0;
     this.input.spread = 0;
+    this.engaged = false;
+    this.wake = 0;
+    this._wakeStart = 0;
     cancelAnimationFrame(this._raf);
     this._raf = 0;
     if (this.isDrawing) this.input.emit('draw:end', this.filtered);

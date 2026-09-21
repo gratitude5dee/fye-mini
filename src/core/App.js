@@ -90,7 +90,9 @@ export class App {
       onStatus: (message, state = 'notice') => {
         this.hud?.showToast(message);
         window.dispatchEvent(new CustomEvent('grimoire:input-status', { detail: { message, state } }));
-      }
+      },
+      // Throttled inside the tracker, so this is safe to forward straight on.
+      onState: (state) => window.dispatchEvent(new CustomEvent('grimoire:input-status', { detail: state }))
     });
     this.pathDrawer = new PathDrawer(this.camera);
     this.scene.add(this.pathDrawer.object3D);

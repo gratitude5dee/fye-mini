@@ -84,6 +84,7 @@ export function GrimoireStage() {
   const [storageAvailable, setStorageAvailable] = useState(true);
   const [rite, setRite] = useState<RiteState>(IDLE_RITE);
   const [introBeat, setIntroBeat] = useState('dark');
+  const [hand, setHand] = useState({ engaged: false, wake: 0, lift: 0, spread: 0 });
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
 
@@ -124,8 +125,14 @@ export function GrimoireStage() {
     const ready = () => setStageReady(true);
     const inputStatusListener = (event: Event) => {
       const detail = (event as CustomEvent<{ message?: string; state?: InputState }>).detail;
-      setInputStatus(detail?.message ?? 'Hand input is ready.');
-      setInputState(detail?.state ?? 'tracking');
+      // The tracker publishes two kinds of detail through this one channel: a
+      // health message, and the throttled continuous state. Only the former
+      // carries a message, so an absent one must not blank the status line.
+      if (detail?.message) setInputStatus(detail.message);
+      if (detail?.state) setInputState(detail.state);
+      if (typeof detail?.wake === 'number') {
+        setHand({ engaged: Boolean(detail.engaged), wake: detail.wake, lift: detail.lift ?? 0, spread: detail.spread ?? 0 });
+      }
     };
     const rideStatusListener = (event: Event) => setRideArmed(Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active));
     const castListener = (event: Event) => {
@@ -302,7 +309,18 @@ export function GrimoireStage() {
         <p className="eyebrow">Camera-first desktop input</p><h2 id="hands-title">Cast with your hands.</h2>
         <p className="sheet-copy">Enable the camera with the button below. The live mirror and landmarks are processed in this browser only; no video, frames, or landmarks are saved.</p>
         <div className={`input-health input-health--${inputState}`}><i /><span>{inputStatus}</span></div>
-        <ol className="gesture-guide"><li><b>1</b><span><strong>Calibrate</strong> Hold an open palm until the ring fills.</span></li><li><b>2</b><span><strong>Choose</strong> Fist = stone · two fingers = water · horns = fire · open hand = wind.</span></li><li><b>3</b><span><strong>Release</strong> Pinch thumb to index, draw, then open.</span></li></ol>
+        <ol className="gesture-guide">
+          <li className={hand.engaged ? 'is-done' : 'is-live'}><b>1</b><span><strong>Wake</strong> Hold an open palm until the ring fills.</span></li>
+          <li className={hand.engaged ? 'is-live' : ''}><b>2</b><span><strong>Draw</strong> Pinch thumb to finger, draw, then open.</span></li>
+          <li className={hand.lift > 0.4 ? 'is-live' : ''}><b>3</b><span><strong>Lift</strong> Raise your hand and the line leaves the ground. A mouse cannot.</span></li>
+          <li><b>4</b><span><strong>Choose</strong> Fist = stone · two fingers = water · horns = fire · open hand = wind.</span></li>
+          <li><b>5</b><span><strong>Rest</strong> Lower your hand. Raise it to go on.</span></li>
+        </ol>
+        {(inputState === 'ready' || inputState === 'tracking') && <div className="hand-meters" aria-hidden="true">
+          <label><span>Wake</span><i style={{ '--v': hand.wake } as CSSProperties} /></label>
+          <label><span>Lift</span><i style={{ '--v': Math.min(1, hand.lift / 2.6) } as CSSProperties} /></label>
+          <label><span>Spread</span><i style={{ '--v': hand.spread } as CSSProperties} /></label>
+        </div>}
         <div className="sheet-actions"><button className="cast-button" onClick={enableHands}>{inputState === 'ready' || inputState === 'tracking' ? 'Calibrate pose' : 'Enable hands'}</button>{(inputState === 'ready' || inputState === 'tracking' || inputState === 'requesting') && <button className="quiet-button" onClick={stopHands}>Use pointer instead</button>}</div>
       </section>}
 
