@@ -39,6 +39,21 @@ export class PathDrawer extends EventEmitter {
 
     // Pre-allocate the resample buffer so drawing never allocates.
     for (let i = 0; i < 320; i++) this.resampled.push(new Vector3());
+
+    /**
+     * Per-sample lift, in metres above the ground plane.
+     *
+     * A pointer stroke is pinned to y = 0 by the raycast, so with a mouse this
+     * stays zero and nothing downstream changes. A hand has a height, and this
+     * is where it rides along the stroke so the cast can rise exactly where the
+     * player's hand did.
+     *
+     * Preallocated in step with `samples` and `resampled`, matching this file's
+     * standing rule that drawing never allocates.
+     */
+    this.sampleLift = new Float32Array(320);
+    this.resampledLift = new Float32Array(320);
+    this._lift = 0;
   }
 
   get object3D() {
@@ -51,10 +66,24 @@ export class PathDrawer extends EventEmitter {
     return this.raycaster.ray.intersectPlane(GROUND_PLANE, out) !== null;
   }
 
+  /**
+   * Set the height the next accepted sample will carry.
+   *
+   * Written by whoever owns the input before each `move`, rather than added to
+   * the draw event's signature, so pointer and hand stay indistinguishable
+   * downstream — which is the property the whole input layer is built on.
+   *
+   * @param {number} metres
+   */
+  setLift(metres) {
+    this._lift = Number.isFinite(metres) ? Math.max(0, metres) : 0;
+  }
+
   begin(pointer) {
     if (!this._project(pointer, this._hit)) return;
     this.samples.length = 0;
     this._smoothed.copy(this._hit);
+    this.sampleLift[0] = this._lift;
     this.samples.push(this._hit.clone());
     this.active = true;
     this.trail.hide();
@@ -74,6 +103,7 @@ export class PathDrawer extends EventEmitter {
     if (last && this._smoothed.distanceTo(last) < input.minPointDistance) return;
     if (this.samples.length >= input.maxPoints) return;
 
+    this.sampleLift[this.samples.length] = this._lift;
     this.samples.push(this._smoothed.clone());
     this._rebuild();
   }
@@ -123,11 +153,51 @@ export class PathDrawer extends EventEmitter {
     const wanted = MathUtils.clamp(Math.round(length * settings.input.samplesPerUnit), 2, this.resampled.length);
 
     for (let i = 0; i < wanted; i++) {
-      curve.getPointAt(i / (wanted - 1), this.resampled[i]);
+      const t = i / (wanted - 1);
+      curve.getPointAt(t, this.resampled[i]);
       this.resampled[i].y = settings.trail.height;
+      // Resampled by the same walk as the curve, so sample i of the polyline
+      // and entry i of the lift describe the same point of the stroke.
+      this.resampledLift[i] = this._sampleLiftAt(t);
     }
     this.resampledCount = wanted;
     this.trail.setPoints(this.resampled, wanted);
+  }
+
+  /** Linear read of the raw lift channel at normalised progress `t`. */
+  _sampleLiftAt(t) {
+    const last = this.samples.length - 1;
+    if (last <= 0) return this.sampleLift[0] ?? 0;
+    const at = Math.min(last, Math.max(0, t * last));
+    const i = Math.floor(at);
+    const frac = at - i;
+    const a = this.sampleLift[i] ?? 0;
+    const b = this.sampleLift[Math.min(last, i + 1)] ?? a;
+    return a + (b - a) * frac;
+  }
+
+  /**
+   * The stroke's own height profile, for the cast that flies it.
+   *
+   * Returned as a closure over the resampled channel rather than the live
+   * buffer, because the buffer is recycled by the next stroke and an ability
+   * outlives the gesture that made it.
+   */
+  liftProfile() {
+    const count = this.resampledCount;
+    if (count < 2) return null;
+    const lift = Float32Array.prototype.slice.call(this.resampledLift, 0, count);
+    let peak = 0;
+    for (let i = 0; i < count; i++) peak = Math.max(peak, lift[i]);
+    if (peak <= 0.001) return null;
+    return (u) => {
+      const at = Math.min(count - 1, Math.max(0, u * (count - 1)));
+      const i = Math.floor(at);
+      const frac = at - i;
+      const a = lift[i];
+      const b = lift[Math.min(count - 1, i + 1)];
+      return a + (b - a) * frac;
+    };
   }
 
   update(dt) {

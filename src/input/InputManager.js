@@ -18,6 +18,17 @@ export class InputManager extends EventEmitter {
     this.keys = new Set();
     this.enabled = true;
 
+    /**
+     * Continuous channels a hand supplies and a pointer cannot.
+     *
+     * They live on the shared input object rather than on `HandInput` so that
+     * everything downstream keeps treating the two sources as one. With a
+     * pointer they stay at their defaults, and every element behaves exactly as
+     * it always has.
+     */
+    this.lift = 0;
+    this.spread = 0;
+
     this._bind();
   }
 

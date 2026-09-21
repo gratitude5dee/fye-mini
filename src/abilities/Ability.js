@@ -70,6 +70,8 @@ export class Ability {
     this.trailCount = 0;
 
     this.light = null;
+    /** Per-cast height profile, set by the router. See `setLift`. */
+    this._lift = null;
     this.lightColor = new Color();
     /** Transient additive light punch (impacts). Decays on its own. */
     this.lightBoost = 0;
@@ -215,11 +217,43 @@ export class Ability {
     return 0;
   }
 
+  /**
+   * Extra altitude this *cast* carries, on top of the element's own.
+   *
+   * A mouse stroke is pinned to the ground plane by construction — `PathDrawer`
+   * raycasts onto y = 0 — so with a pointer this is always zero and every
+   * element behaves exactly as it always has. A hand has a height, and feeding
+   * it here lets a player take an element over a hazard that only fire clears
+   * by nature.
+   *
+   * Additive rather than replacing, so a lifted earth cast is still
+   * unmistakably earth: the element keeps describing its own character and the
+   * cast rides on top of it.
+   *
+   * @param {number} u normalised progress along the path
+   * @returns {number} metres
+   */
+  lift(u) {
+    return this._lift ? this._lift(u) : 0;
+  }
+
+  /**
+   * Give this cast a height profile, or clear it.
+   *
+   * Set before `spawn`; cleared by `destroy`, because the instance is pooled
+   * and a stale profile would silently lift the next cast that reused it.
+   *
+   * @param {((u: number) => number)|null} profile
+   */
+  setLift(profile) {
+    this._lift = typeof profile === 'function' ? profile : null;
+  }
+
   /** Point on the trajectory (the curve plus this element's flight height). */
   _samplePath(u, out) {
     const t = saturate(u);
     this.curve.getPointAt(t, out);
-    const height = this.pathHeight(t);
+    const height = this.pathHeight(t) + this.lift(t);
     if (height !== 0) out.y += height;
     return out;
   }
@@ -230,9 +264,10 @@ export class Ability {
    */
   _tiltTangent(u) {
     const e = 0.01;
-    const slope =
-      (this.pathHeight(saturate(u + e)) - this.pathHeight(saturate(u - e))) /
-      (2 * e * this.curveLength);
+    // Both terms, or a cast that climbs on the stroke's lift keeps pointing
+    // flat while it rises.
+    const above = (t) => this.pathHeight(t) + this.lift(t);
+    const slope = (above(saturate(u + e)) - above(saturate(u - e))) / (2 * e * this.curveLength);
     if (slope === 0) return;
     this.tangent.y += slope;
     this.tangent.normalize();
@@ -340,6 +375,8 @@ export class Ability {
     this.group.visible = false;
     this.phase = AbilityPhase.IDLE;
     this.curve = null;
+    // Pooled: a height profile left behind would lift whatever cast reuses this.
+    this._lift = null;
   }
 
   /** Free GPU resources (app teardown only — not part of pooling). */

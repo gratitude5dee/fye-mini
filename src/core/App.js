@@ -125,10 +125,14 @@ export class App {
 
     this.input.on('draw:start', (pointer) => {
       this.caster?.setGesture('gather', { element: this.abilities.selected });
+      this.pathDrawer.setLift(this.input.lift);
       this.pathDrawer.begin(pointer);
     });
     this.input.on('draw:move', (pointer) => {
       this.caster?.setGesture('aim', { element: this.abilities.selected });
+      // Read just before the sample lands, so the height recorded is the
+      // height the hand was at for that point of the stroke.
+      this.pathDrawer.setLift(this.input.lift);
       this.pathDrawer.move(pointer);
       const head = this.pathDrawer.samples.at(-1);
       if (head) this.rite.trackPointer(head.x, head.z);
@@ -155,7 +159,9 @@ export class App {
         this.hud.showToast('The caster rides the current.');
         return;
       }
-      const ability = this.abilities.cast(curve);
+      // The stroke's own height profile, captured before the buffer is recycled.
+      const strokeLift = this.pathDrawer.liftProfile();
+      const ability = this.abilities.cast(curve, this.abilities.selected, { lift: strokeLift });
       // The ability that actually flew is the one asked how high it flew, so a
       // fire cast clears a hazard an earth cast cannot — no assumption about
       // the element, just its real altitude along the line.

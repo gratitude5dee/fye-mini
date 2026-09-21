@@ -7,6 +7,20 @@ const DROPOUT_GRACE_MS = 120;
 const POSE_HOLD_MS = 450;
 const DOCK_DWELL_MS = 400;
 const ONE_EURO = { minCutoff: 1.2, beta: 0.02, dCutoff: 1.0 };
+/**
+ * How high a raised hand lifts the cast, in metres.
+ *
+ * This is the axis a pointer does not have. `PathDrawer` raycasts onto the
+ * ground plane, so every point of a mouse stroke is at y = 0 by construction —
+ * not for want of a keybinding, but because there is no third axis to read. A
+ * hand has one, and it is what lets a player take an element over a hazard that
+ * only fire clears by nature.
+ */
+const LIFT_MAX = 2.6;
+/** Below this the hand is simply resting low; above it, deliberately raised. */
+const LIFT_FLOOR = 0.42;
+/** Spread of the four fingertips, normalised by hand scale, at full open. */
+const SPREAD_MAX = 1.35;
 const HAND_CONNECTIONS = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
@@ -29,6 +43,10 @@ export class HandInput {
     this.lastHandAt = 0;
     this.lastFrameAt = 0;
     this.frameCount = 0;
+    /** Metres of extra altitude the current hand height asks for. */
+    this.lift = 0;
+    /** 0..1 openness of the four fingers, for the cast's width. */
+    this.spread = 0;
     this.pose = null;
     this.poseStartedAt = 0;
     this.poseTriggered = false;
@@ -213,6 +231,24 @@ export class HandInput {
 
     const handScale = Math.max(.0001, distance(landmarks[0], landmarks[9]));
     const pinchRatio = distance(landmarks[4], landmarks[8]) / handScale;
+
+    // Height of the wrist in the frame, inverted because image y grows
+    // downward. Below the floor the hand is just resting low rather than being
+    // raised, so the lift stays at zero and a flat stroke stays flat.
+    const raised = clamp((1 - landmarks[0].y - LIFT_FLOOR) / (1 - LIFT_FLOOR), 0, 1);
+    this.lift = raised * LIFT_MAX;
+    // Spread of the four fingertips about the palm, normalised by hand scale so
+    // it means the same at any distance from the camera.
+    const fingertips = [8, 12, 16, 20];
+    let spread = 0;
+    for (let i = 1; i < fingertips.length; i++) {
+      spread += distance(landmarks[fingertips[i]], landmarks[fingertips[i - 1]]);
+    }
+    this.spread = clamp(spread / handScale / SPREAD_MAX, 0, 1);
+    // Written to the shared input object, not to a private field: pointer and
+    // hand must stay indistinguishable to everything downstream.
+    this.input.lift = this.lift;
+    this.input.spread = this.spread;
     if (!this.isDrawing && pinchRatio < PINCH_DOWN) {
       this.isDrawing = true;
       this.input.emit('draw:start', this.filtered);
@@ -330,6 +366,11 @@ export class HandInput {
     // own stream instead of resurrecting the mirror after the user skipped.
     this._startAttempt++;
     this._startPromise = null;
+    // A stale lift would keep raising pointer strokes after the camera is gone.
+    this.lift = 0;
+    this.spread = 0;
+    this.input.lift = 0;
+    this.input.spread = 0;
     cancelAnimationFrame(this._raf);
     this._raf = 0;
     if (this.isDrawing) this.input.emit('draw:end', this.filtered);

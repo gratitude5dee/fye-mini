@@ -107,7 +107,10 @@ export class Rite {
     // Each failed attempt widens the accept rings a little. The player is never
     // told; being quietly helped is the only kind of help that does not sting.
     const forgiveness = settings.rite.waystoneForgiveness ** this._failedAttempts;
-    const liftAt = ability ? (u) => ability.pathHeight(u) : () => 0;
+    // Both terms: the element's own altitude and whatever the stroke carried.
+    // A ground-hugging element taken over a hazard by a raised hand must count
+    // as cleared, or the axis that justifies hand tracking does nothing.
+    const liftAt = ability ? (u) => ability.pathHeight(u) + ability.lift(u) : () => 0;
     const outcome = resolveStroke(points, count, state.layout, liftAt, forgiveness);
 
     this.ward.showOutcome(outcome);
