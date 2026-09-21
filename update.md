@@ -532,7 +532,7 @@ inline attribution to correct: the "Nothing was added to any ability" passage is
 Also worth knowing, since §4 opens by calling these four-element sandboxes: that is only true of their archives.
 The live `src/abilities/` in the sibling repo holds **nine**.
 
-## But there is still no game
+### But there is still no game
 
 `applyHits` is hit detection, not a game. The source says so itself: **"One hit is a kill. This is a test range,
 not a fight: `hit.impulse`, `lift` and `spin` are the whole of the damage model, and they are there to be dragged
