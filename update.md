@@ -16,6 +16,12 @@ Every factual claim about the repository carries a `file:line`. Claims I could n
 actual source, which is cloned and read, not from their READMEs — in two places the READMEs are misleading and
 section 4 says how.
 
+**This document was reviewed before you got it, and §5, §8, §14 and parts of §6 and §7 were rewritten as a
+result.** Where a first draft was wrong, the section says so and says why, so the same idea does not come back.
+The reviewer's closing call is worth passing on: **§3, §4, §9, §11 and §12 are engineering reference that will
+outlive whatever happens to the game design, and should be lifted into an `ARCHITECTURE.md` regardless.** They
+have nothing to do with the loop and should not die with it.
+
 Sections 5 through 8 are the four tracks the brief asks for. Section 9 is the shared skeleton they all hang on,
 and it must be built first. **Read section 11 before writing any targeting or hand-tracking code** — it lists
 thirty-one hazards that produce working-looking code which is subtly wrong. Section 14 is the phased plan; work
@@ -2088,6 +2094,43 @@ prototype gate says there is a product to dress.
 Plain, warm, second person, present tense. **The world speaks about the world; the machine speaks about the
 machine, and the machine never borrows ritual language to describe a technical failure.** No exclamation marks.
 No "Oops". No "Awesome". Sentences under twelve words. The product is confident, not chatty.
+
+### Decide the fiction before writing another line
+
+Review found three mythologies running at once, which is why the copy keeps sliding registers.
+
+1. **"Grimoire" and "sigil"** are medieval European ceremonial magic.
+2. **"Rite", "the Ward", "standing stones"** are neolithic and neopagan.
+3. **The engine underneath is Avatar-derived elemental bending** — `src/config/settings.js:571` literally reads
+   `hint: 'Firebending'`.
+
+**Pick one and purge the other two from the copy deck.** The recommendation is the Grimoire: the product is named
+after it, and a book of pages is a better container for a deck of problems than a stone circle is. If the Grimoire
+wins, "the Ward" needs a new name and the bending hints come out of `ELEMENT_META`.
+
+Then, downstream of that decision:
+
+- **"Stone / Wind" versus "Earth / Air" is a tone bug, not only a data bug.** §7 catches three sources disagreeing
+  on the hex values and the labels. Nobody flagged that "Stone" and "Wind" are concrete nouns from a physical
+  world while "Earth" and "Air" are classical-element abstractions — they imply different fictions. Decide the
+  fiction, then write the constant.
+- **The score never reaches the player as a number.** "Fidelity", "tolerance", "best score" belong in §10's debug
+  overlay. The Ward *is* the readout. If a word must be shown it is the world's: the line was *true*, *close*, or
+  *astray*.
+- **"Trace it." is a machine imperative**, and it would be the first thing the world says after a sequence
+  designed to establish a world that does not speak. Either no words at all, which the ghost supports, or the
+  book's own register: *"The Grimoire opens to a single arc."*
+- **"The spell shifts in your hand." currently fires on a dial drag.** `App._onGrimoirePatch` toasts it when the
+  Workshop patches settings. That is the machine borrowing ritual language to narrate a debug action, which is
+  the exact inverse of the voice rule above. Keep the line; move it to a world event. The Workshop gets no voice.
+- **"Cast with your hands. Your camera never leaves this tab."** welds a ritual imperative to a browser-security
+  disclaimer in one breath. The offer belongs to the world; the guarantee belongs to the panel behind it.
+- **"Workshop", "genome", "pace / mass / chaos / radiance / menace"**: "chaos", "radiance" and "menace" belong in
+  a grimoire; "pace" and "mass" belong in a physics engine. Rename two words and the readout becomes an artifact
+  instead of a dashboard.
+
+Three lines already get it right and should not be touched: *"Two stones stayed dark. The Rite still ends."*,
+*"No camera, no problem."* and *"Not now"*.
 
 ### Every string in the product today, and what replaces it
 
