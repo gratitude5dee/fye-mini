@@ -1766,7 +1766,16 @@ The boring PR that makes the other five cheap. Ship it first and alone.
   screen (§7) and splitting it belongs with the token work in P3.
 - Fix `gl.shadowMap.needsUpdate` to stop re-rendering a 4096² map 60×/s.
 - Give `toggleHelp` / `togglePose` / `toggleMode` real cases, or stop emitting them.
-- **Done when**: `npm test` passes, the product looks and behaves identically, and the bundle is smaller.
+- **The three live bugs (§11, hazards 21, 22 and the loader race in §5).** All are a few lines and none of them
+  should wait behind a design track:
+  - `.stage-hud > * { pointer-events: auto }`, so the Cast button is clickable.
+  - `&& !fingers.thumb` on the fist test, so a thumbs-up stops selecting Stone.
+  - Drive the loader's reveal and React's `stageReady` from one signal, so the Cast button stops reading
+    "Waking" for up to 920 ms over a live stage.
+- Also cheap and here: the raw engine key leaking at `app/GrimoireStage.tsx:244`, the missing
+  `-webkit-backdrop-filter`, and removing the engine's ability to open a React dialog (§11, hazards 24, 26, 27).
+- **Done when**: `npm test` passes, the product looks and behaves identically **except that the Cast button now
+  works**, and the bundle is smaller.
 
 ### P1 — The intro (depends on P0)
 - `src/intro/IntroDirector.js` and its four scripted curves.
