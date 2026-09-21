@@ -644,6 +644,35 @@ reference does. **64 squared distances per frame at `MAX_CONCURRENT` = 8 against
 is new information — `panel-drift` and `panel-sheen` simply loop. Roughly 2.75 s of content is stretched across
 7600 ms, so **about 64 % of the intro's runtime is dead air** laid over a stage that is already rendering.
 
+#### The loader handoff, and the 920 ms the Cast button spends lying
+
+Worth knowing before you rewrite the opening, because the new sequence inherits this seam.
+
+React renders the whole loader tree (`app/GrimoireStage.tsx`), and the engine then reaches in and mutates it by
+id from outside React: `LoadingScreen`'s constructor caches `getElementById('loader')`, `'loader-fill'` and
+`'loader-status'`, and `setProgress`, `fail` and `hide` write `style.width`, `textContent`, `style.color` and a
+class directly (`src/ui/HUD.js`). All of that element's styling lives in the *other* stylesheet,
+`src/ui/styles.css`, not in `app/grimoire-stage.css` (§7).
+
+The boot order is three fire-and-forget hops: hydration paints the loader → a `useEffect` does
+`void import('../src/main.js')` → `main.js` does `void boot()` → `new App(canvas)` constructs `LoadingScreen` →
+`App.load()` walks the five progress stages.
+
+Then the reveal and the readiness signal come apart:
+
+1. `App.load()` calls `this.loading.hide()`, which sets progress to 1 and schedules a detached **220 ms
+   `setTimeout`** before adding `.is-hidden`.
+2. `.is-hidden` begins a **0.7 s opacity and visibility transition**.
+3. Only *after* `load()` returns does `main.js` dispatch `grimoire:ready`, which is what sets `stageReady` in
+   React.
+
+So for up to **920 ms** the loader is visibly fading out over a live stage while React still believes the stage is
+waking — and the Cast button, which is `disabled={!stageReady}`, reads **"Waking"** the whole time. The first
+thing a new visitor sees after the loading screen is a greyed-out primary button. (It is also not clickable once
+it enables — §11, hazard 21.)
+
+The new sequence must drive both the visual reveal and `stageReady` from the same signal.
+
 #### What it costs to fix
 `public/intro/elemental-montage.png` (2.6 MB) and `output/imagegen/elemental-montage-source.png` (2.6 MB) plus
 `public/og.png` (2.5 MB) are 7.7 MB of raster in a 14 MB `public/`. Replacing the intro with a scripted sequence of
