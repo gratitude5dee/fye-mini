@@ -144,14 +144,15 @@ export class App {
 
     this.input.on('draw:start', (pointer) => {
       this.caster?.setGesture('gather', { element: this.abilities.selected });
-      this.pathDrawer.setLift(this.input.lift);
+      // A new stroke starts from the selected element, whatever the off hand or
+      // a held digit did during the last one.
+      this.input.elementIndex = -1;
+      this._carryChannels();
       this.pathDrawer.begin(pointer);
     });
     this.input.on('draw:move', (pointer) => {
       this.caster?.setGesture('aim', { element: this.abilities.selected });
-      // Read just before the sample lands, so the height recorded is the
-      // height the hand was at for that point of the stroke.
-      this.pathDrawer.setLift(this.input.lift);
+      this._carryChannels();
       this.pathDrawer.move(pointer);
       const head = this.pathDrawer.samples.at(-1);
       if (head) this.rite.trackPointer(head.x, head.z);
@@ -170,7 +171,7 @@ export class App {
       if (this.rite.active) this.hud.showToast('Longer. Draw it to the end.');
     });
 
-    this.pathDrawer.on('cast', (curve, points, count, length) => {
+    this.pathDrawer.on('cast', (curve, points, count, length, runs) => {
       if (this.rideNextStroke && this.walk?.begin(curve)) {
         this.rideNextStroke = false;
         this.caster?.setGesture('recovery', { element: 'wind' });
@@ -180,21 +181,100 @@ export class App {
       }
       // The stroke's own height profile, captured before the buffer is recycled.
       const strokeLift = this.pathDrawer.liftProfile();
-      const ability = this.abilities.cast(curve, this.abilities.selected, { lift: strokeLift });
-      // The ability that actually flew is the one asked how high it flew, so a
-      // fire cast clears a hazard an earth cast cannot — no assumption about
-      // the element, just its real altitude along the line.
-      const strength = this.rite.judge(points, count, ability);
+      // One cast per element run. A stroke drawn with one element — every
+      // pointer stroke, and every hand stroke where the off hand held still —
+      // is one run, so this is the single-cast path it has always been.
+      const cast = this._castRuns(curve, points, count, runs, strokeLift);
+      // The abilities that actually flew are the ones asked how high they flew,
+      // so a fire cast clears a hazard an earth cast cannot — no assumption
+      // about the element, just its real altitude along the line.
+      const strength = this.rite.judge(points, count, cast);
       // `intensity` has always been accepted here and never passed. A clean
       // solve makes the caster commit; a scrape makes them hesitate, and the
       // player reads the answer off the body before anything else resolves.
       this.caster?.setGesture('release', {
-        element: this.abilities.selected,
+        // The element the caster's body commits to is the one the line ends
+        // with: that is where their hand actually is when the stroke releases.
+        element: cast[cast.length - 1]?.element ?? this.abilities.selected,
         intensity: .35 + strength * 1.25
       });
       this._recordCast(length);
     });
 
+  }
+
+  /**
+   * Narrow a stroke's lift profile to one run of it.
+   *
+   * `liftProfile()` is a function of progress along the *whole* stroke, or null
+   * for a flat one — every pointer stroke. A run flies along its own sub-curve
+   * and is parameterised over that, so its height has to be looked up at the
+   * corresponding point of the whole, or the second run of a line would read
+   * its altitude from the wrong end of the profile.
+   *
+   * @returns {((u: number) => number)|null}
+   */
+  _liftOver(strokeLift, from, to, count) {
+    if (!strokeLift) return null;
+    const span = Math.max(1, count - 1);
+    const last = Math.max(from, to - 1);
+    return (u) => strokeLift((from + Math.min(1, Math.max(0, u)) * (last - from)) / span);
+  }
+
+  /**
+   * Hand the per-sample channels to the drawer, just before a sample lands.
+   *
+   * Read here rather than pushed from the input, so the values recorded are the
+   * ones in force at the moment of the sample rather than whenever the source
+   * last happened to change. A pointer supplies neither and both fall back to
+   * their defaults, which is what keeps pointer and hand indistinguishable
+   * everywhere downstream.
+   */
+  _carryChannels() {
+    this.pathDrawer.setLift(this.input.lift);
+    const held = this.input.elementIndex;
+    this.pathDrawer.setElementIndex(held >= 0 ? held : ELEMENTS.indexOf(this.abilities.selected));
+  }
+
+  /**
+   * Fly each element run of a stroke, and report what flew where.
+   *
+   * A run is cast along its own sub-curve, so fire really does stop at the gate
+   * and earth really does start there, rather than one cast being recoloured
+   * halfway. The lift profile is sliced to match, because it is indexed over
+   * the whole stroke and each run only owns part of it.
+   *
+   * @returns {Array<{ element: string, ability: object|null, from: number, to: number }>}
+   */
+  _castRuns(curve, points, count, runs, strokeLift) {
+    // The common case, and the one that must stay free of work: one element,
+    // one cast, the whole curve, the whole lift profile.
+    if (!runs || runs.length <= 1) {
+      const element = runs?.length === 1 ? ELEMENTS[runs[0].element] ?? this.abilities.selected : this.abilities.selected;
+      const ability = this.abilities.cast(curve, element, { lift: strokeLift });
+      return [{ element, ability, from: 0, to: count }];
+    }
+
+    const flown = [];
+    for (const run of runs) {
+      // A Catmull-Rom needs three points to curve; a two-point run is a
+      // straight segment, which is what it looked like on screen anyway.
+      const span = Math.max(2, run.to - run.from);
+      const pts = [];
+      for (let i = run.from; i < run.from + span && i < count; i++) pts.push(points[i].clone());
+      if (pts.length < 2) continue;
+      const sub = new CatmullRomCurve3(pts, false, 'catmullrom', settings.input.curveTension);
+      sub.arcLengthDivisions = Math.max(64, pts.length * 8);
+      const element = ELEMENTS[run.element] ?? this.abilities.selected;
+      const to = run.from + pts.length;
+      flown.push({
+        element,
+        ability: this.abilities.cast(sub, element, { lift: this._liftOver(strokeLift, run.from, to, count) }),
+        from: run.from,
+        to
+      });
+    }
+    return flown;
   }
 
   _bindGrimoireEvents() {

@@ -1,6 +1,12 @@
 import { Vector2 } from 'three';
 
 import { TO_UI } from '../state/events.js';
+import { ELEMENTS } from '../config/settings.js';
+
+/** Pose name to the engine's element index. `wind` is the engine's word for air. */
+const ELEMENT_INDEX = Object.freeze(
+  Object.fromEntries(ELEMENTS.map((element, index) => [element, index]))
+);
 
 const INSET = 0.15;
 const PINCH_DOWN = 0.32;
@@ -30,6 +36,16 @@ const EXTEND_RATIO = 1.15;
 /** How often the continuous state is published. Never per frame. */
 const PUBLISH_MS = 100;
 const DOCK_DWELL_MS = 400;
+/**
+ * The off hand's pose has to agree with itself for this long before it changes
+ * the element mid-stroke.
+ *
+ * Longer than the drawing hand's `POSE_HOLD_MS`, deliberately: the drawing hand
+ * is doing one thing and the off hand is idle in frame for the whole stroke, so
+ * it has far more opportunity to be read as a pose nobody made. A change here
+ * also cannot be taken back — it is already in the stroke.
+ */
+const OFF_HAND_HOLD_MS = 320;
 /** Inference passes per second below which the tracker hands back to the pointer. */
 const WATCHDOG_FPS = 15;
 const ONE_EURO = { minCutoff: 1.2, beta: 0.02, dCutoff: 1.0 };
@@ -66,6 +82,13 @@ export class HandInput {
     /** The quality ladder, asked each frame how often to run inference. */
     this.quality = quality;
     this._skipped = 0;
+    /** Which of the tracked hands is drawing; -1 when nothing is. */
+    this._drawHand = -1;
+    /** The off hand's candidate element and how long it has agreed with itself. */
+    this._offPose = null;
+    this._offPoseAt = 0;
+    /** Element index the off hand has committed to, or -1 for "leave it alone". */
+    this.offHandElement = -1;
     this.pointer = new Vector2();
     this.filtered = new Vector2();
     this.active = false;
@@ -92,6 +115,9 @@ export class HandInput {
     this.dockElement = null;
     this.dockStartedAt = 0;
     this.dockTriggered = false;
+    this._drawHand = -1;
+    this._resetOffHand();
+    this.input.elementIndex = -1;
     this._raf = 0;
     this._stream = null;
     this._landmarker = null;
@@ -148,7 +174,11 @@ export class HandInput {
           modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
         },
         runningMode: 'VIDEO',
-        numHands: 1
+        // Two, so the off hand can hold an element while the drawing hand keeps
+        // tracing. The second inference pass is the most expensive thing in a
+        // frame on a slow machine, so the quality ladder refuses it at its
+        // conservative tier — see `_wantsTwoHands`.
+        numHands: this._wantsTwoHands() ? 2 : 1
       };
       try {
         this._landmarker = await HandLandmarker.createFromOptions(vision, {
@@ -245,9 +275,22 @@ export class HandInput {
       console.warn('[HandInput] tracker frame failed', error);
     }
     this.frameCount++;
-    if (result?.landmarks?.[0]) this._process(result.landmarks[0], now);
-    else this._handleDropout(now);
-    this._drawMirror(result?.landmarks?.[0]);
+    const { draw, off } = this._assignHands(result);
+    const drawing = result?.landmarks?.[draw];
+    if (drawing) {
+      this._drawHand = draw;
+      // The off hand first: its pose is a property of the sample the drawing
+      // hand is about to produce, so reading it afterwards would put the change
+      // one sample late — visible as a cast that switches element a fingertip
+      // past where the player switched it.
+      this._trackOffHand(result?.landmarks?.[off], now);
+      this._process(drawing, now);
+    } else {
+      this._drawHand = -1;
+      this._resetOffHand();
+      this._handleDropout(now);
+    }
+    this._drawMirror(drawing, result?.landmarks?.[off]);
 
     // If the tracker cannot keep a usable cadence, return control to mouse
     // input instead of making a gesture feel sticky or late.
@@ -284,7 +327,7 @@ export class HandInput {
     this.filtered.copy(this._smoothPoint(this.pointer, now));
 
     const handScale = Math.max(.0001, distance(landmarks[0], landmarks[9]));
-    const pinchRatio = distance(landmarks[4], landmarks[8]) / handScale;
+    const pinchRatio = this._pinchRatio(landmarks, handScale);
 
     // Guard 1: it boots disengaged. A hand that simply wanders into frame must
     // not be able to cast, so an open palm has to be held first.
@@ -328,9 +371,13 @@ export class HandInput {
     this.input.spread = this.spread;
     if (!this.isDrawing && pinchRatio < PINCH_DOWN) {
       this.isDrawing = true;
+      // Mirrored onto the shared input, which is what the keyboard asks when it
+      // decides whether a held digit selects or writes the element channel.
+      this.input.isDrawing = true;
       this.input.emit('draw:start', this.filtered);
     } else if (this.isDrawing && pinchRatio > PINCH_UP) {
       this.isDrawing = false;
+      this.input.isDrawing = false;
       this.input.emit('draw:end', this.filtered);
     }
     if (this.isDrawing) this.input.emit('draw:move', this.filtered);
@@ -352,6 +399,7 @@ export class HandInput {
     this._resetPose();
     if (this.isDrawing && now - this.lastHandAt > DROPOUT_GRACE_MS) {
       this.isDrawing = false;
+      this.input.isDrawing = false;
       this.input.emit('draw:end', this.filtered);
     }
     // Lowering the hand is a control, not an error. Past `LOST_MS` the tracker
@@ -367,6 +415,100 @@ export class HandInput {
       this.input.spread = 0;
     }
     this._publish(now, this.engaged ? 'seeking' : 'lost');
+  }
+
+  /**
+   * Thumb-to-index distance, normalised by hand scale.
+   *
+   * One function, because the draw gate and the two-handed assignment both ask
+   * this question and an answer that differed between them would mean the hand
+   * picked as "the one drawing" was not the one the gate let draw.
+   */
+  _pinchRatio(landmarks, handScale = Math.max(.0001, distance(landmarks[0], landmarks[9]))) {
+    return distance(landmarks[4], landmarks[8]) / handScale;
+  }
+
+  /**
+   * Read the element the off hand is holding.
+   *
+   * It only speaks while the drawing hand is drawing. Outside a stroke the dock
+   * and the drawing hand's own pose already decide the element, and a third
+   * thing quietly overriding them would make the dock look broken.
+   *
+   * It also never *clears* the element. Lowering the off hand means "carry on
+   * with what I gave you", not "go back to whatever was selected before" — the
+   * player has already watched that part of the line be drawn.
+   */
+  _trackOffHand(landmarks, now) {
+    if (!landmarks || !this.isDrawing) { this._resetOffHand(); return; }
+    const pose = this._poseOf(landmarks);
+    if (pose !== this._offPose) {
+      this._offPose = pose;
+      this._offPoseAt = now;
+      return;
+    }
+    if (!pose || now - this._offPoseAt < OFF_HAND_HOLD_MS) return;
+    const index = ELEMENT_INDEX[pose];
+    if (index === undefined || index === this.offHandElement) return;
+    this.offHandElement = index;
+    this.input.elementIndex = index;
+  }
+
+  _resetOffHand() {
+    this._offPose = null;
+    this._offPoseAt = 0;
+    this.offHandElement = -1;
+  }
+
+  /** Whether the machine can afford a second inference pass this session. */
+  _wantsTwoHands() {
+    return this.quality?.allowsTwoHands !== false;
+  }
+
+  /**
+   * Which hand this is, from the player's point of view.
+   *
+   * **MediaPipe's handedness is mirror-relative and this class mirrors x.** The
+   * preview and the pointer mapping both flip (`1 - landmarks[n].x`), so the
+   * hand the player sees on the left of the mirror is the one MediaPipe calls
+   * `Right`. Any Left/Right logic that skips this flip is inverted relative to
+   * what the player is looking at — the single most likely bug in two-handed
+   * work, which is why it is one function rather than a comparison at each use.
+   *
+   * @returns {'left'|'right'|null} as the *player* would name it
+   */
+  static handOf(result, index) {
+    const label = result?.handednesses?.[index]?.[0]?.categoryName
+      ?? result?.handedness?.[index]?.[0]?.categoryName;
+    if (label === 'Left') return 'right';
+    if (label === 'Right') return 'left';
+    return null;
+  }
+
+  /**
+   * Pick the drawing hand out of what the tracker found.
+   *
+   * The pinching hand draws, whichever it is: a left-handed player should not
+   * have to be told which hand the product expects, and a player who swaps
+   * hands mid-session should not have to announce it. With one hand in frame
+   * there is nothing to choose. Ties go to the hand that was already drawing,
+   * so a stroke is never handed over halfway through.
+   *
+   * @returns {{ draw: number, off: number }} indices into `result.landmarks`
+   */
+  _assignHands(result) {
+    const hands = result?.landmarks ?? [];
+    if (hands.length < 2) return { draw: 0, off: -1 };
+    // The hand that is pinching is the one drawing. `_pinchRatio` is the same
+    // measure the draw gate uses, so this cannot disagree with it.
+    const ratios = [this._pinchRatio(hands[0]), this._pinchRatio(hands[1])];
+    let draw;
+    if (this.isDrawing && this._drawHand >= 0 && ratios[this._drawHand] < PINCH_UP) {
+      draw = this._drawHand;            // mid-stroke: never hand it over
+    } else {
+      draw = ratios[0] <= ratios[1] ? 0 : 1;
+    }
+    return { draw, off: draw === 0 ? 1 : 0 };
   }
 
   /** An open palm: four fingers extended, spread apart, thumb clear. */
@@ -396,6 +538,8 @@ export class HandInput {
       // The slot the hand is resting over, and how far its dwell has filled.
       // Without these the dock's 400 ms dwell was invisible until it fired,
       // which reads as the interface choosing an element on its own.
+      // Which element the off hand is holding into the live stroke, if any.
+      offHand: this.offHandElement >= 0 ? ELEMENTS[this.offHandElement] : null,
       dock: this.dockElement,
       dockHold: this.dockElement && !this.dockTriggered
         ? clamp((now - this.dockStartedAt) / DOCK_DWELL_MS, 0, 1)
@@ -405,7 +549,16 @@ export class HandInput {
     });
   }
 
-  _trackPose(landmarks, now) {
+  /**
+   * Which element a hand is shaped like, or null.
+   *
+   * One classifier, used by both hands. Two would be two sets of rules that
+   * could disagree, and a player whose off hand means something different from
+   * their drawing hand has no way to discover why.
+   *
+   * @returns {'fire'|'water'|'earth'|'wind'|null}
+   */
+  _poseOf(landmarks) {
     // A ratio rather than a bare comparison: two distances from the wrist with
     // no margin flip back and forth on noise near the threshold, which is what
     // makes a pose read as three different elements in as many frames.
@@ -415,13 +568,17 @@ export class HandInput {
       thumb: isExtended(4, 3), index: isExtended(8, 6), middle: isExtended(12, 10), ring: isExtended(16, 14), pinky: isExtended(20, 18)
     };
     const four = [fingers.index, fingers.middle, fingers.ring, fingers.pinky];
-    let next = null;
     // A closed fist is four fingers curled AND the thumb in. Without the thumb
     // term a thumbs-up reads as a fist and silently selects stone.
-    if (!four.some(Boolean) && !fingers.thumb) next = 'earth';
-    else if (fingers.thumb && four.every(Boolean)) next = 'wind';
-    else if (fingers.index && fingers.middle && !fingers.ring && !fingers.pinky) next = 'water';
-    else if (fingers.index && fingers.pinky && !fingers.middle && !fingers.ring) next = 'fire';
+    if (!four.some(Boolean) && !fingers.thumb) return 'earth';
+    if (fingers.thumb && four.every(Boolean)) return 'wind';
+    if (fingers.index && fingers.middle && !fingers.ring && !fingers.pinky) return 'water';
+    if (fingers.index && fingers.pinky && !fingers.middle && !fingers.ring) return 'fire';
+    return null;
+  }
+
+  _trackPose(landmarks, now) {
+    const next = this._poseOf(landmarks);
 
     // Guard 3: a pose has to agree with itself for several consecutive frames
     // before it is believed at all.
@@ -477,7 +634,15 @@ export class HandInput {
     this._mirror?.classList.remove('is-pose');
   }
 
-  _drawMirror(landmarks) {
+  /**
+   * Draw both hands over the preview.
+   *
+   * The off hand is drawn faint. It is doing something real — it holds the
+   * element the line is currently being drawn with — and a player who cannot
+   * see it being tracked has no way to tell "my pose was not read" from "the
+   * camera cannot see that hand at all".
+   */
+  _drawMirror(landmarks, offLandmarks = null) {
     if (!this._canvas || !this._context || !this._video) return;
     const width = this._video.videoWidth || 320;
     const height = this._video.videoHeight || 240;
@@ -487,22 +652,31 @@ export class HandInput {
     }
     const ctx = this._context;
     ctx.clearRect(0, 0, width, height);
-    if (!landmarks) return;
-    ctx.strokeStyle = getComputedStyle(this._mirror).getPropertyValue('--hand-accent') || '#bfe8df';
+    const accent = getComputedStyle(this._mirror).getPropertyValue('--hand-accent') || '#bfe8df';
+    if (offLandmarks) this._paintHand(ctx, offLandmarks, width, height, accent, 0.38);
+    if (landmarks) this._paintHand(ctx, landmarks, width, height, accent, 1);
+  }
+
+  _paintHand(ctx, landmarks, width, height, accent, alpha) {
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = accent;
     ctx.lineWidth = 2.4;
     ctx.lineCap = 'round';
     for (const [from, to] of HAND_CONNECTIONS) {
       ctx.beginPath();
+      // Mirrored, like everything else that reaches the player: they are
+      // looking at themselves, not at a camera feed of themselves.
       ctx.moveTo((1 - landmarks[from].x) * width, landmarks[from].y * height);
       ctx.lineTo((1 - landmarks[to].x) * width, landmarks[to].y * height);
       ctx.stroke();
     }
-    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fillStyle = accent;
     for (const point of landmarks) {
       ctx.beginPath();
       ctx.arc((1 - point.x) * width, point.y * height, 3.2, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
   }
 
   stop() {
@@ -523,6 +697,7 @@ export class HandInput {
     this._raf = 0;
     if (this.isDrawing) this.input.emit('draw:end', this.filtered);
     this.isDrawing = false;
+    this.input.isDrawing = false;
     this.active = false;
     this._landmarker?.close?.();
     this._landmarker = null;
@@ -551,7 +726,7 @@ export class HandInput {
     this._publishedAt = 0;
     this.onState?.({
       engaged: false, wake: 0, pose: null, hold: 0, pinch: 0,
-      lift: 0, spread: 0, dock: null, dockHold: 0,
+      lift: 0, spread: 0, dock: null, dockHold: 0, offHand: null,
       tracking: 'lost', delegate: null
     });
   }

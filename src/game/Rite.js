@@ -123,15 +123,20 @@ export class Rite {
    * Judge one drawn line.
    *
    * Called from the cast handler with the polyline `PathDrawer` just built and
-   * the ability that actually flew — so the lift asked about is the real
-   * altitude of the real cast, not an assumption about the element.
+   * everything that actually flew along it — so the lift asked about is the
+   * real altitude of the real casts, not an assumption about the element.
+   *
+   * A line can carry more than one element now: the off hand holds a pose while
+   * the drawing hand keeps tracing, and the keyboard does the same by holding a
+   * digit mid-drag. So the height a cast flies at is a function of where you
+   * are along the line, not one number for the whole of it.
    *
    * @param {Array<{x:number,z:number}>} points recycled buffer; read, never kept
    * @param {number} count live entries in `points`
-   * @param {import('../abilities/Ability.js').Ability|null} ability
+   * @param {Array<{element: string, ability: object|null, from: number, to: number}>} cast
    * @returns {number} 0..1 how much of the problem the line got
    */
-  judge(points, count, ability) {
+  judge(points, count, cast) {
     const state = store.get();
     if (!this.judging || !state.layout) return 1;
     // One line, one outcome. `judging` admits `'draw'`, which is the phase the
@@ -145,17 +150,9 @@ export class Rite {
     // Each failed attempt widens the accept rings a little. The player is never
     // told; being quietly helped is the only kind of help that does not sting.
     const forgiveness = settings.rite.waystoneForgiveness ** this._failedAttempts;
-    // Both terms: how high this element flies, and whatever the stroke carried.
-    //
-    // The element's contribution is the declared `flightFloor`, not its live
-    // `pathHeight` — water's altitude includes a time-driven swell, and judging
-    // against it meant the clock decided whether a line cleared a hazard.
-    // The stroke's lift stays live, because that is the player's own input.
-    const floors = settings.rite.flightFloor;
-    const element = ability ? (ability.element === 'wind' ? 'air' : ability.element) : null;
-    const floor = element ? (floors[element] ?? 0) : 0;
-    const liftAt = ability ? (u) => floor + ability.lift(u) : () => 0;
-    const outcome = resolveStroke(points, count, state.layout, liftAt, forgiveness);
+    // How high the line flew, at every point along it — see `liftAlong`, which
+    // is where that question and its reasoning now live.
+    const outcome = resolveStroke(points, count, state.layout, Rite.liftAlong(cast, count), forgiveness);
 
     this.ward.showOutcome(outcome);
     // Resolve on a beat rather than instantly, so the cast is seen to arrive
@@ -164,6 +161,53 @@ export class Rite {
     this._timer = 0;
     store.beginDraw();
     return outcomeStrength(outcome);
+  }
+
+  /**
+   * How high the line flies, at every point along it.
+   *
+   * Two terms at each point: the declared `flightFloor` of whichever element
+   * owns that stretch, and whatever the stroke's own lift carried there.
+   *
+   * The element's contribution is the declared floor, not its live
+   * `pathHeight` — water's altitude includes a time-driven swell, and judging
+   * against it meant the clock decided whether a line cleared a hazard. The
+   * stroke's lift stays live, because that is the player's own input.
+   *
+   * @param {Array<{element: string, ability: object|null, from: number, to: number}>} cast
+   * @param {number} count samples in the judged polyline
+   * @returns {(u: number) => number} metres, at normalised progress `u`
+   */
+  static liftAlong(cast, count) {
+    if (!cast || cast.length === 0) return () => 0;
+    const floors = settings.rite.flightFloor;
+    const runs = cast.map((run) => ({
+      // `wind` in the engine is `air` everywhere the player can see it, and the
+      // floor table is written in the player's vocabulary.
+      floor: floors[run.element === 'wind' ? 'air' : run.element] ?? 0,
+      ability: run.ability,
+      from: run.from,
+      to: run.to
+    }));
+    const span = Math.max(1, count - 1);
+
+    return (u) => {
+      const index = u * span;
+      // The last run owns everything past its end, so a `u` of exactly 1 — or a
+      // rounding hair past it — is never unanswered.
+      let run = runs[runs.length - 1];
+      for (const candidate of runs) {
+        if (index < candidate.to) { run = candidate; break; }
+      }
+      if (!run.ability) return run.floor;
+      // The ability's own lift is parameterised over *its* sub-curve, so the
+      // position along the whole stroke has to be renormalised into it or a
+      // second run would read its height from the wrong end of its profile.
+      const local = run.to > run.from
+        ? Math.min(1, Math.max(0, (index - run.from) / (run.to - run.from)))
+        : 0;
+      return run.floor + run.ability.lift(local);
+    };
   }
 
   _settle(outcome) {

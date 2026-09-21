@@ -59,7 +59,12 @@ test('the Rite judges the element floor and the stroke lift together', async () 
   // Superseded formula: this used to add the live `pathHeight`, which made
   // solvability depend on the clock for water. See the rite contract test.
   const rite = await source('../src/game/Rite.js');
-  assert.match(rite, /floor \+ ability\.lift\(u\)/);
+  assert.match(rite, /run\.floor \+ run\.ability\.lift\(local\)/);
+  // `local`, not the stroke-wide progress: a line can carry more than one
+  // element now, each cast along its own sub-curve, and an ability's lift
+  // profile is parameterised over *its* curve. Reading it at the whole
+  // stroke's `u` would take a second run's height from the wrong end.
+  assert.match(rite, /\(index - run\.from\) \/ \(run\.to - run\.from\)/);
 });
 
 test('hand channels live on the shared input, not on the tracker', async () => {
@@ -92,8 +97,20 @@ test('the stroke keeps its own copy of the height channel', async () => {
 test('drawing still allocates nothing per stroke', async () => {
   const drawer = await source('../src/input/PathDrawer.js');
   const ctor = drawer.slice(drawer.indexOf('constructor(camera)'), drawer.indexOf('get object3D'));
-  assert.match(ctor, /new Float32Array\(320\)/);
-  assert.equal((ctor.match(/new Float32Array\(320\)/g) ?? []).length, 2, 'both the raw and resampled channels are preallocated');
+  // Every per-sample channel is preallocated at the same length as the sample
+  // buffers, raw and resampled alike. The count is deliberately not pinned:
+  // what matters is that nothing on the drawing path allocates, not how many
+  // channels a stroke happens to carry this month.
+  for (const channel of ['sampleLift', 'resampledLift', 'sampleElement', 'resampledElement', '_arc']) {
+    assert.match(
+      ctor,
+      new RegExp(`this\\.${channel} = new (?:Float32|Uint8)Array\\(320\\)`),
+      `${channel} must be preallocated`
+    );
+  }
+  // And nothing in `begin` or `move` may allocate a typed array or a list.
+  const drawing = drawer.slice(drawer.indexOf('  begin(pointer'), drawer.indexOf('  end('));
+  assert.doesNotMatch(drawing, /new (?:Float32|Uint8)Array|\.slice\(|\.map\(/);
 });
 
 test('all four anti-misfire guards are present, not two of four', async () => {

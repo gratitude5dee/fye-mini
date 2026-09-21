@@ -28,6 +28,15 @@ export class InputManager extends EventEmitter {
      */
     this.lift = 0;
     this.spread = 0;
+    /**
+     * Element for the next accepted sample, as an index into `ELEMENTS`, or -1
+     * for "whatever is selected".
+     *
+     * Written by the off hand while a stroke is live, and by the keyboard when
+     * a digit is *held* mid-drag — the same thing, reached two ways, which is
+     * the point: hands are not uniquely capable here, they are uninterrupted.
+     */
+    this.elementIndex = -1;
 
     this._bind();
   }
@@ -82,18 +91,15 @@ export class InputManager extends EventEmitter {
     this.keys.add(event.code);
 
     switch (event.code) {
-      case 'Digit1':
-        this.emit('element', 0);
-        break;
-      case 'Digit2':
-        this.emit('element', 1);
-        break;
-      case 'Digit3':
-        this.emit('element', 2);
-        break;
-      case 'Digit4':
-        this.emit('element', 3);
-        break;
+      // A digit pressed on its own selects. A digit *held* while a stroke is
+      // live writes the element channel instead, so one unbroken line can be
+      // fire to the gate and earth over the rubble — the same thing the off
+      // hand does, reached from the keyboard. Hands are not uniquely capable
+      // here; they are uninterrupted.
+      case 'Digit1': this._digit(0); break;
+      case 'Digit2': this._digit(1); break;
+      case 'Digit3': this._digit(2); break;
+      case 'Digit4': this._digit(3); break;
       case 'KeyQ':
         this.emit('action', 'prevElement');
         break;
@@ -122,6 +128,11 @@ export class InputManager extends EventEmitter {
         break;
     }
   };
+
+  _digit(index) {
+    if (this.isDrawing) this.elementIndex = index;
+    else this.emit('element', index);
+  }
 
   _onKeyUp = (event) => {
     this.keys.delete(event.code);

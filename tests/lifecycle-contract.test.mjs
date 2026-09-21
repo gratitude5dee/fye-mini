@@ -32,8 +32,12 @@ test('the hand’s rise lands where the hand actually rose', async () => {
   // so a slow approach and a fast flick put wildly different arc lengths
   // between consecutive entries. Reading the lift at the raw `t` attributed
   // the rise to whichever part of the stroke was drawn slowly.
-  assert.match(drawer, /resampledLift\[i\]\s*=\s*this\._sampleLiftAt\(curve\.getUtoTmapping\(t\)\)/);
+  // The index parameter comes from the curve's own inverse, and every channel
+  // is read at that `u` rather than at the arc-length `t`.
+  assert.match(drawer, /const u = curve\.getUtoTmapping\(t\);/);
+  assert.match(drawer, /resampledLift\[i\]\s*=\s*this\._sampleLiftAt\(u\)/);
   assert.doesNotMatch(drawer, /resampledLift\[i\]\s*=\s*this\._sampleLiftAt\(t\)/);
+  assert.match(drawer, /resampledElement\[i\]\s*=\s*this\.sampleElement\[Math\.round\(u \*/);
 
   // And the mapping itself, against a stroke shaped like the one this breaks
   // on: a careful approach with the hand down, then a flick with it up.
@@ -62,7 +66,7 @@ test('the hand’s rise lands where the hand actually rose', async () => {
 
 test('a line gets one verdict, and a Rite starts with none pending', async () => {
   const rite = await text('../src/game/Rite.js');
-  const judge = method(rite, 'judge(points, count, ability)');
+  const judge = method(rite, 'judge(points, count, cast)');
 
   // `judging` admits 'draw', which is the phase the first cast puts us in. A
   // second cast inside the 1.6s beat used to replace the outcome and reset the

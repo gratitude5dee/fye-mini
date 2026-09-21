@@ -142,15 +142,25 @@ test('whether a line clears a hazard cannot depend on the clock', async () => {
   // the live altitude meant the same line solved or failed depending on when it
   // was cast, which is the clock deciding rather than the player.
   const rite = await readFile(new URL('../src/game/Rite.js', import.meta.url), 'utf8');
-  const start = rite.indexOf('  judge(points, count, ability) {');
+  // The height a line flies at moved into `liftAlong`, because a line can now
+  // carry more than one element and the floor therefore varies along it.
+  const start = rite.indexOf('  static liftAlong(cast, count) {');
   const end = rite.indexOf('  _settle(outcome) {');
   assert.ok(start > 0 && end > start, 'both method definitions must be found');
-  const judge = rite.slice(start, end);
-  assert.match(judge, /flightFloor/, 'the element term must be the declared floor');
+  const lift = rite.slice(start, end);
+  assert.match(lift, /flightFloor/, 'the element term must be the declared floor');
   // A call, not a mention: the code's own comment explains why the live
   // altitude is wrong here, and that explanation must not trip this.
-  assert.doesNotMatch(judge, /pathHeight\s*\(/, 'the live, time-varying altitude must not decide solvability');
-  assert.match(judge, /ability\.lift\(u\)/, "the player's own lift stays live");
+  assert.doesNotMatch(lift, /pathHeight\s*\(/, 'the live, time-varying altitude must not decide solvability');
+  assert.match(lift, /run\.ability\.lift\(local\)/, "the player's own lift stays live");
+  // And `judge` itself must not have grown a second opinion about height.
+  // Bounded at its own closing brace, not at the next definition — the doc
+  // comment in between explains why the live altitude is wrong, and an
+  // explanation of a rule must never be mistaken for a breach of it.
+  const judgeAt = rite.indexOf('  judge(points, count, cast) {');
+  const judge = rite.slice(judgeAt, rite.indexOf('\n  }', judgeAt));
+  assert.ok(judge.includes('resolveStroke'), 'the slice must be the real method body');
+  assert.doesNotMatch(judge, /flightFloor|pathHeight/);
 });
 
 test('exactly one element crosses a hazard unaided, and a raised hand crosses with any', () => {

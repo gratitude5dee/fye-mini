@@ -1,4 +1,6 @@
 import { Raycaster, Plane, Vector3, CatmullRomCurve3, MathUtils } from 'three';
+
+import { splitByElement } from '../game/splitByElement.js';
 import { settings } from '../config/settings.js';
 import { EventEmitter } from '../utils/EventEmitter.js';
 import { PathTrail } from '../effects/PathTrail.js';
@@ -54,6 +56,34 @@ export class PathDrawer extends EventEmitter {
     this.sampleLift = new Float32Array(320);
     this.resampledLift = new Float32Array(320);
     this._lift = 0;
+
+    /**
+     * Per-sample element, as an index into `settings.js`'s `ELEMENTS`.
+     *
+     * The element is a channel rather than a property of the cast, so one drawn
+     * line can be fire to the gate and earth over the rubble. The off hand
+     * holds a pose while the drawing hand keeps tracing; the keyboard reaches
+     * the same thing by holding a digit mid-drag.
+     *
+     * `Uint8Array` because there are four of them and this is written once per
+     * accepted sample, on the drawing path, where nothing may allocate.
+     */
+    this.sampleElement = new Uint8Array(320);
+    this.resampledElement = new Uint8Array(320);
+    this._element = 0;
+    /** Cumulative arc length at each resampled point, for the element split. */
+    this._arc = new Float32Array(320);
+
+    /**
+     * Which stroke is being drawn, counted up on every `begin`.
+     *
+     * There is one `samples` array and, with two hands, two things that can
+     * emit `draw:*`. Without an identity on the events they interleave into a
+     * single corrupt stroke that belongs to neither hand. Every draw event now
+     * carries this, and a `move` or `end` from a stroke that is not the live
+     * one is discarded rather than appended.
+     */
+    this.strokeId = 0;
   }
 
   get object3D() {
@@ -79,19 +109,43 @@ export class PathDrawer extends EventEmitter {
     this._lift = Number.isFinite(metres) ? Math.max(0, metres) : 0;
   }
 
-  begin(pointer) {
-    if (!this._project(pointer, this._hit)) return;
+  /**
+   * Set the element the next accepted sample will carry.
+   *
+   * Written by whoever owns the input before each `move`, like `setLift`, so
+   * pointer and hand stay indistinguishable downstream.
+   *
+   * @param {number} index into `ELEMENTS`
+   */
+  setElementIndex(index) {
+    this._element = index | 0;
+  }
+
+  /**
+   * @param {{x: number, y: number}} pointer
+   * @param {number} [strokeId] the caller's stroke; omit to take the next one
+   * @returns {number} the id of the stroke now being drawn, or 0 if it missed
+   */
+  begin(pointer, strokeId = ++this.strokeId) {
+    if (!this._project(pointer, this._hit)) return 0;
+    this.strokeId = strokeId;
     this.samples.length = 0;
     this._smoothed.copy(this._hit);
     this.sampleLift[0] = this._lift;
+    this.sampleElement[0] = this._element;
     this.samples.push(this._hit.clone());
     this.active = true;
     this.trail.hide();
     this.emit('start', this._hit);
+    return this.strokeId;
   }
 
-  move(pointer) {
+  move(pointer, strokeId = this.strokeId) {
     if (!this.active) return;
+    // Hazard 7: one buffer, and with two hands two things that can write to it.
+    // A move belonging to the hand that is *not* drawing is not an error — it
+    // is that hand doing something else — so it is dropped, not logged.
+    if (strokeId !== this.strokeId) return;
     if (!this._project(pointer, this._hit)) return;
 
     const input = settings.input;
@@ -104,12 +158,14 @@ export class PathDrawer extends EventEmitter {
     if (this.samples.length >= input.maxPoints) return;
 
     this.sampleLift[this.samples.length] = this._lift;
+    this.sampleElement[this.samples.length] = this._element;
     this.samples.push(this._smoothed.clone());
     this._rebuild();
   }
 
-  end() {
+  end(strokeId = this.strokeId) {
     if (!this.active) return;
+    if (strokeId !== this.strokeId) return;
     this.active = false;
 
     const length = this.pathLength();
@@ -122,8 +178,21 @@ export class PathDrawer extends EventEmitter {
 
     const curve = this._buildCurve();
     this.trail.release(); // burn the preview away
-    this.emit('cast', curve, this.resampled, this.resampledCount, length);
+    this.emit('cast', curve, this.resampled, this.resampledCount, length, this.elementRuns());
     this.samples.length = 0;
+  }
+
+  /**
+   * The stroke's element runs, over the resampled polyline.
+   *
+   * One run for every pointer stroke and for every hand stroke where the off
+   * hand held still, which is the overwhelmingly common case and the one that
+   * must stay free.
+   *
+   * @returns {Array<{ element: number, from: number, to: number, length: number }>}
+   */
+  elementRuns() {
+    return splitByElement(this.resampledElement, this.resampledCount, (i) => this._arc[i]);
   }
 
   pathLength() {
@@ -164,7 +233,15 @@ export class PathDrawer extends EventEmitter {
       // whichever part of the stroke was drawn slowly. `getUtoTmapping` is the
       // curve's own inverse: it returns the index parameter `u` for which
       // `getPoint(u)` is the point `getPointAt(t)` just produced.
-      this.resampledLift[i] = this._sampleLiftAt(curve.getUtoTmapping(t));
+      const u = curve.getUtoTmapping(t);
+      this.resampledLift[i] = this._sampleLiftAt(u);
+      // Discrete, so the nearest sample rather than a blend between two: half a
+      // fire and half an earth is not an element.
+      this.resampledElement[i] = this.sampleElement[Math.round(u * (this.samples.length - 1))] ?? 0;
+      // Resampled by arc length, so this is exactly proportional — but it is
+      // computed rather than assumed, because `wanted` is clamped and the last
+      // step is not always the same size as the others.
+      this._arc[i] = t * length;
     }
     this.resampledCount = wanted;
     this.trail.setPoints(this.resampled, wanted);
