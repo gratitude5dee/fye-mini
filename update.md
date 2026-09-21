@@ -1490,7 +1490,7 @@ inference rate as failure and kills hand tracking entirely.
 - Self-hosting the WASM + the `hand_landmarker.task` model into `public/` removes two runtime third-party fetches.
   It **strengthens** the local-first claim rather than weakening it: today the tab tells Google's CDN that someone
   opened the hand tracker. Weigh that against `public/` already being 13 MiB, and do it as part of the asset diet
-  that deletes 5.2 MB of intro raster (§5).
+  that deletes 5.08 MiB of intro raster (§5).
 
 ### Accessibility position
 State honestly what is and is not reachable. A real-time 3D drawing toy cannot be fully non-visual.
