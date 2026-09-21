@@ -9,6 +9,20 @@ import './grimoire-stage.css';
 
 type ElementId = 'fire' | 'water' | 'earth' | 'air';
 type InputState = 'idle' | 'requesting' | 'ready' | 'tracking' | 'fallback' | 'unavailable';
+type RitePhase = 'free' | 'open' | 'present' | 'draw' | 'resolve' | 'close';
+type RiteState = {
+  phase: RitePhase;
+  lineIndex: number;
+  lineCount: number;
+  attemptsLeft: number;
+  ward: boolean[];
+  elements: string[];
+  persistent: boolean;
+};
+
+const IDLE_RITE: RiteState = {
+  phase: 'free', lineIndex: 0, lineCount: 0, attemptsLeft: 0, ward: [], elements: [], persistent: true
+};
 type Dial = { label: string; path: string; min: number; max: number; step: number; value: number };
 
 /**
@@ -76,8 +90,26 @@ export function GrimoireStage() {
   const [lastCast, setLastCast] = useState('Draw a path, pinch to cast, or use the cast key.');
   const [dialValues, setDialValues] = useState<Record<string, number>>({});
   const [storageAvailable, setStorageAvailable] = useState(true);
+  const [rite, setRite] = useState<RiteState>(IDLE_RITE);
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
+
+  /**
+   * What the world is saying, if it is saying anything.
+   *
+   * Derived from the Rite's state rather than held alongside it, so the words
+   * on screen can never disagree with the stones on the ground.
+   */
+  const riteMessage = (() => {
+    if (rite.phase === 'free') return null;
+    if (rite.phase === 'close') {
+      const dark = rite.ward.filter((lit) => !lit).length;
+      if (dark === 0) return 'The Ward is whole.';
+      return `${dark === 1 ? 'One stone' : `${dark} stones`} stayed dark. The Rite still ends.`;
+    }
+    const wants = rite.elements.map((id) => labelOf(id)).join(' or ');
+    return wants ? `Reach the stones. ${wants} answers here.` : 'Reach the stones.';
+  })();
   const activeDials = DIALS[element];
 
   useEffect(() => {
@@ -111,12 +143,18 @@ export function GrimoireStage() {
     window.addEventListener(TO_UI.READY, ready);
     window.addEventListener(TO_UI.INPUT_STATUS, inputStatusListener);
     window.addEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
+    const riteListener = (event: Event) => {
+      const detail = (event as CustomEvent<RiteState>).detail;
+      if (detail) setRite(detail);
+    };
     window.addEventListener(TO_UI.CAST_COMPLETE, castListener);
+    window.addEventListener(TO_UI.RITE_STATE, riteListener);
     return () => {
       window.removeEventListener(TO_UI.READY, ready);
       window.removeEventListener(TO_UI.INPUT_STATUS, inputStatusListener);
       window.removeEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
       window.removeEventListener(TO_UI.CAST_COMPLETE, castListener);
+      window.removeEventListener(TO_UI.RITE_STATE, riteListener);
     };
   }, []);
 
@@ -209,7 +247,23 @@ export function GrimoireStage() {
           </div>
         </header>
 
-        <section className="stage-message" aria-live="polite"><span className="stage-message__dot" />{lastCast}</section>
+        <section className="stage-message" aria-live="polite">
+          <span className="stage-message__dot" />
+          {riteMessage ?? lastCast}
+        </section>
+
+        {rite.phase !== 'free' && <section className="ward-readout" aria-label="The Ward">
+          <ol className="ward-stones">
+            {rite.ward.map((lit, index) => <li
+              key={index}
+              className={`${lit ? 'is-lit' : ''} ${index === rite.lineIndex && rite.phase !== 'close' ? 'is-current' : ''}`}
+              aria-label={`Line ${index + 1}: ${lit ? 'answered' : 'dark'}`}
+            />)}
+          </ol>
+          {rite.phase !== 'close' && <span className="ward-attempts">
+            {rite.attemptsLeft} {rite.attemptsLeft === 1 ? 'try' : 'tries'}
+          </span>}
+        </section>}
 
         <section className="stage-hud" aria-label="Casting controls">
           <div className="element-selector" role="group" aria-label="Choose an element">
@@ -218,6 +272,10 @@ export function GrimoireStage() {
             </button>)}
           </div>
           <button className="cast-button" disabled={!stageReady} onClick={() => emit(TO_ENGINE.CAST)}><span>{stageReady ? 'Cast' : 'Waking'}</span><b>{currentElement.label}</b></button>
+          <button
+            className={`ride-button ${rite.phase !== 'free' ? 'is-armed' : ''}`}
+            onClick={() => emit(TO_ENGINE.RITE, { action: rite.phase === 'free' ? 'begin' : 'aside' })}
+          >{rite.phase === 'free' ? 'Begin a Rite' : 'Set the Rite aside'}</button>
           <button className={`ride-button ${rideArmed ? 'is-armed' : ''}`} onClick={() => emit(TO_ENGINE.RIDE)} aria-pressed={rideArmed}>{rideArmed ? 'Draw air ride' : 'Ride a path'}</button>
         </section>
       </div>

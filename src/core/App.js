@@ -27,6 +27,7 @@ import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { Editor } from '../ui/Editor.js';
 import { settings, ELEMENTS } from '../config/settings.js';
 import { RANGES, SPELLWRIGHT_COLOR_PATHS, enginePath } from '../config/spell-contract.js';
+import { Rite } from '../game/Rite.js';
 
 /** Owns the local stage, input sources, caster performance, and effects. */
 export class App {
@@ -69,6 +70,11 @@ export class App {
       shake: this.shake,
       flash: this.flash,
       onAbilityImpact: (ability) => this._onAbilityImpact(ability)
+    });
+
+    this.rite = new Rite({
+      scene: this.scene, decals: this.decals, bursts: this.bursts,
+      shake: this.shake, flash: this.flash, abilities: this.abilities
     });
 
     this.character = new CharacterController(this.environment);
@@ -122,7 +128,14 @@ export class App {
     this.input.on('element', (index) => this.selectElement(ELEMENTS[index]));
     this.input.on('action', (action) => this._handleAction(action));
 
-    this.pathDrawer.on('cast', (curve, _points, _count, length) => {
+    this.pathDrawer.on('cancel', () => {
+      // `cancel` has had no listener since the drawer was written, so a stroke
+      // under `minPathLength` simply disappeared with no acknowledgement at all.
+      this.caster?.setGesture('recovery', { element: this.abilities.selected });
+      if (this.rite.active) this.hud.showToast('Longer. Draw it to the end.');
+    });
+
+    this.pathDrawer.on('cast', (curve, points, count, length) => {
       if (this.rideNextStroke && this.walk?.begin(curve)) {
         this.rideNextStroke = false;
         this.caster?.setGesture('recovery', { element: 'wind' });
@@ -130,8 +143,18 @@ export class App {
         this.hud.showToast('The caster rides the current.');
         return;
       }
-      this.caster?.setGesture('release', { element: this.abilities.selected });
-      this.abilities.cast(curve);
+      const ability = this.abilities.cast(curve);
+      // The ability that actually flew is the one asked how high it flew, so a
+      // fire cast clears a hazard an earth cast cannot — no assumption about
+      // the element, just its real altitude along the line.
+      const strength = this.rite.judge(points, count, ability);
+      // `intensity` has always been accepted here and never passed. A clean
+      // solve makes the caster commit; a scrape makes them hesitate, and the
+      // player reads the answer off the body before anything else resolves.
+      this.caster?.setGesture('release', {
+        element: this.abilities.selected,
+        intensity: .35 + strength * 1.25
+      });
       this._recordCast(length);
     });
 
@@ -150,6 +173,10 @@ export class App {
     this._onGrimoireAttune = () => void this.handInput.start();
     this._onGrimoireStopHands = () => this.handInput.stop();
     this._onGrimoireCast = () => this._castStagePreview();
+    this._onGrimoireRite = (event) => {
+      if (event.detail?.action === 'aside') this.rite.setAside();
+      else this.rite.begin();
+    };
     this._onGrimoireRide = () => {
       this.rideNextStroke = !this.rideNextStroke;
       window.dispatchEvent(new CustomEvent('grimoire:ride-status', { detail: { active: this.rideNextStroke } }));
@@ -161,6 +188,7 @@ export class App {
     window.addEventListener('grimoire:stop-hands', this._onGrimoireStopHands);
     window.addEventListener('grimoire:cast', this._onGrimoireCast);
     window.addEventListener('grimoire:ride', this._onGrimoireRide);
+    window.addEventListener('grimoire:rite', this._onGrimoireRite);
   }
 
   _applyFlatPatch(patch) {
@@ -329,6 +357,9 @@ export class App {
     this.character.update(dt);
     this.walk?.update(dt);
     this.caster?.update(dt, this.walk?.active);
+    // After the abilities have stepped, so what is tested is what was just
+    // drawn, and before the particles are uploaded for the frame.
+    this.rite.update(dt);
     this.particles.flush();
     this.decals.update(dt);
     this.bursts.update(dt);
@@ -360,6 +391,7 @@ export class App {
     this.input.dispose();
     this.handInput.dispose();
     this.pathDrawer.dispose();
+    this.rite.dispose();
     this.abilities.dispose();
     this.caster?.dispose();
     this.walk?.dispose();
@@ -381,5 +413,6 @@ export class App {
     window.removeEventListener('grimoire:stop-hands', this._onGrimoireStopHands);
     window.removeEventListener('grimoire:cast', this._onGrimoireCast);
     window.removeEventListener('grimoire:ride', this._onGrimoireRide);
+    window.removeEventListener('grimoire:rite', this._onGrimoireRite);
   }
 }

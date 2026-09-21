@@ -54,3 +54,17 @@
 @media (max-width: 680px) { .stage-header { padding: 17px; }.wordmark strong { font-size: 28px; }.header-actions { gap: 5px; }.quiet-button { padding: 9px 10px; font-size: 9px; }.stage-message { top: 24%; }.element-selector button { min-width: 54px; padding: 7px 5px; }.element-selector button i { font-size: 20px; }.side-sheet { top: auto; right: 9px; bottom: 9px; width: calc(100vw - 18px); max-height: min(680px, calc(100dvh - 18px)); transform: none; }.hand-mirror { right: 12px; bottom: 166px; width: 132px; }.intro__copy h1 { font-size: clamp(43px, 13vw, 74px); }.intro__copy span { max-width: 260px; }.intro__skip { right: 13px; bottom: 13px; } }
 @media (pointer: coarse) { .element-selector button, .quiet-button, .ride-button, .intro__skip { min-height: 42px; }.cast-button { min-height: 52px; } }
 @media (prefers-reduced-motion: reduce) { .grimoire-stage *, .grimoire-stage *::before, .grimoire-stage *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+
+/* --- The Rite ----------------------------------------------------------- */
+/* The Ward, read at a glance: one mark per line, lit when its line was answered.
+   Deliberately not a score — the stones on the ground are the real readout and
+   this only mirrors them for a player whose eyes are on their own hand. */
+.ward-readout { position: fixed; z-index: 30; top: 96px; left: 50%; display: flex; align-items: center; gap: 10px; transform: translateX(-50%); pointer-events: none; }
+.ward-stones { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ward-stones li { width: 22px; height: 6px; border: 1px solid rgb(246 241 232 / .28); border-radius: 999px; background: rgb(246 241 232 / .07); transition: background .35s ease, border-color .35s ease, box-shadow .35s ease; }
+.ward-stones li.is-current { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.ward-stones li.is-lit { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 14px -2px var(--accent); }
+.ward-attempts { color: var(--muted); font: 700 9px/1 var(--font-sans); letter-spacing: .18em; text-transform: uppercase; }
+
+@media (max-width: 680px) { .ward-readout { top: 78px; } }
+@media (prefers-reduced-motion: reduce) { .ward-stones li { transition: none; } }
