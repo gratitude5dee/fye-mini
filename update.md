@@ -1554,13 +1554,32 @@ reachable from a cosmetic preset. Add a **`settings.rite` block** and give it no
 Presentation values that genuinely affect the cast's feel (`range`, `minRange`) go in the element blocks **with**
 `RANGES` entries, registered under the public `air.*` spelling, never `wind.*` (`src/config/spell-ranges.js`).
 
-### Hit testing, if §8's Ward needs it
-The trace score is a curve-to-curve comparison at release and needs no per-frame test. The Ward's *reaction* does,
-and it is cheap: `AbilityManager.update()` already iterates `this.active`, and every ability exposes a live
-`this.position` (`src/abilities/Ability.js:180-190`). Sample squared distance from each active ability head to each
-of eight stone positions — 8 × ≤8 = 64 squared distances per frame, with no allocation if the stone positions live
-in one flat `Float32Array`. Impact-radius effects hook `ctx.onAbilityImpact(ability)`, which **already passes the
-ability instance** and which `App._onAbilityImpact()` currently throws away (`src/core/App.js:189`).
+### Two resolutions, at two different moments
+
+§8 resolves a line in two independent passes, and conflating them is the easiest way to get this wrong.
+
+**1. Did the line solve the problem? — once, at release, on the drawn polyline.**
+`resolveStroke(stroke, layout, element)` tests each waystone's minimum squared distance to the polyline and each
+hazard for any sample inside it. No physics, no per-frame work, no reference curve. This is what decides whether
+a Ward stone lights.
+
+**2. What did the element physically touch? — per frame, on the ability head.**
+Only needed for the *reaction*: scorch marks, a stone flinching, a hazard reacting as the element passes through
+it. `AbilityManager.update()` already iterates `this.active`, and every ability maintains `this.position` and
+`this.previousPosition` every frame (`src/abilities/Ability.js:182-190`). Test the frame's swept segment
+`previousPosition → position` against each responder in 2D (x, z) against `(radius + responderRadius)²`, exactly
+as the reference's `DummyField._hitLine` does (§4). At `MAX_CONCURRENT` = 8 against a handful of responders that
+is a few dozen squared distances per frame, with no allocation if the responder positions live in one flat
+`Float32Array`.
+
+Run pass 2 **after** the abilities are stepped, so the volume tested is the one that was just drawn (§11,
+hazard 2). Impact-radius effects hook `ctx.onAbilityImpact(ability)`, which **already passes the ability
+instance** and which `App._onAbilityImpact()` currently throws away (`src/core/App.js:189`).
+
+Crucially, **pass 2 must never change the outcome of pass 1.** The player's line is judged on what they drew, not
+on where the VFX happened to fly — otherwise fire's `pathHeight` lift would silently change whether a waystone
+counted, and the rule "fire crosses water, earth does not" would become a physics simulation rather than a stated
+property of the element.
 
 ### Persistence: one door
 `src/state/preferences.js` owns the whole `localStorage` surface. Today `GrimoireStage.tsx` reads and writes
