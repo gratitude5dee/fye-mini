@@ -73,6 +73,19 @@ Four changes:
    completely the element answers. Scoring is fidelity, not damage — a curve-to-curve comparison at release that
    needs no physics and no collision system, on a polyline the code already computes and throws away.
 
+### Three things found on the way that should be fixed regardless
+
+Verifying the claims in this document surfaced live defects that have nothing to do with the four tracks. They are
+detailed in §11 with evidence.
+
+- **The Cast button on the stage does nothing.** Its container is `pointer-events: none` and it is the one child
+  that never opts back in. The primary call to action on `avatar.wzrd.tech` is not clickable.
+- **For up to 920 ms after the loading screen fades, that same button reads "Waking"** and is disabled, because
+  the reveal and the readiness event are driven by two unrelated timers.
+- **A thumbs-up selects Stone**, because the fist test ignores a thumb value computed on the line above it.
+
+None of the three is more than a few lines to fix.
+
 ---
 
 ## 2. The thesis
