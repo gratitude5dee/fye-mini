@@ -66,15 +66,14 @@ real loading progress renders invisibly underneath it.
 
 Four changes:
 
-1. **The intro becomes the product starting.** Delete the montage. The opening is four real casts from the real
-   ability system with the real caster, choreographed against the real load milestones, ending with the player's
-   hand on the controls.
-2. **Onboarding teaches by doing.** A ghost line the player follows once and then never sees again, zero lines of
-   instructional text, progressive disclosure of the dock, and a hand-tracking trust ladder that never asks for a camera before the player has
-   already succeeded without one.
+1. **The intro becomes the product starting.** Delete the montage. The stage fades up under one line of type and
+   the first problem burns into the ground at about two seconds. The player's own first line is the introduction,
+   so there is one code path instead of four and nothing to skip.
+2. **Onboarding teaches by doing, wordlessly.** One lit waystone, one ghost line running to it, and after the
+   first success the ghost never returns. Zero lines of instructional text.
 3. **The UI becomes one system.** One token set instead of the two that ship today, one HUD owner instead of the
-   split that leaves half of `src/ui/HUD.js` inert, a dock with real slot grammar, and world-space targeting
-   indicators ported from the reference repositories.
+   split that leaves half of `src/ui/HUD.js` inert, and a real dock. The aim-and-circle indicators from the
+   reference repositories are documented in §4.1 and **not built** — §8's loop does not need them.
 4. **The game becomes the drawn shape — a problem to solve, not a shape to copy.** Waystones light on the ground
    with a hazard between them: *take fire through all three without crossing the water*. You draw one line, and
    the line is yours. The test is points against a curve at release — no physics, no collision, no reference
@@ -113,9 +112,15 @@ There is a sharper version of this. `LinearAbiltyCastingExtendedThreeJS` contain
 upstream as "the previous four-element bending sandbox"**. fye-mini is that archive, kept alive and given a
 caster. Upstream moved to straight-line casts and threw the curves away. The curve is the asset.
 
-So: take the reference repositories' **legibility** — the unified cast event, the two aim indicators, the hit
-test, the contextual gesture guide, the cancel affordance, the slot grammar — and invent the loop ourselves.
-Neither of them has one.
+So: take from the reference repositories the things that survive contact with a different verb — the hit test,
+the cancel affordance, the settings discipline, and the engineering hazards in §11 — and **invent the loop
+ourselves**. Neither of them has one, and §14 cuts their targeting work entirely, because that is the gravity
+pulling this design back toward what they already built.
+
+One more thing this thesis has to survive, stated here so it is not buried: **a drawn line is only a richer
+surface if the player invents it.** §8's first draft failed that test by showing a shape and grading the copy,
+and was rewritten. If a future version reintroduces a reference shape to match, the thesis is dead and this is
+a VFX sandbox again.
 
 ---
 
