@@ -1,39 +1,84 @@
-.grimoire-stage { --ink: #f6f1e8; --muted: #d8d0c2; --panel: rgb(12 15 18 / .78); min-height: 100dvh; overflow: hidden; color: var(--ink); background: #101318; font-family: var(--font-sans); }
+.grimoire-stage { --panel: var(--g-panel); min-height: 100dvh; overflow: hidden; color: var(--ink); background: var(--g-stage); font-family: var(--font-sans); }
 .grimoire-stage__surface { min-height: 100dvh; }
-#viewport { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
-.stage-header, .stage-message, .stage-hud, .side-sheet { position: fixed; z-index: 30; }
+#viewport { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.stage-header, .stage-message, .stage-hud, .side-sheet, .world-drawer, .movement-hint { position: fixed; z-index: 30; }
 .stage-header { inset: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; padding: clamp(17px, 3vw, 30px); pointer-events: none; }
 .header-actions { display: flex; gap: 8px; pointer-events: auto; }
 .wordmark { display: grid; gap: 6px; text-shadow: 0 3px 18px #000; }
+.wordmark--home { border: 0; padding: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; pointer-events: auto; }
+.wordmark--home:hover strong { color: var(--accent); }
 .wordmark span, .eyebrow { margin: 0; color: var(--accent); font: 700 10px/1 var(--font-sans); letter-spacing: .18em; text-transform: uppercase; }
 .wordmark strong { font: 500 clamp(25px, 3.3vw, 42px)/.86 var(--font-display); letter-spacing: -.055em; }
-.quiet-button, .ride-button, .sheet-close { border: 1px solid rgb(246 241 232 / .25); border-radius: 999px; padding: 10px 13px; color: var(--ink); background: rgb(10 12 15 / .58); box-shadow: 0 8px 24px #0004; backdrop-filter: blur(16px); font: 700 10px/1 var(--font-sans); letter-spacing: .09em; text-transform: uppercase; cursor: pointer; }
+.quiet-button, .ride-button, .sheet-close { border: 1px solid rgb(246 241 232 / .25); border-radius: 999px; padding: 10px 13px; color: var(--ink); background: rgb(10 12 15 / .58); box-shadow: 0 8px 24px #0004; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); font: 700 10px/1 var(--font-sans); letter-spacing: .09em; text-transform: uppercase; cursor: pointer; }
 .quiet-button:hover, .ride-button:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, #101318); }
 .stage-message { top: 31%; left: 50%; max-width: min(390px, calc(100vw - 42px)); transform: translateX(-50%); color: var(--muted); font: 500 12px/1.35 var(--font-sans); text-align: center; text-shadow: 0 2px 12px #000; pointer-events: none; }
 .stage-message__dot { display: inline-block; width: 6px; height: 6px; margin: 0 8px 1px 0; border-radius: 50%; background: var(--accent); box-shadow: 0 0 13px var(--accent); }
-.stage-hud { right: 0; bottom: 22px; left: 0; display: grid; justify-items: center; gap: 9px; pointer-events: none; }
-.element-selector { display: flex; gap: 3px; padding: 4px; border: 1px solid rgb(246 241 232 / .2); border-radius: 18px; background: rgb(10 12 15 / .68); box-shadow: 0 16px 38px #0008; backdrop-filter: blur(16px); pointer-events: auto; }
-.element-selector button { display: grid; min-width: 61px; gap: 3px; border: 0; border-radius: 13px; padding: 7px 9px; color: #c6c4bf; background: transparent; font: 700 9px/1 var(--font-sans); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
-.element-selector button i { color: var(--accent); font: 23px/1 Georgia, serif; font-style: normal; text-shadow: 0 0 14px var(--accent); }
-.element-selector button.is-active { color: var(--ink); background: color-mix(in srgb, var(--accent) 19%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent); }
+.world-drawer { bottom: 22px; left: 22px; max-width: min(250px, calc(100vw - 44px)); }
+.world-drawer__open { display: grid; gap: 4px; width: 100%; border: 1px solid rgb(246 241 232 / .22); border-radius: 14px; padding: 10px 12px; color: var(--ink); background: rgb(10 12 15 / .68); box-shadow: 0 12px 36px #0008; text-align: left; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); cursor: pointer; }
+.world-drawer__open:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, #101318); }
+.world-drawer__eyebrow { color: var(--accent); font: 700 8px/1 var(--font-sans); letter-spacing: .17em; text-transform: uppercase; }.world-drawer__open strong { font: 500 19px/.95 var(--font-display); }.world-drawer__open small { overflow: hidden; color: var(--muted); font: 500 10px/1.25 var(--font-sans); text-overflow: ellipsis; white-space: nowrap; }
+.movement-hint { bottom: 24px; left: 50%; display: flex; gap: 11px; align-items: center; transform: translateX(-50%); color: #dcd7ce; font: 700 9px/1 var(--font-sans); letter-spacing: .07em; text-shadow: 0 2px 12px #000; text-transform: uppercase; pointer-events: none; }.movement-hint span { display: inline-flex; gap: 3px; align-items: center; white-space: nowrap; }.movement-hint kbd { min-width: 0; padding: 2px 4px; font-size: 8px; }
+.stage-hud { right: 22px; bottom: 22px; left: auto; display: grid; justify-items: center; gap: 9px; pointer-events: none; }
+/* Every direct child opts back in. The previous per-child rule missed .cast-button,
+   which left the stage's primary action unclickable. */
+.stage-hud > * { pointer-events: auto; }
+.hand-offer { display: grid; gap: 3px; border: 0; padding: 0; color: var(--ink); background: transparent; text-align: center; text-shadow: 0 2px 12px #000; cursor: pointer; }
+.hand-offer strong { font: 600 15px/1.1 var(--font-display); }.hand-offer span { color: var(--muted); font: 600 9px/1.25 var(--font-sans); letter-spacing: .06em; }.hand-offer:hover strong { color: var(--accent); }
+/* --- The dock ----------------------------------------------------------- */
+/* Four slots, each carrying what the player needs to decide: the sigil, the
+   name, the key that reaches it, whether it is in hand, whether the Rite's
+   current line answers to it, and — for a hand — how far its dwell has filled.
+   The slot's own hue comes from `--slot`, not from `--accent`: `--accent` is
+   whatever is in hand, so painting every sigil with it made three of the four
+   sigils lie about which element they were. */
+.dock { display: flex; gap: 3px; padding: 4px; border: 1px solid rgb(246 241 232 / .2); border-radius: 18px; background: rgb(10 12 15 / .68); box-shadow: 0 16px 38px #0008; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+/* Readiness, shown rather than enforced: a slot clicked while the stage is
+   still waking is replayed the moment it is ready, so the slot stays live. */
+.dock.is-waking { opacity: .62; }
+.dock__slot { position: relative; display: grid; min-width: 61px; gap: 3px; border: 0; border-radius: 13px; padding: 7px 9px; color: #c6c4bf; background: transparent; font: 700 9px/1 var(--font-sans); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; transition: background var(--g-base) ease, color var(--g-base) ease; }
+.dock__slot i { color: var(--slot); font: 23px/1 Georgia, serif; font-style: normal; text-shadow: 0 0 14px color-mix(in srgb, var(--slot) 60%, transparent); }
+.dock__slot kbd { position: absolute; top: 3px; right: 4px; min-width: 0; border: 0; padding: 0; background: none; color: var(--muted); font: 700 8px/1 var(--font-sans); opacity: .6; }
+.dock__slot.is-active { color: var(--ink); background: color-mix(in srgb, var(--slot) 19%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--slot) 75%, transparent); }
+.dock__slot.is-active kbd { opacity: 1; }
+.dock__slot:hover:not(.is-active) { background: rgb(246 241 232 / .06); }
+/* Offered: the Rite's current line answers to this element. A steady mark, not
+   an animation — it is a fact about the line, not a thing asking to be pressed.
+   Outside a Rite no slot carries it. */
+.dock__slot.is-offered::before { position: absolute; top: 4px; left: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--slot); box-shadow: 0 0 9px var(--slot); content: ''; }
+/* The dwell ring: the same 400 ms fill the pose ring uses, so the two hand
+   affordances read as one language. `<u>` because it carries no meaning of its
+   own — the state it draws is already in the button's class and aria. */
+.dock__slot u { position: absolute; inset: 1px; border: 2px solid var(--slot); border-radius: 12px; clip-path: inset(0 calc((1 - var(--dwell, 0)) * 100%) 0 0); filter: drop-shadow(0 0 5px var(--slot)); opacity: 0; }
+.dock__slot.is-dwelling u { opacity: 1; }
 .cast-button { min-width: 148px; border: 1px solid color-mix(in srgb, var(--accent) 78%, white); border-radius: 14px; padding: 12px 19px; color: #0e1215; background: var(--accent); box-shadow: 0 8px 32px color-mix(in srgb, var(--accent) 42%, transparent); font: 800 10px/1 var(--font-sans); letter-spacing: .16em; text-transform: uppercase; cursor: pointer; }
 .cast-button b { display: block; margin-top: 4px; font: 600 22px/.9 var(--font-display); letter-spacing: -.02em; text-transform: none; }
-.cast-button:disabled { opacity: .55; cursor: wait; }
-.ride-button { padding: 8px 12px; pointer-events: auto; font-size: 9px; }
+.cast-button:disabled { opacity: .55; cursor: wait; }.cast-button--secondary { border-color: rgb(246 241 232 / .3); color: var(--ink); background: rgb(246 241 232 / .08); box-shadow: none; }
+.ride-button { padding: 8px 12px; font-size: 9px; }
 .ride-button.is-armed { border-color: #a7e8f2; color: #06252a; background: #a7e8f2; }
-.intro { position: fixed; z-index: 100; inset: 0; display: grid; overflow: hidden; background: #08090a; }
-.intro__art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: panel-drift 7.2s ease-in-out infinite alternate; }
-.intro__panels { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(4, 1fr); }
-.intro__panel { position: relative; min-width: 0; min-height: 0; margin: 0; overflow: hidden; }
-.intro__panel::before { position: absolute; z-index: 1; inset: 0; background: #08090a; content: ''; animation: panel-reveal .85s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--panel-index) * 120ms); }
-.intro__panel::after { position: absolute; z-index: 2; inset: 0; background: linear-gradient(110deg, transparent 35%, rgb(255 255 255 / .14) 50%, transparent 65%); content: ''; mix-blend-mode: screen; animation: panel-sheen 3.4s ease-in-out infinite; animation-delay: calc(var(--panel-index) * 180ms); }
-.intro__panel figcaption { position: absolute; z-index: 3; right: 16px; bottom: 13px; color: #fff; font: 700 10px/1 var(--font-sans); letter-spacing: .28em; opacity: 0; text-shadow: 0 2px 12px #000; text-transform: uppercase; animation: intro-label .4s ease both; animation-delay: calc(400ms + var(--panel-index) * 120ms); }
-.intro__copy { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; padding: 28px; background: radial-gradient(circle, transparent 0 22%, rgb(0 0 0 / .38) 72%, rgb(0 0 0 / .74)); text-align: center; pointer-events: none; }
+/* The opening is a wordmark over the live stage, not a picture in front of it.
+   Transparent on purpose: the black comes from the renderer's own grade, so
+   what is behind this is the real scene fading up rather than a covered one. */
+.intro { position: fixed; z-index: 100; inset: 0; display: grid; overflow: hidden; background: #08090a; pointer-events: none; }
+.intro::after { position: absolute; z-index: 1; inset: 0; background: linear-gradient(180deg, rgb(3 6 12 / .2), rgb(3 6 12 / .48)); content: ''; }
+.intro__video { position: absolute; z-index: 0; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .92; }
+.intro__skip { position: relative; z-index: 2; pointer-events: auto; }
+/* The line fades with the beat rather than on a timer of its own, so it can
+   never outlast the stage it is introducing. It holds while the loader is up
+   and through the reveal, then goes as the stage settles. */
+.intro--dark .intro__copy, .intro--reveal .intro__copy, .intro--title .intro__copy { opacity: 1; }
+.intro--settle .intro__copy, .intro--play .intro__copy { opacity: 0; }
+.intro__copy { align-content: end !important; padding-bottom: 12vh !important; transition: opacity var(--g-slow) ease; }
+.intro__copy { position: absolute; z-index: 2; inset: 0; display: grid; align-content: center; justify-items: center; padding: 28px; text-align: center; pointer-events: none; }
 .intro__copy p, .intro__copy span { margin: 0; color: #fff6e7; font: 700 10px/1.35 var(--font-sans); letter-spacing: .2em; text-transform: uppercase; }
 .intro__copy h1 { max-width: 620px; margin: 14px 0; font: 500 clamp(45px, 9vw, 112px)/.82 var(--font-display); letter-spacing: -.07em; text-shadow: 0 5px 44px #000; }
-.intro__copy span { color: #f4ead9c7; font-size: 9px; letter-spacing: .11em; text-transform: none; }
-.intro__skip { position: absolute; z-index: 1; right: 24px; bottom: 22px; border: 1px solid rgb(255 255 255 / .42); border-radius: 999px; padding: 10px 14px; color: #fff; background: rgb(0 0 0 / .32); backdrop-filter: blur(12px); font: 700 10px/1 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
-.side-sheet { top: 50%; right: 22px; width: min(360px, calc(100vw - 36px)); max-height: min(680px, calc(100dvh - 50px)); overflow: auto; transform: translateY(-50%); border: 1px solid rgb(246 241 232 / .22); border-radius: 22px; padding: 23px; background: linear-gradient(145deg, rgb(25 30 34 / .96), rgb(11 14 17 / .97)); box-shadow: 0 24px 84px #000a; backdrop-filter: blur(24px); }
+.intro__title { position: absolute; inset: 0; display: grid; place-items: center; margin: 0 !important; opacity: 0; transform: translateY(14px) scale(.98); transition: opacity .5s ease, transform .7s cubic-bezier(.16, 1, .3, 1); }
+.intro--title .intro__title { opacity: 1; transform: translateY(0) scale(1); }
+.intro__copy span { color: #f4ead9c7; font-size: 9px; letter-spacing: .11em; text-transform: none; transition: opacity .35s ease, transform .35s ease; }
+.intro--title .intro__copy span { opacity: 0; transform: translateY(6px); }
+.intro__skip { position: absolute; z-index: 1; right: 24px; bottom: 22px; border: 1px solid rgb(255 255 255 / .42); border-radius: 999px; padding: 10px 14px; color: #fff; background: rgb(0 0 0 / .32); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font: 700 10px/1 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+.side-sheet { top: 50%; right: 22px; width: min(360px, calc(100vw - 36px)); max-height: min(680px, calc(100dvh - 50px)); overflow: auto; transform: translateY(-50%); border: 1px solid rgb(246 241 232 / .22); border-radius: 22px; padding: 23px; background: linear-gradient(145deg, rgb(25 30 34 / .96), rgb(11 14 17 / .97)); box-shadow: 0 24px 84px #000a; -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
+.world-picker { position: fixed; z-index: 70; top: 50%; left: 50%; width: min(860px, calc(100vw - 40px)); max-height: min(720px, calc(100dvh - 44px)); overflow: auto; transform: translate(-50%, -50%); border: 1px solid rgb(246 241 232 / .26); border-radius: 24px; padding: 26px; color: var(--ink); background: linear-gradient(145deg, rgb(24 29 33 / .98), rgb(8 11 14 / .985)); box-shadow: 0 28px 100px #000c; -webkit-backdrop-filter: blur(26px); backdrop-filter: blur(26px); }.world-picker h2 { max-width: 440px; margin: 7px 0 12px; font: 500 clamp(31px, 4vw, 49px)/.92 var(--font-display); letter-spacing: -.055em; }
+.world-picker__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 19px; }.world-card { display: grid; overflow: hidden; border: 1px solid rgb(246 241 232 / .16); border-radius: 14px; padding: 0; color: var(--ink); background: rgb(255 255 255 / .035); text-align: left; cursor: pointer; transition: border-color var(--g-base) ease, transform var(--g-base) ease, background var(--g-base) ease; }.world-card:hover:not(:disabled) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); transform: translateY(-2px); }.world-card:disabled { opacity: .48; cursor: not-allowed; }.world-card.is-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }.world-card img { width: 100%; aspect-ratio: 2 / 1; object-fit: cover; }.world-card__local { display: grid; aspect-ratio: 2 / 1; place-items: center; color: var(--accent); background: radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 57%), #11161a; font: 38px/1 Georgia, serif; }.world-card > span { display: grid; gap: 5px; padding: 11px; }.world-card small { color: var(--accent); font: 700 8px/1 var(--font-sans); letter-spacing: .13em; text-transform: uppercase; }.world-card strong { font: 500 20px/.96 var(--font-display); }.world-card em { color: var(--muted); font: 400 10px/1.35 var(--font-sans); font-style: normal; }.world-picker__note { margin: 14px 0 0; color: var(--muted); font: 400 10px/1.4 var(--font-sans); }
 .sheet-close { position: absolute; top: 12px; right: 12px; display: grid; width: 32px; height: 32px; place-items: center; padding: 0; color: var(--muted); font: 300 25px/1 var(--font-sans); }
 .side-sheet h2 { max-width: 280px; margin: 7px 0 12px; font: 500 31px/.98 var(--font-display); letter-spacing: -.045em; }
 .sheet-copy { margin: 0; color: #ddd9d0; font: 400 13px/1.55 var(--font-sans); }
@@ -41,13 +86,185 @@
 .input-health i { flex: 0 0 auto; width: 8px; height: 8px; margin-top: 3px; border-radius: 50%; background: #b9c0c0; box-shadow: 0 0 10px currentColor; }
 .input-health--ready i, .input-health--tracking i { color: #a8f0dc; background: #a8f0dc; }.input-health--fallback i, .input-health--unavailable i { color: #ffb65d; background: #ffb65d; }.input-health--requesting i { color: #bfe8df; background: #bfe8df; animation: status-pulse 1s ease-in-out infinite; }
 .gesture-guide { display: grid; gap: 9px; margin: 17px 0; padding: 0; list-style: none; }.gesture-guide li { display: grid; grid-template-columns: 23px 1fr; gap: 9px; align-items: start; color: #d8d2c9; font: 400 11px/1.42 var(--font-sans); }.gesture-guide b { display: grid; width: 23px; aspect-ratio: 1; place-items: center; border: 1px solid var(--accent); border-radius: 50%; color: var(--accent); font: 700 10px/1 var(--font-sans); }.gesture-guide strong { display: block; color: #fff; font-size: 11px; }
-.sheet-actions { display: grid; grid-template-columns: 1fr auto; gap: 7px; align-items: end; }.sheet-actions .cast-button { min-width: 0; }.sheet-actions .cast-button b { display: none; }
+.gesture-guide__title { margin: 17px 0 -8px; color: var(--accent); font: 700 9px/1 var(--font-sans); letter-spacing: .15em; text-transform: uppercase; }
+.sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; align-items: end; }.sheet-actions .cast-button { min-width: 0; }.sheet-actions .cast-button b { display: none; }.sheet-actions .quiet-button { align-self: stretch; }
 .workshop { right: max(22px, calc((100vw - 1300px) / 2)); }
 .preset-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin-top: 17px; }.preset-grid button { display: grid; gap: 5px; min-height: 65px; border: 1px solid rgb(246 241 232 / .16); border-radius: 11px; padding: 9px; color: var(--ink); background: rgb(255 255 255 / .035); text-align: left; cursor: pointer; }.preset-grid button:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent); }.preset-grid small { color: var(--accent); font: 700 8px/1 var(--font-sans); letter-spacing: .14em; text-transform: uppercase; }.preset-grid strong { font: 500 16px/1 var(--font-display); }
 .local-dials { display: grid; gap: 13px; margin: 20px 0 0; border: 0; border-top: 1px solid rgb(246 241 232 / .16); padding: 16px 0 0; }.local-dials legend { padding: 0; color: var(--accent); font: 700 9px/1 var(--font-sans); letter-spacing: .15em; text-transform: uppercase; }.local-dials label { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: center; color: #eee8dc; font: 600 11px/1 var(--font-sans); }.local-dials output { color: var(--accent); font: 500 14px/1 var(--font-display); }.local-dials input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
-.hand-mirror { --hand-accent: #bfe8df; position: fixed; z-index: 45; right: 20px; bottom: 20px; width: 164px; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid rgb(246 241 232 / .32); border-radius: 15px; background: #07090b; box-shadow: 0 16px 40px #000b; pointer-events: none; }.hand-mirror video, .hand-mirror canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }.hand-mirror canvas { transform: none; }.hand-mirror span { position: absolute; right: 7px; bottom: 7px; border-radius: 999px; padding: 4px 6px; color: #fff; background: rgb(0 0 0 / .54); font: 700 7px/1 var(--font-sans); letter-spacing: .09em; text-transform: uppercase; }.hand-mirror i { position: absolute; inset: 8px; border: 2px solid var(--hand-accent); border-radius: 50%; clip-path: inset(0 calc((1 - var(--hold, 0)) * 100%) 0 0); filter: drop-shadow(0 0 5px var(--hand-accent)); opacity: 0; transition: opacity .12s ease; }.hand-mirror.is-pose i { opacity: 1; }.hand-mirror.is-tracking { border-color: var(--hand-accent); box-shadow: 0 0 24px -9px var(--hand-accent), 0 16px 40px #000b; }
+/* The live camera belongs with the input it explains.  Beneath the wordmark it
+   stays peripheral to the caster, world drawer, and casting dock, rather than
+   covering the very controls it is teaching. */
+.hand-mirror { --hand-accent: #bfe8df; position: fixed; z-index: 45; top: 108px; left: clamp(17px, 3vw, 30px); right: auto; bottom: auto; width: 164px; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid rgb(246 241 232 / .32); border-radius: 15px; background: #07090b; box-shadow: 0 16px 40px #000b; pointer-events: none; }.hand-mirror video, .hand-mirror canvas { position: absolute; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }.hand-mirror canvas { transform: none; }.hand-mirror span { position: absolute; right: 7px; bottom: 7px; border-radius: 999px; padding: 4px 6px; color: #fff; background: rgb(0 0 0 / .54); font: 700 7px/1 var(--font-sans); letter-spacing: .09em; text-transform: uppercase; }.hand-mirror i { position: absolute; inset: 8px; border: 2px solid var(--hand-accent); border-radius: 50%; clip-path: inset(0 calc((1 - var(--hold, 0)) * 100%) 0 0); filter: drop-shadow(0 0 5px var(--hand-accent)); opacity: 0; transition: opacity .12s ease; }.hand-mirror.is-pose i { opacity: 1; }.hand-mirror.is-tracking { border-color: var(--hand-accent); box-shadow: 0 0 24px -9px var(--hand-accent), 0 16px 40px #000b; }
 .grimoire-stage :is(button, input):focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
-@keyframes panel-reveal { from { clip-path: inset(0); opacity: 1; } to { clip-path: inset(0 0 0 100%); opacity: 0; } } @keyframes panel-drift { from { transform: scale(1.08) translate3d(-1.5%, 1%, 0); } to { transform: scale(1.18) translate3d(1.5%, -1%, 0); } } @keyframes panel-sheen { 0%, 30% { transform: translateX(-120%); } 65%, 100% { transform: translateX(120%); } } @keyframes intro-label { to { opacity: 1; } } @keyframes status-pulse { 50% { transform: scale(.55); opacity: .4; } }
-@media (max-width: 680px) { .stage-header { padding: 17px; }.wordmark strong { font-size: 28px; }.header-actions { gap: 5px; }.quiet-button { padding: 9px 10px; font-size: 9px; }.stage-message { top: 24%; }.element-selector button { min-width: 54px; padding: 7px 5px; }.element-selector button i { font-size: 20px; }.side-sheet { top: auto; right: 9px; bottom: 9px; width: calc(100vw - 18px); max-height: min(680px, calc(100dvh - 18px)); transform: none; }.hand-mirror { right: 12px; bottom: 166px; width: 132px; }.intro__copy h1 { font-size: clamp(43px, 13vw, 74px); }.intro__copy span { max-width: 260px; }.intro__skip { right: 13px; bottom: 13px; } }
-@media (pointer: coarse) { .element-selector button, .quiet-button, .ride-button, .intro__skip { min-height: 42px; }.cast-button { min-height: 52px; } }
-@media (prefers-reduced-motion: reduce) { .grimoire-stage *, .grimoire-stage *::before, .grimoire-stage *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+@keyframes status-pulse { 50% { transform: scale(.55); opacity: .4; } }
+/* --- Three layouts, not one -------------------------------------------- */
+/* One 680px breakpoint was not enough for a product whose primary input is a
+   drag across the stage: the amount of stage a drag has to cross is the whole
+   difficulty curve, and it is different on each of these. */
+
+/* Phone. The dock becomes a bottom bar inside the thumb arc, spanning the
+   viewport so the far slot is still reachable one-handed, and the sheets take
+   the full width because a 360px column beside a 360px viewport is not a
+   panel. The hand mirror is never shown: a phone never gets the camera. */
+@media (max-width: 679px) {
+  .stage-header { padding: 17px; }
+  .wordmark strong { font-size: 28px; }
+  .header-actions { gap: 5px; }
+  /* `nowrap` because "Hand mode" wrapped to two lines in a 390px-wide desktop
+     window — narrow enough for the phone layout, wide-pointered enough to still
+     be offered the camera. */
+  .quiet-button { padding: 9px 9px; font-size: 9px; white-space: nowrap; }
+  .wordmark span { white-space: nowrap; }
+  .stage-message { top: 22%; }
+  .world-drawer { bottom: auto; top: 118px; left: 12px; max-width: min(196px, calc(100vw - 78px)); }.world-drawer__open { padding: 8px 10px; }.world-drawer__open strong { font-size: 17px; }.world-drawer__open small { font-size: 9px; }
+  .movement-hint { bottom: 154px; width: 100%; justify-content: center; gap: 7px; font-size: 8px; }
+  .stage-hud { right: 0; bottom: 0; left: 0; gap: 7px; padding: 0 0 max(10px, env(safe-area-inset-bottom)); }
+  .dock { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 0; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .dock__slot { flex: 1 1 0; min-width: 0; padding: 7px 4px; }
+  .dock__slot i { font-size: 20px; }
+  /* The key hint is a desktop affordance. A phone has no keyboard to press it
+     with, so printing it is furniture that costs a line of type. */
+  .dock__slot kbd { display: none; }
+  /* Order: the dock last, so it is the thing the thumb lands on. */
+  .stage-hud .dock { order: 3; }
+  .stage-hud { display: flex; flex-direction: column; align-items: center; }
+  .cast-button { min-width: min(320px, calc(100vw - 32px)); }
+  .side-sheet { top: auto; right: 0; bottom: 0; left: 0; width: 100%; max-height: min(78dvh, calc(100dvh - 18px)); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 22px 22px 0 0; transform: none; }
+  .world-picker { top: auto; bottom: 0; left: 0; width: 100%; max-height: min(88dvh, calc(100dvh - 12px)); transform: none; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 22px 22px 0 0; padding: 22px 18px; }.world-picker__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workshop { right: 0; }
+  .hand-mirror { display: none; }
+  .intro__copy h1 { font-size: clamp(43px, 13vw, 74px); }
+  .intro__copy span { max-width: 260px; }
+  .intro__skip { right: 13px; bottom: 13px; }
+}
+
+/* Tablet. The dock keeps its pill and its bottom-centre position; the sheets
+   become right-hand panels at the width the spec names, which leaves the
+   middle of the stage clear to draw across while one is open. */
+@media (min-width: 680px) and (max-width: 1024px) {
+  .stage-message { top: 26%; }
+  .side-sheet { right: 16px; width: 380px; max-height: min(680px, calc(100dvh - 44px)); }
+  .workshop { right: 16px; }
+  .hand-mirror { top: 102px; }
+}
+
+/* Desktop is the layout every rule above is a deviation from, so it carries no
+   block of its own. */
+
+@media (pointer: coarse) { .dock__slot, .quiet-button, .ride-button, .intro__skip { min-height: 42px; }.cast-button { min-height: 52px; } }
+@media (prefers-reduced-motion: reduce) { .intro__video { display: none; }.grimoire-stage *, .grimoire-stage *::before, .grimoire-stage *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+
+/* --- The Rite ----------------------------------------------------------- */
+/* The Ward, read at a glance: one mark per line, lit when its line was answered.
+   Deliberately not a score — the stones on the ground are the real readout and
+   this only mirrors them for a player whose eyes are on their own hand. */
+.ward-readout { position: fixed; z-index: 30; top: 96px; left: 50%; display: flex; align-items: center; gap: 10px; transform: translateX(-50%); pointer-events: none; }
+.ward-stones { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ward-stones li { width: 22px; height: 6px; border: 1px solid rgb(246 241 232 / .28); border-radius: 999px; background: rgb(246 241 232 / .07); transition: background .35s ease, border-color .35s ease, box-shadow .35s ease; }
+.ward-stones li.is-current { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.ward-stones li.is-lit { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 14px -2px var(--accent); }
+.ward-attempts { color: var(--muted); font: 700 9px/1 var(--font-sans); letter-spacing: .18em; text-transform: uppercase; }
+
+@media (max-width: 679px) { .ward-readout { top: 78px; } }
+@media (prefers-reduced-motion: reduce) { .ward-stones li { transition: none; } }
+
+/* --- What the tracker can see ------------------------------------------- */
+/* A mirror, not a manual: the row you are performing lights, and the meters
+   show the two continuous axes a pointer cannot supply. Without these a player
+   has no way to learn that their hand height is doing anything until it already
+   changed the cast. */
+.gesture-guide li.is-live { color: var(--ink); }
+.gesture-guide li.is-live b { border-color: var(--accent); color: #0e1215; background: var(--accent); }
+.gesture-guide li.is-done b { opacity: .45; }
+.hand-meters { display: grid; gap: 7px; margin-top: 12px; }
+.hand-meters label { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 9px; color: var(--muted); font: 700 9px/1 var(--font-sans); letter-spacing: .16em; text-transform: uppercase; }
+.hand-meters i { position: relative; height: 4px; border-radius: 999px; background: rgb(246 241 232 / .12); }
+.hand-meters i::after { position: absolute; inset: 0 auto 0 0; width: calc(var(--v, 0) * 100%); border-radius: 999px; background: var(--accent); box-shadow: 0 0 10px -2px var(--accent); content: ''; transition: width .12s linear; }
+@media (prefers-reduced-motion: reduce) { .hand-meters i::after { transition: none; } }
+
+/* --- Help --------------------------------------------------------------- */
+/* Bottom right, out of the thumb arc on a phone and out of the way of the
+   stage dock, which owns the bottom centre. */
+.help-button { position: fixed; z-index: 40; top: 82px; right: 20px; width: 38px; height: 38px; border: 1px solid rgb(246 241 232 / .26); border-radius: 50%; color: var(--ink); background: rgb(10 12 15 / .68); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font: 700 15px/1 var(--font-sans); cursor: pointer; }
+.help-button:hover { border-color: var(--accent); color: var(--accent); }
+.help-sheet h3 { margin: 18px 0 6px; color: var(--ink); font: 600 15px/1.2 var(--font-display); }
+.help-sheet h3:first-of-type { margin-top: 12px; }
+.help-notes { display: grid; gap: 6px; margin: 0; padding-left: 16px; color: var(--muted); font: 400 12px/1.45 var(--font-sans); }
+.help-notes strong { color: var(--ink); font-weight: 600; }
+.help-rows { display: grid; gap: 7px; margin: 0; }
+.help-rows > div { display: grid; grid-template-columns: 104px 1fr; gap: 10px; align-items: baseline; }
+.help-rows--keys > div { grid-template-columns: 84px 1fr; }
+.help-rows dt { color: var(--ink); font: 600 12px/1.35 var(--font-sans); }
+.help-rows dd { margin: 0; color: var(--muted); font: 400 12px/1.45 var(--font-sans); }
+kbd { display: inline-block; min-width: 15px; border: 1px solid rgb(246 241 232 / .24); border-radius: 5px; padding: 1px 5px; color: var(--ink); background: rgb(246 241 232 / .07); font: 600 10px/1.4 var(--font-sans); text-align: center; }
+
+/* The stage dock owns the bottom centre on a phone, so the button steps up out
+   of its way rather than sitting on top of the ride control. */
+@media (max-width: 679px) { .help-button { right: 12px; bottom: auto; top: 76px; } }
+
+/* --- The loading screen ------------------------------------------------- */
+/* Moved here from `src/ui/styles.css`, which was deleted. It is the first thing
+   every visitor sees and it was the only thing styling it, so this is the one
+   part of that file that had to survive intact. React renders the markup and
+   `LoadingScreen` in `src/ui/HUD.js` mutates it by id. */
+/* No background of its own. The canvas behind it is opaque black from the
+   first paint (`alpha: false`), and the sigil assembles on that canvas *while*
+   this is still up — so an opaque panel here would hide the loading animation
+   for the whole of the load it is reporting on. The wordmark and the status
+   line sit over the assembling motes, which is the composition. */
+.loader { position: fixed; z-index: var(--g-z-loader); inset: 0; display: grid; place-items: center; background: transparent; transition: opacity .7s ease, visibility .7s; }
+.loader.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.loader__inner { width: min(420px, 80vw); text-align: center; }
+.loader__title { margin: 22px 0 18px; font: 600 26px/1.2 var(--font-display); letter-spacing: .12em; }
+.loader__sigil { display: flex; justify-content: center; gap: 14px; }
+.sigil { width: 17px; height: 17px; border-radius: 4px; opacity: .85; animation: sigil-pulse 2.6s ease-in-out infinite; }
+.sigil--fire { background: var(--g-fire); }
+.sigil--water { background: var(--g-water); animation-delay: .2s; }
+.sigil--earth { background: var(--g-earth); animation-delay: .4s; }
+.sigil--air { background: var(--g-air); animation-delay: .6s; }
+@keyframes sigil-pulse { 0%, 100% { transform: scale(1); opacity: .55; } 50% { transform: scale(1.35); opacity: 1; } }
+.loader__bar { overflow: hidden; width: 100%; height: 3px; margin: 8px 0 12px; border-radius: 999px; background: rgb(246 241 232 / .12); }
+.loader__bar i { display: block; width: 0; height: 100%; border-radius: 999px; background: var(--accent); transition: width .25s ease; }
+.loader__status { margin: 0; color: var(--muted); font: 400 12px/1.4 var(--font-sans); letter-spacing: .04em; }
+
+/* --- The toast ---------------------------------------------------------- */
+/* The only surviving output of `src/ui/HUD.js`. It sits on the HUD layer, which
+   is below the stage chrome on purpose. */
+.hud { position: fixed; z-index: var(--g-z-hud); inset: 0; pointer-events: none; font-size: 13px; }
+.hud__toast { position: absolute; top: 76px; left: 50%; transform: translate(-50%, -12px); padding: 9px 18px; border: 1px solid var(--g-line); border-radius: var(--g-r-pill); background: var(--g-panel-solid); box-shadow: var(--g-shadow); opacity: 0; font-size: 12px; letter-spacing: .04em; transition: opacity var(--g-base) ease, transform var(--g-base) ease; }
+.hud__toast.is-visible { transform: translate(-50%, 0); opacity: 1; }
+
+/* --- The live editor ---------------------------------------------------- */
+.lil-gui.autoPlace { z-index: var(--g-z-chrome); top: 64px; right: 14px; max-height: calc(100dvh - 96px); }
+.lil-gui.lil-root > .title, .lil-gui.root > .title { font-family: var(--font-sans); letter-spacing: .1em; text-transform: uppercase; }
+
+/* --- What the player and the machine each control ----------------------- */
+/* Calm mode is the player's switch. The quality line underneath is the
+   machine's, and it is a statement rather than a control: the ladder is
+   measured, so there is nothing honest to offer beyond saying what it found.
+   Said here, once, and never as a toast — a stage that interrupts you to
+   announce it is coping badly is worse company than one that just copes. */
+.stage-settings { display: grid; gap: 8px; margin: 17px 0 0; border-top: 1px solid var(--g-line); padding-top: 15px; }
+.switch { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; cursor: pointer; }
+.switch input { width: 34px; height: 19px; margin: 1px 0 0; accent-color: var(--accent); cursor: pointer; }
+.switch span { color: var(--muted); font: 400 11px/1.45 var(--font-sans); }
+.switch strong { display: block; color: var(--ink); font: 600 12px/1.3 var(--font-sans); }
+.stage-settings__note { margin: 0; color: var(--muted); font: 400 11px/1.45 var(--font-sans); opacity: .8; }
+
+/* --- The opening holds the chrome back ---------------------------------- */
+/* The sigil assembling out of the dark is the whole of the opening, and it was
+   sharing the screen with a lit header, a dock and a Cast button — so the one
+   thing the player was meant to be looking at was the one thing competing for
+   attention. The interface arrives when the stage does.
+
+   `is-opening` is only ever set by hearing from the director, so a page whose
+   renderer never loads shows its interface rather than a black rectangle. The
+   skip button is deliberately exempt: it is the way out of the thing that is
+   holding everything else back. */
+.grimoire-stage.is-opening :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .world-drawer, .movement-hint, .help-button) {
+  opacity: 0;
+  pointer-events: none;
+}
+.grimoire-stage :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .world-drawer, .movement-hint, .help-button) {
+  transition: opacity var(--g-slow) ease;
+}

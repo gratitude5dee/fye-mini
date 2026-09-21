@@ -18,6 +18,26 @@ export class InputManager extends EventEmitter {
     this.keys = new Set();
     this.enabled = true;
 
+    /**
+     * Continuous channels a hand supplies and a pointer cannot.
+     *
+     * They live on the shared input object rather than on `HandInput` so that
+     * everything downstream keeps treating the two sources as one. With a
+     * pointer they stay at their defaults, and every element behaves exactly as
+     * it always has.
+     */
+    this.lift = 0;
+    this.spread = 0;
+    /**
+     * Element for the next accepted sample, as an index into `ELEMENTS`, or -1
+     * for "whatever is selected".
+     *
+     * Written by the off hand while a stroke is live, and by the keyboard when
+     * a digit is *held* mid-drag — the same thing, reached two ways, which is
+     * the point: hands are not uniquely capable here, they are uninterrupted.
+     */
+    this.elementIndex = -1;
+
     this._bind();
   }
 
@@ -28,6 +48,7 @@ export class InputManager extends EventEmitter {
     window.addEventListener('pointercancel', this._onPointerUp);
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
+    window.addEventListener('blur', this._onBlur);
     this.dom.addEventListener('contextmenu', (event) => event.preventDefault());
   }
 
@@ -66,23 +87,29 @@ export class InputManager extends EventEmitter {
   _onKeyDown = (event) => {
     if (event.repeat) return;
     const target = event.target;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+    const tag = target?.tagName || '';
+    // A world card, spell button, or the FYE home mark naturally retains focus
+    // after it is clicked.  Treating every button as a text field meant the
+    // very next WASD key silently did nothing.  Only genuine text-entry
+    // controls keep the keyboard for themselves.
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || target?.isContentEditable) return;
 
     this.keys.add(event.code);
 
+    // The stage owns locomotion keys.  Preventing their browser defaults keeps
+    // Space from scrolling a page out from under a grounded jump.
+    if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight'].includes(event.code)) event.preventDefault();
+
     switch (event.code) {
-      case 'Digit1':
-        this.emit('element', 0);
-        break;
-      case 'Digit2':
-        this.emit('element', 1);
-        break;
-      case 'Digit3':
-        this.emit('element', 2);
-        break;
-      case 'Digit4':
-        this.emit('element', 3);
-        break;
+      // A digit pressed on its own selects. A digit *held* while a stroke is
+      // live writes the element channel instead, so one unbroken line can be
+      // fire to the gate and earth over the rubble — the same thing the off
+      // hand does, reached from the keyboard. Hands are not uniquely capable
+      // here; they are uninterrupted.
+      case 'Digit1': this._digit(0); break;
+      case 'Digit2': this._digit(1); break;
+      case 'Digit3': this._digit(2); break;
+      case 'Digit4': this._digit(3); break;
       case 'KeyQ':
         this.emit('action', 'prevElement');
         break;
@@ -112,9 +139,16 @@ export class InputManager extends EventEmitter {
     }
   };
 
+  _digit(index) {
+    if (this.isDrawing) this.elementIndex = index;
+    else this.emit('element', index);
+  }
+
   _onKeyUp = (event) => {
     this.keys.delete(event.code);
   };
+
+  _onBlur = () => this.keys.clear();
 
   dispose() {
     this.dom.removeEventListener('pointerdown', this._onPointerDown);
@@ -123,6 +157,7 @@ export class InputManager extends EventEmitter {
     window.removeEventListener('pointercancel', this._onPointerUp);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
+    window.removeEventListener('blur', this._onBlur);
     this.clear();
   }
 }

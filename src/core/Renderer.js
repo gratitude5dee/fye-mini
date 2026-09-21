@@ -1,6 +1,6 @@
 import {
   WebGLRenderer,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   ACESFilmicToneMapping,
   SRGBColorSpace
 } from 'three';
@@ -14,7 +14,9 @@ export class Renderer {
   constructor(canvas) {
     this.gl = new WebGLRenderer({
       canvas,
-      antialias: true,
+      // Spark performs its own Gaussian accumulation. MSAA does not improve
+      // splats and costs a material amount of fill rate on world scenes.
+      antialias: false,
       powerPreference: 'high-performance',
       stencil: false,
       alpha: false,
@@ -23,11 +25,12 @@ export class Renderer {
       preserveDrawingBuffer: true
     });
 
+    this.maxPixelRatio = 1.75;
     this.gl.setPixelRatio(this.targetPixelRatio());
     this.gl.setSize(window.innerWidth, window.innerHeight, false);
 
     this.gl.shadowMap.enabled = true;
-    this.gl.shadowMap.type = PCFSoftShadowMap;
+    this.gl.shadowMap.type = PCFShadowMap;
     // The frame renders the scene several times (depth prepass, distortion,
     // contact shadows, main pass). Automatic updates would rebuild the cascade
     // shadow maps for every one of them, so the app flags a single update per
@@ -38,6 +41,7 @@ export class Renderer {
     // these two properties from the renderer.
     this.gl.toneMapping = ACESFilmicToneMapping;
     this.gl.toneMappingExposure = settings.post.exposure;
+    this.worldVisualMode = false;
     this.gl.outputColorSpace = SRGBColorSpace;
 
     this.gl.info.autoReset = false;
@@ -47,7 +51,21 @@ export class Renderer {
 
   /** Cap the pixel ratio: 4K + heavy transparency is not worth the fill rate. */
   targetPixelRatio() {
-    return Math.min(window.devicePixelRatio || 1, 1.75);
+    return Math.min(window.devicePixelRatio || 1, this.maxPixelRatio);
+  }
+
+  /**
+   * Lower (or restore) the cap. Fill rate is the cheapest thing to give back on
+   * a stage this transparent, so it is the first thing the quality ladder takes.
+   */
+  setPixelRatioCap(cap) {
+    if (this.maxPixelRatio === cap) return;
+    this.maxPixelRatio = cap;
+    const next = this.targetPixelRatio();
+    if (this.gl.getPixelRatio() === next) return;
+    this.gl.setPixelRatio(next);
+    this.gl.setSize(window.innerWidth, window.innerHeight, false);
+    this._onResize?.(window.innerWidth, window.innerHeight, next);
   }
 
   get domElement() {
@@ -73,7 +91,16 @@ export class Renderer {
 
   /** Called once per frame before rendering so the editor can drive exposure. */
   syncSettings() {
-    this.gl.toneMappingExposure = settings.post.exposure;
+    // Marble splats already carry baked, high-key lighting. The cinematic
+    // ritual stage can afford a brighter exposure, but applying it to that
+    // source clips pale stone and water into a milky blur.
+    this.gl.toneMappingExposure = this.worldVisualMode
+      ? Math.min(settings.post.exposure, 0.72)
+      : settings.post.exposure;
+  }
+
+  setWorldVisualMode(active) {
+    this.worldVisualMode = Boolean(active);
   }
 
   dispose() {

@@ -1,5 +1,6 @@
 import { App } from './core/App.js';
 import { LoadingScreen } from './ui/HUD.js';
+import { read as readPreferences } from './state/preferences.js';
 
 /**
  * Entry point.
@@ -12,12 +13,19 @@ const canvas = document.getElementById('viewport');
 export async function boot() {
   if (window.app) return window.app;
   try {
-    const app = new App(canvas);
-    await app.load();
-
-    // Handy for poking at the scene from the console.
+    // A returning visitor gets the same opening, briskly. Read here rather
+    // than inside the director so `src/` keeps one door onto storage.
+    const preferences = readPreferences();
+    const returning = preferences.introSeen;
+    // The element they last held, so the loading sigil is their mark in their
+    // colour. First visit gets the default, which is what the stage opens on.
+    const app = new App(canvas, { returning, element: preferences.element });
+    // Handy for poking at the scene from the console. Assigned before the load
+    // so it is reachable while assets are still streaming.
     window.app = app;
-    window.dispatchEvent(new CustomEvent('grimoire:ready', { detail: { app } }));
+    // `grimoire:ready` is dispatched by `App.load()` the moment the stage is
+    // playable, not here — see the comment at that dispatch.
+    await app.load();
     return app;
   } catch (error) {
     console.error('[boot] failed to start', error);

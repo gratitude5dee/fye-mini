@@ -26,6 +26,10 @@ export const EXACT_SPELL_RANGES = Object.freeze(Object.fromEntries([
   ...define([0.01, 1, 0.01], 'trail.height'),
   ...define([0.5, 40, 0.1], 'fire.speed', 'water.speed', 'earth.speed', 'air.speed', 'fire.lightRadius', 'water.lightRadius', 'earth.lightRadius', 'air.lightRadius'),
   ...define([0.2, 10, 0.1], 'fire.lifetime', 'water.lifetime', 'earth.lifetime', 'air.lifetime'),
+  // Registered under the public `air.*` spelling: EXACT_SPELL_RANGES is keyed by
+  // public paths and `enginePath()` maps `air.` to `wind.` on the way in.
+  ...define([2, 40, 0.5], 'fire.range', 'water.range', 'earth.range', 'air.range'),
+  ...define([0.2, 8, 0.1], 'fire.minRange', 'water.minRange', 'earth.minRange', 'air.minRange'),
   ...define([0, 8, 0.01], 'fire.flightHeight', 'fire.flameSpeed', 'air.swirlSpeed'),
   ...define([1, 5, 0.01], 'fire.headSize', 'water.headSize'),
   ...define([1, 6, 0.01], 'fire.flameHeight'),

@@ -34,6 +34,20 @@ export class PresetManager {
     }
   }
 
+  /**
+   * Note the last preset used.
+   *
+   * Guarded like `_write`: the two call sites wrote straight through, so a full
+   * quota threw out of `save` and `load` and took the editor with it.
+   */
+  _remember(name) {
+    try {
+      localStorage.setItem(LAST_KEY, name);
+    } catch (error) {
+      console.warn('[PresetManager] could not note the last preset', error);
+    }
+  }
+
   get names() {
     return Object.keys(this.presets).sort();
   }
@@ -46,7 +60,7 @@ export class PresetManager {
     if (!name) return false;
     this.presets[name] = snapshotSettings();
     this._write();
-    localStorage.setItem(LAST_KEY, name);
+    this._remember(name);
     return true;
   }
 
@@ -54,7 +68,7 @@ export class PresetManager {
     const preset = this.presets[name];
     if (!preset) return false;
     applySettings(preset);
-    localStorage.setItem(LAST_KEY, name);
+    this._remember(name);
     return true;
   }
 

@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Original water martial artist silhouette">
-  <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#63d7e8"/><stop offset=".48" stop-color="#12658a"/><stop offset="1" stop-color="#071b36"/></linearGradient><filter id="b"><feGaussianBlur stdDeviation="12"/></filter></defs>
-  <rect width="1600" height="900" fill="url(#bg)"/><g fill="none" stroke="#dffcff" opacity=".75"><path d="M-40 560q195-176 390 0t390 0 390 0 390 0 390 0" stroke-width="42" filter="url(#b)"/><path d="M-40 590q195-176 390 0t390 0 390 0 390 0 390 0" stroke-width="17"/></g>
-  <g fill="#061a2d"><circle cx="830" cy="212" r="58"/><path d="M778 284q88-42 153 20l31 213-108 26-22-143-79 155-118-55z"/><path d="M787 353 580 280l-31 81 239 94M912 350l210 116-39 78-218-96M733 517 564 748l98 26 139-182M886 528l136 222 93-49-116-217z"/></g>
-</svg>
