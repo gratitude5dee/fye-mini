@@ -210,6 +210,12 @@ three events — `start`, `cast` and `cancel` — and `App` listens to **only `c
 - `update(dt, isRiding)` returns early while riding.
 - `tests/caster-first-contract.test.mjs` asserts each of the five names appears as a quoted literal.
   **Adding gestures is safe; renaming or removing one breaks the test.**
+- **`setGesture(gesture, { element, intensity })` accepts an `intensity` that nothing ever passes.** All seven call
+  sites in `src/core/App.js` (`:110`, `:114`, `:118`, `:127`, `:132`, `:191`, `:197`) pass only `{ element }`.
+  `CasterPerformance` clamps it to `[0.35, 1.6]` and multiplies it into `strength`, which scales **every one of the
+  eight arm and hand joints**. That is a finished, clamped, per-cast power channel for the caster's body language,
+  wired end to end and never used. §8's trace fidelity should drive it: a true sigil makes the caster commit, a
+  sloppy one makes them hesitate, with no new animation code at all.
 
 ### Dead / dormant code (verified by grep, not assumed)
 - `src/ui/HUD.js` queries `.element-card`, `.mode-card`, `[data-stat="fps|particles|calls|abilities"]`, `.hud__help`,
@@ -228,10 +234,12 @@ three events — `start`, `cast` and `cancel` — and `App` listens to **only `c
 - `src/ui/glyphs.js` — **no importers anywhere.** Dead.
 - `src/world/ContactShadows.js` — **no importers anywhere.** Dead, even though `src/core/Layers.js` documents a
   `CONTACT` layer for it and `settings.environment.contactShadow` (0.55) exists.
-- Reachable but unsurfaced: `src/animation/SittingPose.js` (constructed by `CharacterController:118`, reachable only
-  by setting `settings.character.pose = 'sitting'`, which no UI does), `src/ui/PresetManager.js` (used by `Editor`),
-  `src/effects/AirScooter.js` (used by `WalkController`). `src/materials/DistortionMaterial.js` is live in fire,
-  water and wind abilities.
+- **`src/animation/SittingPose.js` is live, not dormant — do not delete it.** `CharacterController:118`
+  constructs it and `:119` takes the rig's `forwardAxis` from `this.sitting.forward`, so it is load-bearing even
+  when nobody is riding. `WalkController:203` then calls `setPose('sitting', …)` for the ride itself. It is the
+  ride pose and the forward-axis source, and 451 lines of it run on every boot.
+- Reachable but unsurfaced: `src/ui/PresetManager.js` (used by `Editor`), `src/effects/AirScooter.js` (used by
+  `WalkController`). `src/materials/DistortionMaterial.js` is live in fire, water and wind abilities.
 - `public/intro/{fire,water,earth,wind}-fallback.svg` (4 KB each) are referenced nowhere.
 - `App._handleAction` has cases only for `nextElement`, `prevElement`, `toggleEditor`, `clear`, `togglePause`.
   `InputManager` also emits `toggleHelp` (H), `togglePose` (T) and `toggleMode` (M), which fall through to
@@ -631,6 +639,10 @@ reference does. **64 squared distances per frame at `MAX_CONCURRENT` = 8 against
 
 5. **The returning visitor gets a flash of intro then a cut**, because `introVisible` initialises to `true` and is
    corrected one effect later.
+
+**The arithmetic is the argument.** The panel wipes finish at 850 ms, the labels at 880 ms, and nothing after that
+is new information — `panel-drift` and `panel-sheen` simply loop. Roughly 2.75 s of content is stretched across
+7600 ms, so **about 64 % of the intro's runtime is dead air** laid over a stage that is already rendering.
 
 #### What it costs to fix
 `public/intro/elemental-montage.png` (2.6 MB) and `output/imagegen/elemental-montage-source.png` (2.6 MB) plus
@@ -1040,7 +1052,14 @@ reset (§6).
 
 ### Accessibility, concretely
 - Both side sheets are `role="dialog" aria-modal="true"` with **no focus trap, no Escape handler, no focus
-  restoration, and no `inert` on the background**. All four are required, and all four are ~30 lines.
+  restoration, and no `inert` on the background**. This is provable by absence:
+  ```sh
+  grep -rnE "Escape|keydown|\.focus\(|inert|tabIndex" app --include="*.tsx" --include="*.ts"
+  # zero hits
+  ```
+  So the product ships two dialogs that announce themselves as modal to assistive technology while blocking
+  nothing, trapping nothing and restoring nothing — and **both can be open at once**, since `handsOpen` and
+  `workshopOpen` are independent booleans. All four fixes are roughly thirty lines together.
 - Every verb needs a key. Today `H`, `T` and `M` are emitted and have no handler in `App._handleAction`.
 - Contrast: HUD ink over a dark stage is fine, but ink over a **bright VFX bloom** is not. Every floating label
   needs its own scrim, not a text-shadow.
