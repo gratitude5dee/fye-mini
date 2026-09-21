@@ -6,6 +6,28 @@
 
 ---
 
+## Build status
+
+Implemented on this branch, verified by `npm test` (30 contract tests) and by driving the real app in a browser:
+
+| Phase | State |
+|---|---|
+| **P0 Foundations** | **Built.** Event contract, preferences with the v2 migration, the session store, the `rite` settings block, the dead-code removal, and all three live bugs. |
+| **P1 Intro** | **Built.** `IntroDirector` fades the renderer's own grade and drives the rig's settings, gated on readiness. The 2.58 MiB montage is deleted. |
+| **P4 The Rite** | **Built.** Generated layouts, the stroke resolver, the Ward, and the session wired into the frame loop. |
+| **P5 Onboarding** | **Partly built.** The ghost line ships and retires after one solve. The trust ladder and the full contextual guide do not. |
+| **P7a Tracker** | **Built.** All four anti-misfire guards, the lost state, the ratio-based extension, and the throttled state channel. |
+| **P7b Continuous axes** | **Built.** Lift and spread, end to end. Measured: earth flat peaks at 0.00 m, earth with a raised hand at 2.40 m, fire flat at 1.29 m, against a 1.20 m hazard clearance. |
+| P3 UI system | Not built. The token block, the HUD ownership migration and the three breakpoints are still as specified. |
+| P6 Polish | Not built, except the photosensitivity cap, which shipped in P0 as a safety issue. |
+| P7c Two hands | Not built. Needs the handedness mirror fix (§11, hazard 6) and stroke identity (hazard 7) first. |
+| P7d Guide and trust ladder | Not built. The hand sheet mirrors the tracker's live state, but the contextual per-slot guide does not exist. |
+
+**The prototype gate in §14 was never run.** Nobody has watched five people play this. Everything below is still
+the plan; the table above is what exists.
+
+---
+
 ## 0. How to use this document
 
 Read sections 1 through 4 before touching code. They are the diagnosis and the ground truth, and several
