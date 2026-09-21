@@ -79,6 +79,9 @@ web_modules/
 .env.production.local
 .env.local
 .wrangler/
+.vinext/
+tmp/
+.DS_Store
 /Standing Idle.fbx
 /goal.md
 

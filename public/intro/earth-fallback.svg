@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Original stone martial artist silhouette">
+  <defs><linearGradient id="bg" y2="1"><stop stop-color="#d2ad74"/><stop offset=".52" stop-color="#70513b"/><stop offset="1" stop-color="#191713"/></linearGradient><filter id="s"><feGaussianBlur stdDeviation="8"/></filter></defs>
+  <rect width="1600" height="900" fill="url(#bg)"/><g fill="#f1d19c" opacity=".68" filter="url(#s)"><path d="M0 790 170 565l165 225 149-312 180 312 176-374 202 374 176-238 182 238z"/><circle cx="1050" cy="258" r="112"/></g>
+  <g fill="#171411"><circle cx="699" cy="215" r="60"/><path d="M645 288q85-45 163 15l66 220-106 31-48-142-49 180-130-21z"/><path d="M652 363 413 430l26 88 238-65M804 360l203-150 55 70-194 166M620 575 440 764l97 41 151-158M782 582l167 179 87-58-142-193z"/></g>
+</svg>

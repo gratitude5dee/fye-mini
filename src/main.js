@@ -28,3 +28,8 @@ export async function boot() {
 }
 
 void boot();
+
+// A page unload is the one time the renderer must be torn down. Keeping this
+// outside the React island prevents development hot-reloads from repeatedly
+// disposing and rebuilding the WebGL context mid-session.
+window.addEventListener('pagehide', () => window.app?.dispose?.(), { once: true });

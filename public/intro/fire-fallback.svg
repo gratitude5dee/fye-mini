@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Original fire martial artist silhouette">
+  <defs><radialGradient id="bg"><stop stop-color="#b72a12"/><stop offset=".55" stop-color="#4c1010"/><stop offset="1" stop-color="#130a0b"/></radialGradient><filter id="g"><feGaussianBlur stdDeviation="18"/></filter></defs>
+  <rect width="1600" height="900" fill="url(#bg)"/><g fill="#ffbd54" filter="url(#g)" opacity=".65"><circle cx="1190" cy="350" r="125"/><path d="M240 770q210-160 350-20t350-30q190-150 400-65v245H240z"/></g>
+  <g fill="none" stroke="#ffd27a" stroke-width="24" stroke-linecap="round" opacity=".88"><path d="M1110 500c205-95 246-305 127-400"/><path d="M1120 492c256 15 347-114 309-249"/></g>
+  <g fill="#160c0b"><circle cx="740" cy="238" r="61"/><path d="M683 310q87-48 165 20l92 205-94 39-72-128-53 189-124-10z"/><path d="M675 370 468 452l37 78 218-75M849 381l222-159 57 65-185 176M618 606l-160 159 83 51 180-145M810 593l146 196 91-39-122-205z"/></g>
+</svg>

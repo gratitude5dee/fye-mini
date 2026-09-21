@@ -190,7 +190,7 @@ function bsonSchemaFor(template, basePath = '') {
   return { bsonType: 'object', required, additionalProperties: false, properties };
 }
 
-/** The Atlas validator mirrors the public snapshot tree and rejects forged keys. */
+/** The local validator mirrors the public snapshot tree and rejects unknown keys. */
 export function spellSettingsBsonSchema() {
   return {
     bsonType: 'object',

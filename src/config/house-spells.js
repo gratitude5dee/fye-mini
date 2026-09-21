@@ -1,16 +1,5 @@
-import { deriveGenome, snapshotSpellSettings, validateSpellSettings } from './spell-contract.js';
-import { housePortraitUrl } from './house-portraits.js';
-
-export const HOUSE_PALETTE = Object.freeze({
-  fire: ['#ff6a3c', '#ffbf58', '#5b170f'],
-  water: ['#3fb8c9', '#c8f3fb', '#164b70'],
-  earth: ['#a08a63', '#d5b78c', '#35291e'],
-  air: ['#bfe8df', '#f3fffd', '#41666a'],
-});
-
-// This is the source of truth used by both the Atlas bootstrap and the
-// intentional offline shelf. These pages are visual snapshots, not twelve
-// aliases of the renderer defaults.
+// Deterministic local presets. These alter only the active renderer settings;
+// they are neither written to a service nor shared with another visitor.
 export const HOUSE_SEED_SPELLS = Object.freeze([
   { slug: 'cinderwake', name: 'Cinderwake', element: 'fire', incantation: 'a low, hungry flame that hugs the ground and detonates twice', lore: 'It runs close to the floor, red at its teeth and gold at its heart, following every curve with a starving patience. The first strike leaves a seam of warming ash; the second arrives just as the embers settle, opening the darkness like a held door.', tags: ['hungry', 'low', 'double-strike'], settingsPatch: { 'global.speed': 1.18, 'global.particleSize': 0.68, 'global.turbulence': 2.8, 'global.glow': 1.8, 'fire.speed': 12.4, 'fire.lifetime': 2, 'fire.flameWidth': 0.28, 'fire.flameHeight': 1.5, 'fire.flameTurbulence': 4.4, 'fire.glow': 3.6, 'fire.streamLength': 11.5, 'fire.emberRate': 285, 'fire.explosionSize': 4.8 } },
   { slug: 'sun-petal', name: 'Sun-Petal', element: 'fire', incantation: 'a slow blossom of white-gold fire that opens at the end of the path', lore: 'A patient spark travels slowly enough to gather the color of everything it passes. At the end of the path it opens into white-gold petals, neither violent nor shy, and holds its warm light for a breath before folding quietly back into the air.', tags: ['white-gold', 'slow', 'blossom'], settingsPatch: { 'global.speed': 0.58, 'global.particleSize': 1.55, 'global.turbulence': 0.8, 'global.glow': 3.65, 'fire.speed': 5.8, 'fire.lifetime': 5.4, 'fire.flameWidth': 0.8, 'fire.flameHeight': 3.8, 'fire.flameTurbulence': 1.1, 'fire.glow': 7.2, 'fire.streamLength': 14, 'fire.emberRate': 80, 'fire.explosionSize': 8.4 } },
@@ -25,35 +14,3 @@ export const HOUSE_SEED_SPELLS = Object.freeze([
   { slug: 'whistling-door', name: 'Whistling Door', element: 'air', incantation: 'a slow wide vortex that ends in a pressure clap', lore: 'The air opens gradually into a wide pale doorway, turning on an invisible hinge with a low, clear whistle. At the end it closes in a pressure clap that rearranges dust, sleeves, and attention alike, leaving the room briefly aware of its own stillness.', tags: ['wide', 'vortex', 'pressure'], settingsPatch: { 'global.speed': 0.64, 'global.particleSize': 2.6, 'global.turbulence': 0.55, 'global.glow': 2.2, 'air.speed': 5.6, 'air.lifetime': 5.4, 'air.ribbonWidth': 3.6, 'air.ribbonLength': 18.5, 'air.spiralRadius': 2.8, 'air.vortexStrength': 4.3, 'air.turbulence': 0.4, 'air.glow': 3.8, 'air.tornadoHeight': 16 } },
   { slug: 'sky-lathe', name: 'Sky Lathe', element: 'air', incantation: 'a tight, fast helix that polishes the air white', lore: 'A tight helix climbs so fast that the center burns white, polishing the air into a narrow luminous column. It does not tear the sky; it burnishes it, lifting loose brightness along its spiral and leaving the stage cleaner, sharper, and briefly more awake.', tags: ['tight', 'fast', 'white'], settingsPatch: { 'global.speed': 2.25, 'global.particleSize': 0.7, 'global.turbulence': 3.65, 'global.glow': 4.35, 'air.speed': 31.5, 'air.lifetime': 2, 'air.ribbonWidth': 0.12, 'air.ribbonLength': 14.5, 'air.spiralRadius': 0.24, 'air.vortexStrength': 3.2, 'air.turbulence': 2.9, 'air.glow': 4.8, 'air.tornadoHeight': 12.8 } },
 ]);
-
-export function houseSpellSettings(settingsPatch) {
-  const settings = snapshotSpellSettings();
-  for (const [path, value] of Object.entries(settingsPatch)) {
-    const [section, key] = path.split('.');
-    if (!section || !key || !Object.hasOwn(settings, section) || !Object.hasOwn(settings[section], key)) {
-      throw new Error(`Unknown House spell setting: ${path}`);
-    }
-    settings[section][key] = value;
-  }
-  const checked = validateSpellSettings(settings);
-  if (!checked.ok) throw new Error(`Invalid House spell settings: ${checked.issues.join('; ')}`);
-  return checked.value;
-}
-
-export function houseSpellForClient(seed) {
-  const settings = houseSpellSettings(seed.settingsPatch);
-  const imageUrl = housePortraitUrl(seed.slug);
-  if (!imageUrl) throw new Error(`Missing House portrait: ${seed.slug}`);
-  return {
-    ...seed,
-    settings,
-    genome: deriveGenome(settings, seed.element),
-    // This exact immutable path is also stored by the Atlas bootstrap. The
-    // offline shelf and a hydrated Atlas feed therefore render the same House
-    // art rather than falling back to a generic elemental sigil.
-    portrait: { imageUrl, palette: HOUSE_PALETTE[seed.element] },
-    stats: { casts: 0, remixes: 0 },
-    lineage: { parentId: null, rootId: seed.slug, depth: 0 },
-    creator: { handle: 'The First Binder' },
-  };
-}

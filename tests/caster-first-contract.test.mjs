@@ -1,0 +1,52 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { access, readFile } from 'node:fs/promises';
+
+const text = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+
+test('the local stage loads a bundled caster, HDR, and all five performance phases', async () => {
+  const [app, performance, character, plugin] = await Promise.all([
+    text('../src/core/App.js'), text('../src/animation/CasterPerformance.js'), text('../src/animation/CharacterController.js'), text('../build/sites-vite-plugin.js')
+  ]);
+
+  assert.match(app, /AssetLoader/);
+  assert.match(app, /CharacterController/);
+  assert.match(app, /WalkController/);
+  assert.match(app, /CasterPerformance/);
+  assert.match(character, /Standing Idle\.fbx/);
+  assert.match(app, /spruit_sunrise\.hdr/);
+  assert.match(app, /this\.character\.update\(dt\)/);
+  assert.match(app, /this\.walk\?\.update\(dt\)/);
+  for (const gesture of ['idle', 'gather', 'aim', 'release', 'recovery']) assert.match(performance, new RegExp(`'${gesture}'`));
+  assert.match(performance, /setGesture\(/);
+  assert.doesNotMatch(plugin, /Standing Idle\.fbx/);
+  assert.doesNotMatch(plugin, /spruit_sunrise\.hdr/);
+});
+
+test('hand tracking remains direct-click, local, mirrored, and fallback-safe', async () => {
+  const [hand, stage] = await Promise.all([text('../src/input/HandInput.js'), text('../app/GrimoireStage.tsx')]);
+  for (const term of ['getUserMedia', 'delegate: \'GPU\'', 'delegate: \'CPU\'', '_createMirror', 'HAND_CONNECTIONS', 'getTracks().forEach']) assert.match(hand, new RegExp(term.replace(/[()]/g, '\\$&')));
+  assert.match(hand, /Camera permission or hand tracking was unavailable/);
+  assert.match(stage, /emit\('grimoire:attune'\)/);
+  assert.match(stage, /Mobile never requests your camera/);
+  assert.match(stage, /Hold an open palm until the ring fills/);
+});
+
+test('the public interface is local-only and includes a motion-safe four-panel intro', async () => {
+  const [stage, css, app, packageJson, layout] = await Promise.all([
+    text('../app/GrimoireStage.tsx'), text('../app/grimoire-stage.css'), text('../src/core/App.js'), text('../package.json'), text('../app/layout.tsx')
+  ]);
+  assert.doesNotMatch(stage, /fetch\(/);
+  assert.doesNotMatch(app, /fetch\(/);
+  assert.doesNotMatch(packageJson, /mongodb/);
+  assert.doesNotMatch(layout, /next\/headers|generateMetadata/);
+  for (const panel of ['fire-fallback.svg', 'water-fallback.svg', 'earth-fallback.svg', 'wind-fallback.svg']) {
+    assert.match(stage, new RegExp(panel.replace('.', '\\.')));
+    await access(new URL(`../public/intro/${panel}`, import.meta.url));
+  }
+  assert.match(stage, /Skip intro/);
+  assert.match(css, /prefers-reduced-motion/);
+  assert.match(stage, /local-preferences/);
+  await assert.rejects(access(new URL('../app/api/casts/route.ts', import.meta.url)));
+  await assert.rejects(access(new URL('../gateway/server.mjs', import.meta.url)));
+});

@@ -42,6 +42,7 @@ export class HandInput {
     this._canvas = null;
     this._context = null;
     this._filter = null;
+    this._delegate = null;
     // Starting a camera and compiling the tracker are both asynchronous. Keep
     // one owner for that work so a double-click cannot acquire two streams,
     // and make a pending start cancellable when the visitor skips the ritual.
@@ -64,7 +65,7 @@ export class HandInput {
 
   async _start(attempt) {
     if (!navigator.mediaDevices?.getUserMedia) {
-      this.onStatus?.('The spirits accept a humbler wand.');
+      this.onStatus?.('Camera input is not available here. Pointer casting is ready.', 'unavailable');
       return;
     }
 
@@ -97,6 +98,7 @@ export class HandInput {
           ...options,
           baseOptions: { ...options.baseOptions, delegate: 'GPU' }
         });
+        this._delegate = 'GPU';
       } catch (gpuError) {
         // GPU acceleration is preferable, but a browser with an unavailable
         // WebGL delegate can still track hands accurately on the CPU.
@@ -106,6 +108,7 @@ export class HandInput {
           ...options,
           baseOptions: { ...options.baseOptions, delegate: 'CPU' }
         });
+        this._delegate = 'CPU';
       }
       if (attempt !== this._startAttempt) {
         this._landmarker?.close?.();
@@ -115,12 +118,12 @@ export class HandInput {
       this.active = true;
       this.lastFrameAt = performance.now();
       this._loop();
-      this.onStatus?.('Your hand is read here, and nowhere else.');
+      this.onStatus?.(`Hand tracking is ready (${this._delegate}). Video stays in this browser.`, 'ready');
     } catch (error) {
       if (attempt !== this._startAttempt) return;
       console.warn('[HandInput] camera or tracker unavailable', error);
       this.stop();
-      this.onStatus?.('The spirits accept a humbler wand.');
+      this.onStatus?.('Camera permission or hand tracking was unavailable. Pointer casting is ready.', 'fallback');
     }
   }
 
@@ -184,7 +187,7 @@ export class HandInput {
       this.lastFrameAt = now;
       this.frameCount = 0;
       if (fps < 15) {
-        this.onStatus?.('Tracking slowed. Your mouse is ready.');
+        this.onStatus?.('Tracking slowed, so pointer casting is ready.', 'fallback');
         this.stop();
         return;
       }
@@ -262,7 +265,7 @@ export class HandInput {
     if (next && !this.poseTriggered && now - this.poseStartedAt >= POSE_HOLD_MS) {
       this.poseTriggered = true;
       this.onElement?.(next);
-      this.onStatus?.(`${next === 'wind' ? 'Gale' : next[0].toUpperCase() + next.slice(1)} answers your pose.`);
+      this.onStatus?.(`${next === 'wind' ? 'Gale' : next[0].toUpperCase() + next.slice(1)} answers your pose.`, 'tracking');
     }
   }
 
@@ -277,7 +280,7 @@ export class HandInput {
     if (next && !this.dockTriggered && now - this.dockStartedAt >= DOCK_DWELL_MS) {
       this.dockTriggered = true;
       this.onElement?.(next === 'air' ? 'wind' : next);
-      this.onStatus?.(`${next[0].toUpperCase() + next.slice(1)} rests in your hand.`);
+      this.onStatus?.(`${next[0].toUpperCase() + next.slice(1)} rests in your hand.`, 'tracking');
     }
   }
 
@@ -335,11 +338,16 @@ export class HandInput {
     this._stream?.getTracks().forEach((track) => track.stop());
     this._stream = null;
     this._mirror?.remove();
+    // Hot reloads and interrupted browser permission flows can leave a mirror
+    // from an instance that no longer owns a stream. It never needs to survive
+    // a stop: remove any such orphan so pointer fallback is visually clean.
+    document.querySelectorAll('.hand-mirror').forEach((mirror) => mirror.remove());
     this._mirror = null;
     this._video = null;
     this._canvas = null;
     this._context = null;
     this._filter = null;
+    this._delegate = null;
   }
 
   dispose() {

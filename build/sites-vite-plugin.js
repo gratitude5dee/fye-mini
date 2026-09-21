@@ -25,15 +25,6 @@ export function sites() {
       const outputDirectory = resolve(root, 'dist', '.openai');
       const hostingConfig = resolve(root, '.openai', 'hosting.json');
 
-      // The restored foundation keeps these source assets for its other demo
-      // modes, but the Living Grimoire neither imports nor needs them. Remove
-      // only their generated copies so the Sites artifact stays first-person,
-      // procedural, and roughly 8 MB lighter without touching user files.
-      await Promise.all([
-        rm(resolve(root, 'dist', 'client', 'models', 'Standing Idle.fbx'), { force: true }),
-        rm(resolve(root, 'dist', 'client', 'hdri', 'spruit_sunrise.hdr'), { force: true })
-      ]);
-
       await rm(outputDirectory, { recursive: true, force: true });
       await mkdir(outputDirectory, { recursive: true });
       if (await exists(hostingConfig)) {

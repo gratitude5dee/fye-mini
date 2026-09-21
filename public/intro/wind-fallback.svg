@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Original wind martial artist silhouette">
+  <defs><radialGradient id="bg"><stop stop-color="#dcfffb"/><stop offset=".4" stop-color="#5abbb9"/><stop offset="1" stop-color="#0a2930"/></radialGradient><filter id="w"><feGaussianBlur stdDeviation="10"/></filter></defs>
+  <rect width="1600" height="900" fill="url(#bg)"/><g fill="none" stroke="#efffff" stroke-linecap="round" opacity=".75"><path d="M-60 510C250 220 460 690 770 425S1280 230 1660 460" stroke-width="44" filter="url(#w)"/><path d="M-60 510C250 220 460 690 770 425S1280 230 1660 460" stroke-width="12"/><path d="M60 740c340-170 590 50 842-112s432-75 638-202" stroke-width="20"/></g>
+  <g fill="#09242a"><circle cx="834" cy="229" r="57"/><path d="M777 300q91-47 163 16l79 206-103 42-61-133-60 174-122-20z"/><path d="M780 369 576 185l-67 54 218 228M915 374l250 27-5 88-235-28M724 577 520 725l80 66 173-126M889 579l181 154 72-72-159-163z"/></g>
+</svg>
