@@ -189,10 +189,15 @@ dispatches `grimoire:cast-complete`.
   `[data-blurb]`, `.hud__elements`. React renders only `<div id="hud" className="hud" aria-live="polite" />` with no
   children. Therefore `setElement`, `setMode`, `toggleHelp` and the entire stats readout are **inert**; only
   `showToast` works, because `root.innerHTML` writes the toast node itself.
-- **Two competing stylesheets ship at once.** `app/globals.css:1` does `@import '../src/ui/styles.css'` — 437 lines
-  of a "standalone UI shell" with its own token set (`--ui-bg`, `--ui-bg-solid`, `--ui-border`, `--ui-text`,
-  `--ui-text-dim`, `--ui-accent`) styling `.element-card` / `.mode-card` / `.hud__*` markup that React never renders.
-  `app/grimoire-stage.css` then defines its own unrelated values inline. Any token system must resolve this first.
+- **Two competing stylesheets ship at once, and one of them is load-bearing.** `app/globals.css:1` does
+  `@import '../src/ui/styles.css'` — 437 lines of a "standalone UI shell" with its own token set (`--ui-bg`,
+  `--ui-bg-solid`, `--ui-border`, `--ui-text`, `--ui-text-dim`, `--ui-accent`). Its `.element-card`,
+  `.mode-card` and `.hud__elements` / `.hud__modes` / `.hud__stats` / `.hud__help` rules style markup React
+  never renders, so those are dead. **But `.loader`, `.loader__inner`, `.loader__sigil`, `.loader__title`,
+  `.loader__bar`, `.loader__status`, `.sigil`, `.sigil--fire|water|earth|air` and `.lil-gui` are live** — React
+  renders every one of those classes, and `app/grimoire-stage.css` contains **zero** references to `loader` or
+  `sigil`. **Deleting `src/ui/styles.css` would leave the loading screen and the editor completely unstyled.**
+  Split it, do not delete it.
 - `src/ui/glyphs.js` — **no importers anywhere.** Dead.
 - `src/world/ContactShadows.js` — **no importers anywhere.** Dead, even though `src/core/Layers.js` documents a
   `CONTACT` layer for it and `settings.environment.contactShadow` (0.55) exists.
@@ -518,8 +523,10 @@ fye-mini's `RibbonGeometry.build()` makes the reach ring almost free.
 4. **Four events, not three**: `arm`, `cancel`, **`reject`** (fired by `confirm()` when the target is inside
    `minRange`) and `cast(origin, direction, distance)`. `reject` is what drives the red `colorInvalid` state and is
    the affordance fye-mini most obviously lacks — today an unusable input produces nothing at all.
-5. **`get facing()`** returns the yaw the caster should turn to. fye-mini's `CharacterController.setFacing(0)` is
-   currently called once at load and never again.
+5. **`get facing()`** returns the yaw the caster should turn to. fye-mini has `CharacterController.setFacing(yaw)`
+   (`src/animation/CharacterController.js:235`), but casting never uses it: `App.load()` calls `setFacing(0)` once
+   (`src/core/App.js:254`) and only `WalkController` drives it afterwards, during a ride
+   (`src/animation/WalkController.js:358`). **The caster never turns to face what they are casting at.**
 6. **Clamp with floors**: `MathUtils.clamp(raw, Math.max(0.2, c.minRange), Math.max(0.4, c.range))` — the floors
    stop a mis-tuned settings block from producing a zero-length cast.
 7. **One reveal envelope for both shapes**, stepped by `dt / revealTime` and clamped, with only one indicator
@@ -575,15 +582,17 @@ reference does. **64 squared distances per frame at `MAX_CONCURRENT` = 8 against
 #### The five problems, ranked
 
 1. **The intro hides the product while the product loads, and competes with it for bandwidth.**
-   `#viewport` is `position: fixed; inset: 0` with no `z-index`; `.intro` sits at `z-index: 100` with an opaque
-   background. For up to 7.6 s the WebGL stage renders every frame, fully composited, and is never seen. Meanwhile
-   the 2.6 MB montage PNG is fetched in parallel with the 5.7 MB HDR and the 2.3 MB FBX — the intro makes the load
-   it is covering for measurably slower.
+   `#viewport` is `position: fixed; inset: 0` with no `z-index` (`app/grimoire-stage.css:3`); `.intro` sits at
+   `z-index: 100` with an opaque `#08090a` background (`:24`). For up to 7.6 s the WebGL stage renders every frame,
+   fully composited, and is never seen. Meanwhile the 2.6 MB montage PNG is fetched in parallel with the 5.7 MB HDR
+   and the 2.3 MB FBX — the intro makes the load it is covering for measurably slower.
 
 2. **The timer and the load are unrelated.** `AssetLoader.onProgress` drives `LoadingScreen.setProgress` through real
    milestones (0.05 "Calling the caster", ramp to 0.53, 0.62 "Warming the elements", 0.85 "Setting the performance",
-   1.0 "Ready"), and the `#loader` element renders all of it — underneath the overlay, invisible. The visitor
-   instead watches a fixed 7600 ms countdown that can finish before the HDR does or long after.
+   1.0 "Ready"), and the `#loader` element renders all of it — invisibly. Note the exact mechanism, because it
+   matters if you reorder anything: **`.loader` is also `z-index: 100`** (`src/ui/styles.css:48-51`), the same as
+   `.intro`. They tie, and `.intro` wins only because React renders it *after* the surface `div`. The visitor
+   watches a fixed 7600 ms countdown that can finish before the HDR does or long after.
 
 3. **It is a picture of the game, not the game.** The stage can already cast fire, water, earth and wind along a
    scripted curve with a character performing gather → aim → release → recovery. The intro instead shows a raster
@@ -827,9 +836,20 @@ control at the foot of the Workshop, not buried in a keyboard chord.
 
 ### First, resolve the two-stylesheet problem
 `app/globals.css:1` imports `src/ui/styles.css` — 437 lines defining `--ui-bg`, `--ui-bg-solid`, `--ui-border`,
-`--ui-text`, `--ui-text-dim`, `--ui-accent` and styling `.element-card`, `.mode-card`, `.hud__*` markup that React
-**never renders**. `app/grimoire-stage.css` then hard-codes its own unrelated values. Two token systems ship; one
-styles nothing. Delete the import and the file, and hoist a single token block.
+`--ui-text`, `--ui-text-dim` and `--ui-accent`, while `app/grimoire-stage.css` hard-codes its own unrelated
+values. Two token systems ship.
+
+**Do not delete `src/ui/styles.css`.** It is half dead and half load-bearing, and the split is not where you would
+guess. Its `.element-card`, `.mode-card`, `.hud__elements`, `.hud__modes`, `.hud__stats` and `.hud__help` rules
+style markup React never renders. Its `.loader`, `.loader__inner`, `.loader__sigil`, `.loader__title`,
+`.loader__bar`, `.loader__status`, `.sigil`, `.sigil--fire|water|earth|air` and `.lil-gui` rules are the **only**
+styling those elements have — `app/grimoire-stage.css` contains zero references to `loader` or `sigil`, and React
+renders all of them.
+
+The migration is therefore: move the loader, sigil and `lil-gui` rules into `app/grimoire-stage.css` (rewritten
+against the new tokens), delete the rest of the file along with the `@import`, and only then hoist the single
+`:root` token block below. **Verify the loading screen still looks right before deleting anything** — it is the
+first thing every visitor sees and the last thing anyone thinks to check.
 
 ### Tokens
 Dark-only, stated deliberately: the stage is a near-black ritual ground (`environment.backgroundColor #14181d`,
@@ -864,10 +884,21 @@ wins. `color-scheme: dark` is already set in `app/globals.css`.
   --g-z-world: 0; --g-z-hud: 30; --g-z-mirror: 45; --g-z-sheet: 60; --g-z-intro: 100;
 }
 ```
-Element hues are taken from `ELEMENTS` in `GrimoireStage.tsx`, which already disagrees with
-`settings.ELEMENT_META` (`earth #c6a372` vs `#b98a4d`, `air #bfe8df` vs `#c9f0ff`) and with
-`HandInput._setAccent` (`earth #a08a63`). **Three sources of truth for four colours.** Collapse to one exported
-constant both trees import.
+**Three sources of truth for four colours, and they disagree — including on the names.**
+
+| Source | Earth | Air | Earth label | Air label |
+|---|---|---|---|---|
+| `app/GrimoireStage.tsx:14-15` | `#c6a372` | `#bfe8df` | **Stone** | **Wind** |
+| `src/config/settings.js:573-574` (`ELEMENT_META`) | `#b98a4d` | `#c9f0ff` | **Earth** | **Air** |
+| `src/input/HandInput.js:146` (`_setAccent`) | `#a08a63` | `#bfe8df` | — | — |
+
+So the dock says "Stone" in one hue, the engine's metadata says "Earth" in another, and the hand mirror's ring
+glows in a third. Collapse to **one exported constant both trees import**, and pick the names deliberately: the
+public element id is already `air` while the engine key is `wind` (`enginePath()` bridges them), so the display
+name is a third, independent decision. Make it once.
+
+The per-element VFX colours (`fire.colorCore`, `water.colorInner`, `wind.lightColor`, …) are legitimately separate
+and stay in the element blocks — they describe the effect, not the interface.
 
 ### HUD ownership: React owns all chrome; `HUD.js` shrinks to a toast
 `src/ui/HUD.js` queries `.element-card`, `.mode-card`, `[data-stat]`, `.hud__help`, `[data-blurb]` and
@@ -1165,10 +1196,9 @@ error on write, and a corrupt/foreign value. Everything else in this update pers
   residue from the deleted API era. Keep `RANGES`, `SPELLWRIGHT_COLOR_PATHS`, `enginePath`. Keep `deriveGenome` and
   actually use it (§7).
 - `src/ui/glyphs.js` and `src/world/ContactShadows.js` — no importers anywhere.
-- `app/globals.css:1`'s `@import '../src/ui/styles.css'` — 437 lines styling `.element-card` / `.mode-card` /
-  `.hud__*` markup React never renders, shipping a second, conflicting token set (`--ui-bg`, `--ui-accent`, …)
-  alongside `app/grimoire-stage.css`. Delete the import and the file; fold anything worth keeping into the token
-  block in §7.
+- `src/ui/styles.css` — **partially**. Its `.element-card` / `.mode-card` / `.hud__*` rules are dead and its
+  `--ui-*` token set conflicts with `app/grimoire-stage.css`, but its loader, sigil and `lil-gui` rules are the
+  only styling the loading screen and the editor have. Split it as §7 describes; do not delete it wholesale.
 - `public/intro/*` — all five files (§5).
 - The three dead keybindings: either give `toggleHelp`, `togglePose` and `toggleMode` real cases in
   `App._handleAction` or stop emitting them from `InputManager`. Do not leave them advertised and inert.
@@ -1356,8 +1386,9 @@ The boring PR that makes the other five cheap. Ship it first and alone.
 - `src/state/riteStore.js`: the session store with `subscribe` / `get` / intents. Not wired to anything yet.
 - `settings.rite` block; `range` and `minRange` on the four element blocks with `EXACT_SPELL_RANGES` entries
   registered under the **public** `air.*` spelling.
-- Delete: `src/ui/glyphs.js`, `src/world/ContactShadows.js`, the `@import` of `src/ui/styles.css` and the file,
-  and the seven dead exports in `src/config/spell-contract.js`.
+- Delete: `src/ui/glyphs.js`, `src/world/ContactShadows.js`, and the seven dead exports in
+  `src/config/spell-contract.js`. **Leave `src/ui/styles.css` alone in this phase** — it styles the loading
+  screen (§7) and splitting it belongs with the token work in P3.
 - Fix `gl.shadowMap.needsUpdate` to stop re-rendering a 4096² map 60×/s.
 - Give `toggleHelp` / `togglePose` / `toggleMode` real cases, or stop emitting them.
 - **Done when**: `npm test` passes, the product looks and behaves identically, and the bundle is smaller.
