@@ -54,8 +54,8 @@ The Living Grimoire is a genuinely good VFX engine wearing a product that gives 
 draws a stroke, a beautiful elemental effect travels it, a caster performs the motion, and then nothing happens and
 nothing has changed. There is no goal, no target, no progression, no failure, and no second minute.
 
-The opening makes that worse rather than better. A 2.6 MB raster montage covers the live WebGL stage at
-`z-index: 100` for 7.6 seconds, competing with the 5.7 MB HDR and 2.3 MB character rig for bandwidth, while the
+The opening makes that worse rather than better. A 2.58 MiB raster montage covers the live WebGL stage at
+`z-index: 100` for 7.6 seconds, competing with the 5.66 MiB HDR and 2.27 MiB character rig for bandwidth, while the
 real loading progress renders invisibly underneath it.
 
 Four changes:
@@ -248,13 +248,13 @@ three events — `start`, `cast` and `cancel` — and `App` listens to **only `c
 ### Asset weight
 | File | Size |
 |---|---|
-| `public/hdri/spruit_sunrise.hdr` | 5.7 MB |
-| `public/intro/elemental-montage.png` | 2.6 MB |
-| `public/og.png` | 2.5 MB |
-| `public/models/Standing Idle.fbx` | 2.3 MB |
-| `public/angtexture.png` | 12 KB |
-| `output/imagegen/elemental-montage-source.png` | 2.6 MB (in-repo, not shipped) |
-| **`public/` total** | **14 MB** |
+| `public/hdri/spruit_sunrise.hdr` | 5.66 MiB |
+| `public/intro/elemental-montage.png` | 2.58 MiB |
+| `public/og.png` | 2.50 MiB |
+| `public/models/Standing Idle.fbx` | 2.27 MiB |
+| `public/angtexture.png` | 12 KiB |
+| `output/imagegen/elemental-montage-source.png` | 2.58 MiB (in-repo, not shipped) |
+| **`public/` total** | **13.02 MiB** |
 The HDR and the FBX block first paint (`App.load` awaits both). The montage PNG is fetched for the intro overlay.
 
 ### Test contract (tests/caster-first-contract.test.mjs) — every assertion, restated
@@ -605,9 +605,9 @@ reference does. **64 squared distances per frame at `MAX_CONCURRENT` = 8 against
 |---|---|---|
 | 0 ms | React mounts `GrimoireStage`. `introVisible` starts `true`, so the overlay paints **before** preferences are read. | `app/GrimoireStage.tsx` initial state |
 | ~0 ms | `.intro` paints: `position: fixed; z-index: 100; inset: 0; background: #08090a`. | `app/grimoire-stage.css:24` |
-| ~0 ms | The browser begins fetching `/intro/elemental-montage.png` — **2.6 MB** — for `.intro__art`. | `INTRO_ART` |
+| ~0 ms | The browser begins fetching `/intro/elemental-montage.png` — **2.58 MiB** — for `.intro__art`. | `INTRO_ART` |
 | ~0 ms | A second effect dynamic-imports `../src/main.js`, which constructs `App` and calls `app.load()`. | `GrimoireStage.tsx` mount effect |
-| ~0 ms | `App.load()` starts `Promise.all([character.load(), assets.loadHDR('/hdri/spruit_sunrise.hdr')])` — **2.3 MB + 5.7 MB**. | `src/core/App.js:243` |
+| ~0 ms | `App.load()` starts `Promise.all([character.load(), assets.loadHDR('/hdri/spruit_sunrise.hdr')])` — **2.27 MiB + 5.66 MiB**. | `src/core/App.js:243` |
 | 0–850 ms | Four `.intro__panel::before` clip-path wipes run, staggered 120 ms. | `panel-reveal` |
 | 400–880 ms | Four `figcaption` labels fade in. | `intro-label` |
 | 0–∞ | `panel-drift` (7.2 s alternating scale/translate) and `panel-sheen` (3.4 s infinite) loop. | CSS |
@@ -619,8 +619,8 @@ reference does. **64 squared distances per frame at `MAX_CONCURRENT` = 8 against
 1. **The intro hides the product while the product loads, and competes with it for bandwidth.**
    `#viewport` is `position: fixed; inset: 0` with no `z-index` (`app/grimoire-stage.css:3`); `.intro` sits at
    `z-index: 100` with an opaque `#08090a` background (`:24`). For up to 7.6 s the WebGL stage renders every frame,
-   fully composited, and is never seen. Meanwhile the 2.6 MB montage PNG is fetched in parallel with the 5.7 MB HDR
-   and the 2.3 MB FBX — the intro makes the load it is covering for measurably slower.
+   fully composited, and is never seen. Meanwhile the 2.58 MiB montage PNG is fetched in parallel with the 5.66 MiB HDR
+   and the 2.27 MiB FBX — the intro makes the load it is covering for measurably slower.
 
 2. **The timer and the load are unrelated.** `AssetLoader.onProgress` drives `LoadingScreen.setProgress` through real
    milestones (0.05 "Calling the caster", ramp to 0.53, 0.62 "Warming the elements", 0.85 "Setting the performance",
@@ -674,9 +674,9 @@ it enables — §11, hazard 21.)
 The new sequence must drive both the visual reveal and `stageReady` from the same signal.
 
 #### What it costs to fix
-`public/intro/elemental-montage.png` (2.6 MB) and `output/imagegen/elemental-montage-source.png` (2.6 MB) plus
-`public/og.png` (2.5 MB) are 7.7 MB of raster in a 14 MB `public/`. Replacing the intro with a scripted sequence of
-real casts removes 2.6 MB from the critical path and deletes 2.6 MB from the repository. The only blockers are two
+`public/intro/elemental-montage.png` (2.58 MiB) and `output/imagegen/elemental-montage-source.png` (2.58 MiB)
+plus `public/og.png` (2.50 MiB) are 7.66 MiB of raster, 5.08 MiB of it inside a 13.02 MiB `public/`. Replacing the intro with a scripted sequence of
+real casts removes 2.58 MiB from the critical path and deletes another 2.58 MiB from the repository. The only blockers are two
 lines in `tests/caster-first-contract.test.mjs`: `assert.match(stage, /elemental-montage\.png/)` and the two
 `access()` calls. Both are ours to change, and both should be replaced with assertions about the new sequence.
 
@@ -758,15 +758,15 @@ cast of the player's last-used element fires along a short curve, and the HUD ar
 confirms the renderer is alive, and it re-establishes the world without taxing a returning player.
 
 #### What happens to the old assets
-- `public/intro/elemental-montage.png` (2.6 MB) — **deleted**. It is 2.6 MB on the critical path for a picture of a
+- `public/intro/elemental-montage.png` (2.58 MiB) — **deleted**. It is 2.58 MiB on the critical path for a picture of a
   thing the renderer can do live.
-- `output/imagegen/elemental-montage-source.png` (2.6 MB) — **deleted** from the repository.
+- `output/imagegen/elemental-montage-source.png` (2.58 MiB) — **deleted** from the repository.
 - `public/intro/{fire,water,earth,wind}-fallback.svg` — **deleted**; nothing references them.
 - `tests/caster-first-contract.test.mjs`: replace `assert.match(stage, /elemental-montage\.png/)` and the two
   `access()` calls with assertions that `src/intro/IntroDirector.js` exists, that it references all four elements,
   and that `GrimoireStage.tsx` still renders a skip control and honours `prefers-reduced-motion`. The test's intent
   — "the opening is motion-safe, skippable and four-element" — is preserved exactly; only its evidence moves.
-- `public/og.png` (2.5 MB) — out of scope for this track, but flag it: a 2.5 MB social card is 10× larger than it
+- `public/og.png` (2.50 MiB) — out of scope for this track, but flag it: a 2.50 MiB social card is 10× larger than it
   needs to be.
 
 #### Audio: silence, deliberately
@@ -782,7 +782,7 @@ audience. If audio is ever added it is one toggle, off by default, and it respec
 - Skipping at any point during beats 0–4 lands in exactly the same state as watching to the end, verified by
   comparing `settings.camera.distance`, `rig.controls.target` and HUD visibility.
 - With `prefers-reduced-motion: reduce`, the camera's world position is identical on frame 1 and frame 144.
-- `public/intro/` is empty and `git ls-files public output | xargs du -ch` drops by ≥5.2 MB.
+- `public/intro/` is empty and `git ls-files public output | xargs du -ch` drops by ≥5.08 MiB.
 
 #### Two implementation caveats (flagged, not hidden)
 1. **`node_modules` is absent from this checkout.** Nothing in this document was verified against the installed
@@ -1489,7 +1489,7 @@ inference rate as failure and kills hand tracking entirely.
   the WASM are from different builds. Pin them to the same version or self-host both.
 - Self-hosting the WASM + the `hand_landmarker.task` model into `public/` removes two runtime third-party fetches.
   It **strengthens** the local-first claim rather than weakening it: today the tab tells Google's CDN that someone
-  opened the hand tracker. Weigh that against `public/` already being 14 MB, and do it as part of the asset diet
+  opened the hand tracker. Weigh that against `public/` already being 13 MiB, and do it as part of the asset diet
   that deletes 5.2 MB of intro raster (§5).
 
 ### Accessibility position
@@ -1520,7 +1520,7 @@ The camera claim is the trust anchor. Make it verifiable, not asserted.
 
 ### Release blocker: asset licensing
 `README.md` states the upstream binaries retain their original licences and that redistribution rights are
-unconfirmed. `public/models/Standing Idle.fbx` (2.3 MB) and `public/hdri/spruit_sunrise.hdr` (5.7 MB) are both
+unconfirmed. `public/models/Standing Idle.fbx` (2.27 MiB) and `public/hdri/spruit_sunrise.hdr` (5.66 MiB) are both
 shipped. This is a **release blocker**, not a nit, and it is the owner's decision:
 
 | Option | Cost | Note |
@@ -1528,7 +1528,7 @@ shipped. This is a **release blocker**, not a nit, and it is the owner's decisio
 | Confirm rights upstream | hours | Cheapest if the answer is yes. Do this first. |
 | Replace the HDR | ~1 hour | Polyhaven publishes CC0 HDRIs; `spruit_sunrise` itself originates there. Confirm and cite the licence. The stage uses it at `envIntensity 0.3` as a probe only, so almost any comparable outdoor HDRI substitutes. |
 | Replace the FBX | ~1 day | Mixamo's own licence terms govern the rig. `CasterPerformance` maps 12 named joints and `tests` assert `Standing Idle.fbx` by name, so a swap touches `JOINTS`, `CharacterController` and one test line. |
-| Procedural caster | ~1 week | `ProceduralGeometry.js` exists; a stylised jointed figure removes 2.3 MB and the licence question together, and would suit the ritual tone. Highest cost, cleanest outcome. |
+| Procedural caster | ~1 week | `ProceduralGeometry.js` exists; a stylised jointed figure removes 2.27 MiB and the licence question together, and would suit the ritual tone. Highest cost, cleanest outcome. |
 
 ### Degradation paths
 - **No WebGL2**: `LoadingScreen.fail()` currently prints a raw error message in red. Give it designed copy.
@@ -1720,7 +1720,7 @@ used in `app/` and `src/`, so a typo is a build failure rather than a silent no-
 
 **The asset licensing gate is a release blocker, not a nit.** `README.md` states that the upstream binary assets
 retain their original licences and that redistribution rights are unconfirmed, and both are shipped:
-`public/models/Standing Idle.fbx` (2.3 MB) and `public/hdri/spruit_sunrise.hdr` (5.7 MB). The decision table is in
+`public/models/Standing Idle.fbx` (2.27 MiB) and `public/hdri/spruit_sunrise.hdr` (5.66 MiB). The decision table is in
 section 10. Resolve it or hold the release on it explicitly; do not ship on the assumption that it is fine.
 
 **The MediaPipe version skew is a correctness bug.** `package.json` pins
@@ -1758,9 +1758,9 @@ The boring PR that makes the other five cheap. Ship it first and alone.
 ### P1 — The intro (depends on P0)
 - `src/intro/IntroDirector.js` and its four scripted curves.
 - React: replace the overlay with the title composite; skip, reduced-motion and cold-open paths.
-- Delete `public/intro/*` (5 files, 2.6 MB) and `output/imagegen/elemental-montage-source.png` (2.6 MB).
+- Delete `public/intro/*` (5 files, 2.58 MiB) and `output/imagegen/elemental-montage-source.png` (2.58 MiB).
 - Migrate the two test assertions that pin the montage.
-- **Done when**: the acceptance criteria in §5 pass, and `public/` drops by ≥2.6 MB.
+- **Done when**: the acceptance criteria in §5 pass, and `public/` drops by ≥2.58 MiB.
 
 ### P2 — Targeting (depends on P0; independent of P1)
 - `src/input/AimController.js` emitting `cast(origin, direction, distance)`.
