@@ -18,7 +18,7 @@ section 4 says how.
 
 Sections 5 through 8 are the four tracks the brief asks for. Section 9 is the shared skeleton they all hang on,
 and it must be built first. **Read section 11 before writing any targeting or hand-tracking code** — it lists
-twenty-two hazards that produce working-looking code which is subtly wrong. Section 14 is the phased plan; work
+twenty-eight hazards that produce working-looking code which is subtly wrong. Section 14 is the phased plan; work
 it in order.
 
 | § | Section |
@@ -1116,6 +1116,28 @@ curve-to-curve comparison at release. That is the cheapest possible path from "s
 | **Far cast** (ground ring) | **Later** | Earns its ring indicator only when a sigil needs a placed centre. |
 | **Summon** | **No** | Needs an entity, an AI, and a control scheme. Out of scope; say so. |
 
+### Before designing the ride, know what it already is
+
+`WalkController` is more complete than it looks, and it has four specific gaps that explain why it reads as a
+novelty rather than a verb.
+
+Complete: `begin(curve)` rejects strokes under 0.5 m — looser than `PathDrawer`'s 1.6 m, so it never actually
+rejects anything that reaches it. Phases are `LEAP` / `RIDE` / `DISMOUNT`. The leap is a parabola clamped to
+0.45–1.15 s; the legs fold into `SittingPose` at 62 % of it; the ride runs at a constant 5 m/s with an `outCubic`
+ramp over 0.45 s and roughly a 3 m brake; the character banks up to 26° into turns; the dismount carries 0.45 m
+forward over 0.55 s. `AirScooter.update` already takes the live speed and scales its dust off it.
+
+Gaps, all verified:
+- **`cancel()` has zero callers.** A ride cannot be interrupted, by the player or by anything else.
+- **`settings.walk.returnHome` defaults to `false`**, so the entire leap-home branch is dead code in the shipped
+  configuration.
+- **Mid-ride re-triggering is explicitly supported but unreachable**, because `App` clears `rideNextStroke` the
+  moment a ride begins.
+- **`this.speed` and `this.distance` are public per-frame telemetry** consumed only by the scooter's dust.
+
+So the ride is a cutscene you trigger. Making it a verb means giving the player something to do during it — at
+minimum, the ability to end it — and spending its telemetry on something the Rite can see.
+
 ### The unit of play: the Rite
 A **Rite** is three to five sigils drawn in sequence, framed by a beginning and an end.
 - **Opening** (~4 s): the stage dims, the Ward's stones go dark, the first sigil burns into the ground.
@@ -1183,6 +1205,25 @@ Three published components, because a single opaque number teaches nothing:
 
 Wrong element: the trace still casts (never refuse the player's input) but the Ward does not answer. The lesson is
 delivered by the world's silence, not by an error message.
+
+**Spend the fidelity on the caster's body, not on a number.** `CasterPerformance.setGesture` already accepts an
+`intensity` that nothing passes; it is clamped to `[0.35, 1.6]` and multiplied into all eight arm and hand joints
+(§3). Pass the Line score into it:
+
+```js
+// src/core/App.js — in the pathDrawer 'cast' handler
+const fidelity = rite.scoreTrace(curve, rite.currentSigil, rite.tolerance);
+this.caster?.setGesture('release', {
+  element: this.abilities.selected,
+  // 0.35 is a hesitant, half-committed throw; 1.6 is a full one. The player
+  // reads their own accuracy off the caster's posture before any number appears.
+  intensity: 0.35 + fidelity.line * 1.25
+});
+```
+
+That is the whole feedback system for free, in the most legible place possible: a true sigil makes the caster
+commit, a sloppy one makes them hesitate. No new animation, no HUD element, no number. The numeric readout, if it
+exists at all, is a confirmation of something the player already felt.
 
 ### What gets better: the hand
 No experience bars. Progression is **the sigil deck**: new sigils unlock as earlier ones are drawn truly, and the
@@ -1295,7 +1336,7 @@ Before writing anything new, use what is there. Each of these is verified.
    free and already hold the live camera.** Promote to a public `projectPointer(pointer, out)`, or lift
    `GROUND_PLANE` into a shared module. It is the exact code an aim indicator, a far-cast target picker and a
    ghost-sigil reticle all need.
-5. **`App.stageAnchor` is a free arena primitive** (§11, hazard 21). Writing it relocates the shadow frustum, the
+5. **`App.stageAnchor` is a free arena primitive** (§11, hazard 23). Writing it relocates the shadow frustum, the
    dust volume and the orbit centre together.
 
 ### Two unused hand channels, free
@@ -1530,26 +1571,38 @@ because they are the things an implementer discovers at the worst possible momen
 13. **Retune the FPS watchdog before raising `numHands`.** The `<15 fps over 3 s` hard-stop
     (`src/input/HandInput.js:185-193`) will trip routinely with two hands on the CPU delegate and silently demote
     the player to pointer with no diagnostic.
+14. **The cost of `numHands: 2` is in the singletons, not the model.** Inference is only about 1.5–1.9× — palm
+    detection runs once and landmark regression runs per hand. The real work is that `this.pointer`,
+    `this.filtered`, `this.isDrawing`, the One-Euro filter object `this._filter`, and every pose and dock timer
+    are single-owner fields that must become per-hand collections. **MediaPipe supplies no persistent track ids**,
+    so hand identity has to be maintained yourself by nearest-wrist matching between frames. `result.landmarks[0]`
+    is hard-coded in two places, and `_drawMirror` and `_handleDropout` are both written for exactly one hand.
+    Budget for the refactor, not for the inference.
+15. **Two things fye-mini's `HandInput` does *better* than either reference — do not regress them while porting.**
+    It tries `delegate: 'GPU'` and falls back to `delegate: 'CPU'` on failure, reporting which one succeeded in its
+    status line; and it has the FPS watchdog. **Neither reference repository has either.** (One thing to change
+    while you are in there: detection runs on `requestAnimationFrame` rather than
+    `requestVideoFrameCallback`, so it can process the same camera frame twice or skip one entirely.)
 
 ### The engine's own rules
 
-14. **Never copy a settings value into a per-cast record at spawn time.** The entire "editor stays live, even while
+16. **Never copy a settings value into a per-cast record at spawn time.** The entire "editor stays live, even while
     paused" property depends on every system re-sampling `settings[...]` each frame. Records may hold unitless
     dice rolls and timestamps, nothing else.
-15. **Any new per-cast state must be reset in `spawn()`** (`src/abilities/Ability.js:129`), which is the pooling
+17. **Any new per-cast state must be reset in `spawn()`** (`src/abilities/Ability.js:129`), which is the pooling
     reset point. Miss it and a pooled ability inherits the previous cast's charge, combo tier or target.
-16. **The particle system is GPU-simulated and the CPU can never read a particle's position.** Position is
+18. **The particle system is GPU-simulated and the CPU can never read a particle's position.** Position is
     computed in the vertex shader from spawn data. No per-particle hit detection, attraction or gameplay is
     possible without an entirely new CPU-side system. Design the Ward against ability heads, not particles.
-17. **A hold-in-place charge produces a cancel, not a cast.** `PathDrawer.move()` rejects samples closer than
+19. **A hold-in-place charge produces a cancel, not a cast.** `PathDrawer.move()` rejects samples closer than
     `minPointDistance` (0.22) and `end()` cancels strokes under `minPathLength` (1.6) or with fewer than three
     samples. Define a charge as a pre-draw gather, or explicitly bypass the length guard for charged casts.
-18. **Keep `PathDrawer` a pure draw-to-curve device.** Every mode decision belongs in `App._bindEvents` or the new
+20. **Keep `PathDrawer` a pure draw-to-curve device.** Every mode decision belongs in `App._bindEvents` or the new
     router, not inside the drawer.
 
 ### Live bugs found while writing this, all verified
 
-19. **The Cast button in the stage dock does nothing.** `app/grimoire-stage.css:14` sets
+21. **The Cast button in the stage dock does nothing.** `app/grimoire-stage.css:14` sets
     `.stage-hud { pointer-events: none; }` and its children opt back in one at a time —
     `.element-selector { pointer-events: auto }` (`:15`) and `.ride-button { pointer-events: auto }` (`:22`).
     **No `.cast-button` rule in the file ever does**, and `app/GrimoireStage.tsx` renders it as a direct child of
@@ -1560,7 +1613,7 @@ because they are the things an implementer discovers at the worst possible momen
     .stage-hud { pointer-events: none; }
     .stage-hud > * { pointer-events: auto; }
     ```
-20. **A thumbs-up selects Stone.** In `src/input/HandInput._trackPose`:
+22. **A thumbs-up selects Stone.** In `src/input/HandInput._trackPose`:
     ```js
     const four = [fingers.index, fingers.middle, fingers.ring, fingers.pinky];
     if (!four.some(Boolean)) next = 'earth';
@@ -1568,26 +1621,26 @@ because they are the things an implementer discovers at the worst possible momen
     The fist test ignores the thumb, and `fingers.thumb` is computed on the line above. Four fingers curled with
     the thumb out is read as a fist. Tighten to `!four.some(Boolean) && !fingers.thumb`. That fixes the misread
     **and** frees thumbs-up and thumbs-down as two unused verbs.
-21. **`App.stageAnchor` is allocated and never written.** `src/core/App.js:50` allocates it; `:288`, `:291` and
+23. **`App.stageAnchor` is allocated and never written.** `src/core/App.js:50` allocates it; `:288`, `:291` and
     `:304` read it, so it is permanently `(0, 0, 0)`. Writing it moves three things at once with no
     re-allocation: the sun's shadow frustum (`environment.setFocus`), the dust volume (`dust.update`) and the
     camera's orbit centre (`rig.setAnchor`). **That is a complete arena-relocation primitive, already wired end to
     end, pinned to the origin.** If the Rite ever moves the ritual ground — between rounds, for the intro, for a
     close — this is the one line.
-22. **A raw engine key leaks to the UI at `app/GrimoireStage.tsx:244`.** Elements are internally
+24. **A raw engine key leaks to the UI at `app/GrimoireStage.tsx:244`.** Elements are internally
     `['fire','water','earth','wind']` and publicly `air` for wind; `App.js` translates by hand at `:141`, `:201`
     and `:222`. The React island does not, in that one place.
-23. **The `DIALS` literals at `app/GrimoireStage.tsx:26-47` duplicate engine defaults into React.** That is
+25. **The `DIALS` literals at `app/GrimoireStage.tsx:26-47` duplicate engine defaults into React.** That is
     already a desync bug, not a pattern to copy. `src/config/settings.js` is the single source of truth.
-24. **`app/grimoire-stage.css` uses `backdrop-filter` without the `-webkit-` prefix**, so the panel blur is absent
+26. **`app/grimoire-stage.css` uses `backdrop-filter` without the `-webkit-` prefix**, so the panel blur is absent
     on older WebKit.
-25. **The engine has authority to open React UI.** `app/GrimoireStage.tsx`'s `grimoire:input-status` listener
+27. **The engine has authority to open React UI.** `app/GrimoireStage.tsx`'s `grimoire:input-status` listener
     calls `setHandsOpen(true)` when the state is `ready` or `tracking`. Remove it before adding any further
     engine-to-React signals, or the seam rots.
 
 ### Licensing
 
-22. **Both reference repositories are MIT, Copyright (c) 2026 mohamedachrefelouafi.** Any transplanted file,
+28. **Both reference repositories are MIT, Copyright (c) 2026 mohamedachrefelouafi.** Any transplanted file,
     shader or substantial code fragment must carry attribution. `THIRD_PARTY_NOTICES.md` already exists and is
     where it goes. Do this in the same commit as the transplant, not afterwards.
 
@@ -1719,8 +1772,15 @@ The boring PR that makes the other five cheap. Ship it first and alone.
 ## 15. Out of scope — stated so nobody drifts
 - Any server, account, database, sharing, remixing or lineage. Commit 93a438e deleted all of it deliberately.
 - Summons and drone control. They need an entity, an AI and a second control scheme.
-- The WebRTC phone camera. It needs a signalling server and a TURN relay; this product has neither, and
-  `dev:lan` in the reference repo is a development convenience, not a shippable feature.
+- **The WebRTC phone camera.** This is worth stating with the evidence, because the reference repository makes it
+  look shippable and it is not. Its signalling is `tools/vite-plugin-phone-camera.js`, a Vite plugin declared
+  **`apply: 'serve'`** and registered in `configureServer` — it exists only in the dev server and is absent from
+  any build. It is a three-route mailbox (`GET /info`, `GET /events` as Server-Sent Events, `POST /send`) whose
+  rooms live in an **in-process `Map`**, which a Cloudflare Worker has no equivalent for. And both peers construct
+  `new RTCPeerConnection({ iceServers: [] })` — host candidates only, no STUN, no TURN — which works because, in
+  the author's words, "both devices are on one Wi-Fi". Over the public internet it simply does not connect.
+  Shipping it would mean building a signalling service and a TURN relay, which is a server, which this product
+  does not have and should not get.
 - Audio. §5 argues the case; revisit only as one toggle, off by default.
 - Multiplayer, leaderboards, or anything that would require the score to leave the browser.
 - A light theme.
