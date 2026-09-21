@@ -703,7 +703,7 @@ The intro should not be a thing the player skips before the product starts. It s
 Every second of it is the real renderer, the real caster and the real abilities, and it ends with the player's hand
 already on the controls. The loading bar becomes the ritual, not a thing hidden behind one.
 
-#### The sequence, bound to real load milestones
+#### The first draft's sequence, bound to real load milestones
 `App.load()` already publishes honest progress. Bind each beat to a milestone rather than a clock, so the sequence
 can never outrun the load or wait on an empty screen. `LoadingScreen.setProgress(ratio, message)` is called at
 0.05, then `0.05 + ratio * 0.48` while assets stream, then 0.62, 0.85, 1.0 (`src/core/App.js:241-262`).
@@ -718,6 +718,40 @@ can never outrun the load or wait on an empty screen. `LoadingScreen.setProgress
 
 Total on a warm cache: ~7.4 s. **Cold**: beats block on their gates, and beat 1 holds a designed "breathing dark"
 rather than stalling — the screen is never static and never lies about progress.
+
+#### Reviewed down to one path, and here is why
+
+The sequence above was reviewed and two objections stuck.
+
+**First, on a warm cache it becomes the thing it replaces.** Section 5.1's headline criticism of the current
+intro is that its timer and its load are unrelated. Binding beats to load milestones fixes that on a cold visit —
+but on every visit after the first, all five gates pass within a few hundred milliseconds and the sequence
+degrades into a hardcoded 7.4-second timer with nothing left to wait for. That is the old sin with better art
+direction, on precisely the loads where the player is least patient.
+
+**Second, its own acceptance criterion says it is optional.** "Skipping at any point lands in exactly the same
+state as watching to the end" means the sequence carries no information the player needs. And it is four separate
+choreographies — full, skip, reduced-motion and cold-open — each with its own camera handoff, its own test and
+its own regression, for the least replayed seven seconds in the product.
+
+**So: keep beats 0 and 1, then stop.**
+
+| Beat | Gate | Duration | What is on screen |
+|---|---|---|---|
+| **0 — Dark** | first paint | 0–400 ms | Black. One line of type fades up: *The Living Grimoire*. |
+| **1 — The ground** | `progress >= 0.53` (HDR and rig resolved) | ~1000 ms | The real canvas fades up from black through `GradeShader.uLift`. Dust already drifting. The caster is a silhouette. |
+| **2 — The problem** | `progress === 1` | 400 ms | The first layout burns into the ground. The HUD staggers in. The camera is already at the play framing. |
+
+**Do not demonstrate four elements.** Let the player's own first line be the introduction, and let the other three
+elements be introduced by being *needed* (§8) rather than performed at them.
+
+This buys: **one code path instead of four** — cold, warm, returning and reduced-motion all become "fade up,
+present the problem", differing only in the fade duration; an honest gate, because you genuinely cannot draw
+before the stage exists; and a player whose first memory of the product is something they did at about two
+seconds rather than something they watched until eight. A player who casts at two seconds is a different player.
+
+`IntroDirector` survives as a class, but it owns roughly ninety lines and one camera move, not five beats and a
+skip protocol.
 
 #### IntroDirector — owning the camera without fighting the rig
 `CameraRig.update()` force-resolves distance every frame from `settings.camera.distance` and blends
@@ -745,7 +779,7 @@ ability head, restoring it at handoff. That keeps `CameraRig` untouched and make
 export class IntroDirector { /* ... */ }
 ```
 
-#### The four curves
+#### The four curves (retained only if the four-cast sequence is revived)
 Ground-plane `CatmullRomCurve3`s, each drawn *as a hand would draw it* — no straight lines, no symmetry.
 Fire hooks, water sweeps wide, earth drives short and heavy, air spirals. Each cast is issued with
 `abilities.cast(curve, element)` — the element argument already exists on `AbilityManager.cast`
@@ -832,7 +866,14 @@ Camera never requested before the player has succeeded without it.
 | 35–45 s | Traces freely | No ghost. The Ward holds two lights. **"The Rite is open."** appears with a begin control |
 | 45–60 s | Chooses | Either begins the Rite, or ignores it and keeps playing. Both are correct and neither is nagged |
 
-Total instructional text across the whole flow: **four short lines.** If it grows past six, the design is wrong.
+**Counted honestly, the first draft broke its own rule.** It claimed "four short lines", and the flow above is
+seven before the Rite even opens — and §16's copy deck ships 31 new or rewritten strings totalling over two
+hundred words, before the gesture guide's rows, the pre-permission panel, the privacy note and the accessibility
+statement. So the rule was right and the draft failed it.
+
+**The ghost is the whole tutorial. Ship it and `"Trace it."` and delete the rest.** A player will read two words
+on an empty dark stage with one glowing line. Every line after that competes with something they are now actively
+doing, and loses. If the ghost does not teach on its own, the ghost is wrong and more text will not save it.
 
 ### The guided first cast
 Reuse, do not rebuild: a second `PathTrail` instance with a dimmer material is the ghost renderer, and
@@ -841,9 +882,10 @@ Reuse, do not rebuild: a second `PathTrail` instance with a dimmer material is t
 - **Tolerance**: 0.75 m for the tutorial arc (generous; it tightens later — §8).
 - **Live feedback**: per-sample proximity drives the ghost's per-vertex alpha. Drawing near it makes it glow;
   drifting makes it fade. No text, no counter, no "try again".
-- **Retirement**: after **one** success. After **two** attempts that score below tolerance, the ghost completes
-  itself in front of the player — the element fires along the ghost's own path — and then retires. Never trap the
-  player behind a skill gate in the first thirty seconds.
+- **Retirement**: after **one** success. **Do not auto-complete it on failure** — the first draft had the ghost
+  finish itself in front of the player, which is the game taking the pen out of your hand in the first thirty
+  seconds. Instead **loosen silently**: widen the tolerance by about 40 % on each retry until they succeed. The
+  player never learns they were helped, which is the only kind of help that does not sting.
 - **`minPathLength` (1.6 world units) currently discards a short stroke in total silence** (`PathDrawer.end()`
   emits `cancel`, which has no listener). During onboarding a too-short stroke must say something: the ghost
   pulses once and the line reads **"Longer. Follow it to the end."**
@@ -1082,9 +1124,15 @@ Today a cast produces one `aria-live` sentence. Replace with a layered response,
 |---|---|---|
 | gather | caster's `gather` pose; trail begins | dock slot brightens |
 | aim | trail follows; ghost proximity glow | — |
-| release | `ScreenFlash.trigger` at low strength; `CameraShake` scaled by fidelity | `navigator.vibrate?.(12)` on coarse pointers, behind a guard |
+| release | `ScreenFlash.trigger` at low strength; `CameraShake` at the element's own strength | `navigator.vibrate?.(12)` on coarse pointers, behind a guard |
 | impact | element decal (`SCORCH`/`RIPPLE`/`CRACK`/`DUSTRING`); Ward stone lights | the fidelity readout resolves |
 | recovery | caster settles | `aria-live` sentence, **polite, and only on a scored trace** |
+
+**Do not scale `CameraShake` by how well the player did.** The first draft did, and it is the most tonally wrong
+idea in it: the world's physical violence becomes a function of your handwriting grade, so the universe is
+running a mixer on your penmanship. A weak line produces a **different** answer, not a quieter one — fire gutters
+and dies short, water spills, earth cracks the wrong ground. Same intensity, wrong outcome. That is a world
+responding; the other is a scoreboard with a subwoofer.
 
 `aria-live="polite"` on `.stage-message` currently fires on **every** cast. In a game where casts come every few
 seconds that is a screen reader talking constantly. Announce the *resolution*, not the release.
@@ -1854,10 +1902,67 @@ different builds. Pin them together or self-host both.
 Each phase is PR-sized, independently shippable, and leaves the product working. Do not start a phase until the
 one it depends on is merged.
 
+### Before any of this: one week, one ugly branch, five people
+
+The plan below was reviewed and costed at roughly **eleven to thirteen weeks** for one engineer, with the written
+playtest script sitting in the **last** phase. That is the wrong end of the calendar to find out whether a second
+person will draw a second line.
+
+So there is a gate before P0, and it is not a phase:
+
+**Week 1 — the prototype. One branch, thrown away afterwards.**
+- One generated layout: two waystones and one hazard, drawn as ground decals.
+- `resolveStroke` (§8) and nothing else. No Ward, no Rite, no deck, no scoring components.
+- One responder: the waystone lights, or it does not.
+- Give `pathDrawer.on('cancel')` a listener. Today a stroke under `minPathLength 1.6` vanishes in total silence
+  (§3). This is the cheapest real fix in the document and it is about five lines.
+- Three layouts in a row, then "again?".
+- No intro, no dock redesign, no hands, no tokens, no copy but the problem itself.
+- **Put five people in front of it.** Did anyone draw a second line unprompted? That is the gate.
+
+If it passes, P0 is genuinely good work that makes everything after it cheap. If it does not, nothing below
+matters and you have spent a week instead of a quarter.
+
+Two things ship on day one regardless, because they are defects rather than features: deleting
+`public/intro/elemental-montage.png` and the overlay is a twenty-minute diff worth 2.58 MiB, and the three live
+bugs in §11 are a few lines each.
+
+### Honest costs
+
+No phase below was estimated in the first draft, which was the tell. For one engineer:
+
+| Phase | Realistic |
+|---|---|
+| P0 foundations | 4–5 days |
+| P1 intro (now one path, §5) | 2–3 days |
+| P2 targeting | **cut — see below** |
+| P3 UI system, reduced | 3–4 days |
+| P4 the Rite | 9–12 days |
+| P5 onboarding, reduced | 3–4 days |
+| P6 polish, reduced | 2–3 days |
+| Licensing blocker (§13) | 0–5 days |
+
+### What was cut after review, and why
+
+- **All of P2 targeting.** The verb is *draw* (§2). §4.1's hundred-odd lines of aim and zone shader constants
+  exist because the reference repositories' gravity pulls the design back toward what they already built, and §8
+  no longer needs an arrow at all. Keep `curveFromAim` as three lines if a straight line is ever wanted. **This is
+  the largest single saving in the document and it costs the product nothing.** §4.1 stays as reference for
+  whoever wants it later.
+- **All hand work.** §8 establishes that hands are a demo today. `HandInput` keeps working as it is; only its
+  thumbs-up bug is fixed.
+- **Most of P3.** Keep exactly two things: one exported element-colour constant (the three-way disagreement in §7
+  is a real bug, about an hour) and the focus trap, Escape and focus restoration on both dialogs (about thirty
+  lines, non-negotiable). Both move into P0.
+- **Most of P6.** Keep the `ScreenFlash` three-per-second photosensitivity cap — that is a safety issue, roughly
+  ten lines, and it belongs in P0 rather than at the end.
+
 ```
-P0 Foundations ──┬── P1 Intro ─────────────┐
-                 ├── P2 Targeting ──┬─ P4 The Rite ── P5 Onboarding ── P6 Polish
-                 └── P3 UI system ──┘
+PROTOTYPE GATE (1 week, five people)
+        │
+        ▼
+P0 Foundations ──┬── P1 Intro ──┐
+                 └──────────────┴─ P4 The Rite ── P5 Onboarding ── P6 Polish
 ```
 
 ### P0 — Foundations (no visible change)
@@ -1890,7 +1995,14 @@ The boring PR that makes the other five cheap. Ship it first and alone.
 - Migrate the two test assertions that pin the montage.
 - **Done when**: the acceptance criteria in §5 pass, and `public/` drops by ≥2.58 MiB.
 
-### P2 — Targeting (depends on P0; independent of P1)
+### P2 — Targeting — **cut**
+Kept here only so nobody re-adds it by accident. §4.1 remains as reference material if a later version wants a
+straight-line or ground-circle cast; nothing in §8 needs one.
+
+<details>
+<summary>The original P2, for reference</summary>
+
+
 - `src/input/AimController.js` emitting `cast(origin, direction, distance)`.
 - `src/effects/AimIndicator.js` and `src/effects/ZoneIndicator.js` as pooled ground quads on `LAYER.VFX`.
 - `src/input/CastRouter.js`: the one door into `AbilityManager.cast`, with `PathDrawer` beside it, not under it.
@@ -1899,7 +2011,13 @@ The boring PR that makes the other five cheap. Ship it first and alone.
   this PR, something has gone wrong.
 - **Done when**: a line cast and a drawn cast produce visually identical fire from the same origin.
 
-### P3 — UI system (depends on P0; independent of P1 and P2)
+</details>
+
+### P3 — UI system, reduced (depends on P0)
+Only what the loop needs. The token block, the dock redesign and the three breakpoints wait until after the
+prototype gate says there is a product to dress.
+
+
 - The `:root` token block; one exported element-colour constant replacing the three that disagree today.
 - `src/ui/HUD.js` reduced to a toast; React takes all chrome.
 - The dock with slot grammar, keeping `data-element` on the button itself.
@@ -1907,24 +2025,33 @@ The boring PR that makes the other five cheap. Ship it first and alone.
 - The phone / tablet / desktop layouts.
 - **Done when**: keyboard-only completes every verb, and both dialogs pass a focus-management check.
 
-### P4 — The Rite (depends on P2 and P3)
-- `src/game/Ward.js` (8 emissive procedural stones, no point lights), `src/game/sigils.js` (the deck),
-  `src/game/scoreTrace.js`, and the state machine wired to `riteStore`.
-- The Rite's open and close beats, with the ride as the close.
-- **Done when**: a player can complete a three-sigil Rite and a stone can honestly stay dark.
+### P4 — The Rite (depends on P0 and P3)
+- `src/game/layouts.js` (the generator: waystones, hazards, offered elements, from a seed),
+  `src/game/resolveStroke.js`, `src/game/Ward.js` (one emissive stone per line in the Rite, no point lights), and
+  the state machine wired to `riteStore`.
+- The Rite's open and close beats. **The close is the deliverable, not a trailing bullet** (§8): the camera drops,
+  `autoFrame` goes to 1.0, and the caster rides the player's own last line out through the Ward.
+- The dark stone carrying the line the player actually drew, as a pooled decal.
+- **Done when**: a player can complete a three-line Rite, a stone can honestly stay dark **and show why**, and the
+  close plays.
 
-### P5 — Onboarding (depends on P4)
-- The ghost sigil, the four instructional lines, progressive disclosure of the dock.
-- The hand-tracking trust ladder and the gesture guide; `HandInput` publishes its throttled state event.
+### P5 — Onboarding, reduced (depends on P4)
+- The ghost line and **one** instructional line. Silent loosening on retry, never auto-completion (§6).
+- Progressive disclosure of the dock.
 - Every dead-end exit from §6's table.
-- **Done when**: a first-time player casts successfully within 15 seconds without reading more than four lines.
+- **Cut**: the hand-tracking trust ladder, the gesture guide and the `HandInput` state event. §8 establishes that
+  hands are a demo today; §6 keeps the design for when they earn a verb.
+- **Done when**: a first-time player solves their first layout within 15 seconds having read two words.
 
-### P6 — Polish (depends on everything)
-- The adaptive quality ladder and the MediaPipe cadence.
-- Calm mode, the photosensitivity cap, the reduced-motion variants of every new animation.
-- The privacy note, the camera-state indicator, and the widened network-guard test.
-- The debug overlay and the playtest script.
-- Self-host MediaPipe WASM + model, or pin the version skew.
+### P6 — Polish, reduced (depends on everything)
+- The adaptive quality ladder and the reduced-motion variants of every new animation.
+- Calm mode.
+- The widened network-guard test (§12.2).
+- The debug overlay, which is where the score components belong (§13 tone).
+- Pin the MediaPipe version skew (§13). Self-hosting can wait.
+- **Moved into P0 because they are safety or correctness, not polish**: the `ScreenFlash` three-per-second cap,
+  the focus management on both dialogs, and the three live bugs.
+- **Cut**: the MediaPipe cadence work and the camera-state indicator, both of which belong with the hand work.
 
 ## 15. Out of scope — stated so nobody drifts
 - Any server, account, database, sharing, remixing or lineage. Commit 93a438e deleted all of it deliberately.
