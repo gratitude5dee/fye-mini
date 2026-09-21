@@ -1,10 +1,11 @@
 import { settings } from '../config/settings.js';
 import * as store from '../state/riteStore.js';
-import { isPersistent } from '../state/preferences.js';
+import { isPersistent, read as readPreferences, write as writePreferences } from '../state/preferences.js';
 import { TO_UI } from '../state/events.js';
 import { generateRite, dailySeed } from './layouts.js';
 import { resolveStroke, outcomeStrength } from './resolveStroke.js';
 import { Ward } from './Ward.js';
+import { GhostLine } from './GhostLine.js';
 
 /**
  * The session: problems posed, lines judged, the Ward answering.
@@ -33,6 +34,10 @@ export class Rite {
   constructor(ctx) {
     this.ctx = ctx;
     this.ward = new Ward(ctx.scene);
+    this.ghost = new GhostLine(ctx.scene);
+    // The suggestion is for people who have never solved one. After that it
+    // would be noise, so it is never laid again.
+    this._teaching = !readPreferences().onboarding.firstSolve;
     this.layouts = [];
     this._timer = 0;
     this._pending = null;
@@ -79,6 +84,8 @@ export class Rite {
     this._failedAttempts = 0;
     store.presentLine(layout);
     this.ward.setLayout(layout, ELEMENT_ACCENT[layout.elements[0]] ?? '#bfe8df');
+    if (this._teaching) this.ghost.show(this.ctx.casterPosition?.() ?? { x: 0, z: 0 }, layout);
+    else this.ghost.hide();
   }
 
   /**
@@ -115,6 +122,12 @@ export class Rite {
   _settle(outcome) {
     const result = store.resolveLine(outcome.solved);
     if (!outcome.solved) this._failedAttempts += 1;
+    if (outcome.solved && this._teaching) {
+      // One success is the whole lesson. Burn it away and never lay another.
+      this._teaching = false;
+      this.ghost.retire();
+      writePreferences({ onboarding: { ...readPreferences().onboarding, firstSolve: true } });
+    }
 
     const state = store.get();
     this.ward.showWard(state.ward);
@@ -130,9 +143,15 @@ export class Rite {
     this._publish();
   }
 
+  /** Feed the suggestion the pointer's ground position while a stroke is live. */
+  trackPointer(x, z) {
+    if (this._teaching) this.ghost.trackPointer(x, z);
+  }
+
   update(dt) {
     if (!this.active) return;
     this.ward.update(dt);
+    this.ghost.update(dt);
 
     if (this._pending) {
       this._timer += dt;
@@ -167,6 +186,7 @@ export class Rite {
   }
 
   dispose() {
+    this.ghost.dispose();
     this.ward.dispose();
     this.layouts = [];
   }

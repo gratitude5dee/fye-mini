@@ -75,7 +75,9 @@ export class App {
 
     this.rite = new Rite({
       scene: this.scene, decals: this.decals, bursts: this.bursts,
-      shake: this.shake, flash: this.flash, abilities: this.abilities
+      shake: this.shake, flash: this.flash, abilities: this.abilities,
+      // The suggestion starts at the caster's feet, wherever they are.
+      casterPosition: () => this.character?.position ?? this.stageAnchor
     });
 
     this.character = new CharacterController(this.environment);
@@ -128,6 +130,8 @@ export class App {
     this.input.on('draw:move', (pointer) => {
       this.caster?.setGesture('aim', { element: this.abilities.selected });
       this.pathDrawer.move(pointer);
+      const head = this.pathDrawer.samples.at(-1);
+      if (head) this.rite.trackPointer(head.x, head.z);
     });
     this.input.on('draw:end', () => {
       this.caster?.setGesture('recovery', { element: this.abilities.selected });
