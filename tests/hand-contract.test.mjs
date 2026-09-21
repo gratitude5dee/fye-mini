@@ -55,9 +55,11 @@ test('the lift is applied before the cast is spawned', async () => {
   assert.ok(setLift < spawn, 'spawn samples the trajectory immediately; a later lift jumps');
 });
 
-test('the Rite judges the element altitude and the stroke lift together', async () => {
+test('the Rite judges the element floor and the stroke lift together', async () => {
+  // Superseded formula: this used to add the live `pathHeight`, which made
+  // solvability depend on the clock for water. See the rite contract test.
   const rite = await source('../src/game/Rite.js');
-  assert.match(rite, /pathHeight\(u\)\s*\+\s*ability\.lift\(u\)/);
+  assert.match(rite, /floor \+ ability\.lift\(u\)/);
 });
 
 test('hand channels live on the shared input, not on the tracker', async () => {

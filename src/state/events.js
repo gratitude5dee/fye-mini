@@ -51,7 +51,9 @@ export const TO_UI = Object.freeze({
   /** A cast reached the end of its path. Carries the ability's own state. */
   IMPACT: 'grimoire:impact',
   /** Session state changed: the Rite opened, a line resolved, the Ward moved. */
-  RITE_STATE: 'grimoire:rite-state'
+  RITE_STATE: 'grimoire:rite-state',
+  /** The help key was pressed. The interface owns the panel; the engine owns the key. */
+  HELP: 'grimoire:help'
 });
 
 /** Every name, for tests and for the debug overlay. */

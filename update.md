@@ -17,7 +17,7 @@ Implemented on this branch, verified by `npm test` (30 contract tests) and by dr
 | **P4 The Rite** | **Built.** Generated layouts, the stroke resolver, the Ward, and the session wired into the frame loop. |
 | **P5 Onboarding** | **Partly built.** The ghost line ships and retires after one solve. The trust ladder and the full contextual guide do not. |
 | **P7a Tracker** | **Built.** All four anti-misfire guards, the lost state, the ratio-based extension, and the throttled state channel. |
-| **P7b Continuous axes** | **Built.** Lift and spread, end to end. Measured: earth flat peaks at 0.00 m, earth with a raised hand at 2.40 m, fire flat at 1.29 m, against a 1.20 m hazard clearance. |
+| **P7b Continuous axes** | **Built.** Lift and spread, end to end. Measured: earth flat peaks at 0.00 m and 2.40 m with a raised hand. Hazard clearance is judged against a declared per-element `flightFloor` rather than the live `pathHeight`, because water's altitude reads the clock and the same line could otherwise solve or fail depending on when it was cast. Only fire clears unaided. |
 | P3 UI system | Not built. The token block, the HUD ownership migration and the three breakpoints are still as specified. |
 | P6 Polish | Not built, except the photosensitivity cap, which shipped in P0 as a safety issue. |
 | P7c Two hands | Not built. Needs the handedness mirror fix (§11, hazard 6) and stroke identity (hazard 7) first. |

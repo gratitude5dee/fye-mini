@@ -5,6 +5,7 @@ import { HOUSE_SEED_SPELLS } from '../src/config/house-spells';
 import { TO_ENGINE, TO_UI } from '../src/state/events.js';
 import { isPersistent, read as readPreferences, write as persistPreferences } from '../src/state/preferences.js';
 import { useDialog } from './useDialog';
+import { HelpSheet } from './HelpSheet';
 import './grimoire-stage.css';
 
 type ElementId = 'fire' | 'water' | 'earth' | 'air';
@@ -85,6 +86,7 @@ export function GrimoireStage() {
   const [rite, setRite] = useState<RiteState>(IDLE_RITE);
   const [introBeat, setIntroBeat] = useState('dark');
   const [hand, setHand] = useState({ engaged: false, wake: 0, lift: 0, spread: 0 });
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
 
@@ -149,12 +151,17 @@ export function GrimoireStage() {
     };
     window.addEventListener(TO_UI.CAST_COMPLETE, castListener);
     window.addEventListener(TO_UI.RITE_STATE, riteListener);
+    // `H` is bound in the engine's InputManager, so the key and the button have
+    // to end up in the same place rather than two panels that disagree.
+    const helpListener = () => setHelpOpen((open) => !open);
+    window.addEventListener(TO_UI.HELP, helpListener);
     return () => {
       window.removeEventListener(TO_UI.READY, ready);
       window.removeEventListener(TO_UI.INPUT_STATUS, inputStatusListener);
       window.removeEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
       window.removeEventListener(TO_UI.CAST_COMPLETE, castListener);
       window.removeEventListener(TO_UI.RITE_STATE, riteListener);
+      window.removeEventListener(TO_UI.HELP, helpListener);
     };
   }, []);
 
@@ -165,6 +172,7 @@ export function GrimoireStage() {
     if (stageReady) emit(TO_ENGINE.SELECT, { element });
   }, [element, stageReady]);
 
+  const closeHelp = useCallback(() => setHelpOpen(false), []);
   const closeHands = useCallback(() => setHandsOpen(false), []);
   const closeWorkshop = useCallback(() => setWorkshopOpen(false), []);
 
@@ -254,8 +262,8 @@ export function GrimoireStage() {
         <header className="stage-header">
           <div className="wordmark"><span>Local elemental stage</span><strong>Living Grimoire</strong></div>
           <div className="header-actions">
-            <button className="quiet-button" onClick={() => { setWorkshopOpen(false); setHandsOpen(true); }} aria-expanded={handsOpen}>Hand mode</button>
-            <button className="quiet-button" onClick={() => { setHandsOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>
+            <button className="quiet-button" onClick={() => { setWorkshopOpen(false); setHelpOpen(false); setHandsOpen(true); }} aria-expanded={handsOpen}>Hand mode</button>
+            <button className="quiet-button" onClick={() => { setHandsOpen(false); setHelpOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>
           </div>
         </header>
 
@@ -303,6 +311,16 @@ export function GrimoireStage() {
         <div className="intro__copy"><h1>The Living Grimoire</h1><span>Nothing leaves this tab.</span></div>
         <button className="intro__skip" onClick={dismissIntro}>Skip intro</button>
       </section>}
+
+      <button
+        className="help-button"
+        onClick={() => { setHandsOpen(false); setWorkshopOpen(false); setHelpOpen(true); }}
+        aria-expanded={helpOpen}
+        aria-label="How this works"
+        title="How this works"
+      >?</button>
+
+      <HelpSheet open={helpOpen} onClose={closeHelp} />
 
       {handsOpen && <section className="side-sheet" role="dialog" aria-modal="true" aria-labelledby="hands-title" ref={handsRef} tabIndex={-1}>
         <button className="sheet-close" onClick={closeHands} aria-label="Close hand input panel">×</button>

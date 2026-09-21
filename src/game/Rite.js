@@ -107,10 +107,16 @@ export class Rite {
     // Each failed attempt widens the accept rings a little. The player is never
     // told; being quietly helped is the only kind of help that does not sting.
     const forgiveness = settings.rite.waystoneForgiveness ** this._failedAttempts;
-    // Both terms: the element's own altitude and whatever the stroke carried.
-    // A ground-hugging element taken over a hazard by a raised hand must count
-    // as cleared, or the axis that justifies hand tracking does nothing.
-    const liftAt = ability ? (u) => ability.pathHeight(u) + ability.lift(u) : () => 0;
+    // Both terms: how high this element flies, and whatever the stroke carried.
+    //
+    // The element's contribution is the declared `flightFloor`, not its live
+    // `pathHeight` — water's altitude includes a time-driven swell, and judging
+    // against it meant the clock decided whether a line cleared a hazard.
+    // The stroke's lift stays live, because that is the player's own input.
+    const floors = settings.rite.flightFloor;
+    const element = ability ? (ability.element === 'wind' ? 'air' : ability.element) : null;
+    const floor = element ? (floors[element] ?? 0) : 0;
+    const liftAt = ability ? (u) => floor + ability.lift(u) : () => 0;
     const outcome = resolveStroke(points, count, state.layout, liftAt, forgiveness);
 
     this.ward.showOutcome(outcome);

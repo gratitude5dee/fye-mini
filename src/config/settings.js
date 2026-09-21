@@ -239,6 +239,19 @@ export const settings = {
     hazardRadius: 1.25,
     /** A stroke sample above this height clears a hazard instead of clipping it. */
     hazardClearance: 1.2,
+    /**
+     * How high each element flies, for the purpose of clearing a hazard.
+     *
+     * Deliberately *not* read from `Ability.pathHeight`. Water's altitude
+     * includes a travelling swell driven by `frame.uTime`, so judging against
+     * the live value made the same line solve or fail depending on when it was
+     * cast — the clock decided, not the player. These are static, declared, and
+     * out of reach of any cosmetic preset, because they decide solvability.
+     *
+     * Fire is the only element that crosses on its own. Everything else needs a
+     * raised hand, which is the whole point of the lift axis.
+     */
+    flightFloor: { fire: 1.45, water: 0, earth: 0, air: 0 },
     /** Ring of the ritual ground the generator places on, metres. */
     fieldRadius: 7.0,
     /**

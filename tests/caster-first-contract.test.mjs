@@ -66,3 +66,42 @@ test('the public interface is local-only and opens with a motion-safe, skippable
   await assert.rejects(access(new URL('../app/api/casts/route.ts', import.meta.url)));
   await assert.rejects(access(new URL('../gateway/server.mjs', import.meta.url)));
 });
+
+test('help is reachable by button and by key, and lands in one place', async () => {
+  const [stage, help, app, events] = await Promise.all([
+    text('../app/GrimoireStage.tsx'), text('../app/HelpSheet.tsx'),
+    text('../src/core/App.js'), text('../src/state/events.js')
+  ]);
+
+  assert.match(stage, /className="help-button"/);
+  assert.match(stage, /<HelpSheet/);
+
+  // `H` is bound in the engine's InputManager. It used to call a HUD method
+  // that reached for markup React has never rendered, so the key did nothing.
+  // It now forwards, and the key and the button open the same panel.
+  assert.match(app, /case 'toggleHelp'.*grimoire:help/s);
+  assert.doesNotMatch(app, /case 'toggleHelp': this\.hud\.toggleHelp/);
+  assert.match(events, /HELP: 'grimoire:help'/);
+  assert.match(stage, /TO_UI\.HELP/);
+
+  // It is a real dialog, with the same focus machinery as the other sheets.
+  assert.match(help, /role="dialog"/);
+  assert.match(help, /aria-modal="true"/);
+  assert.match(help, /useDialog/);
+
+  // And it documents the rules a player would otherwise have to lose to learn.
+  for (const rule of ['crosses a hazard on its own', 'Three attempts per line', 'leaves the ground', 'never leaves this tab']) {
+    assert.ok(help.includes(rule), `help must explain: ${rule}`);
+  }
+});
+
+test('the modal background is genuinely inert, at every level', async () => {
+  // Every panel in this product renders inside one <main>, so a sweep over
+  // document.body found nothing to hide and left the whole stage reachable
+  // behind an element announcing itself as modal.
+  const dialog = await text('../app/useDialog.ts');
+  assert.match(dialog, /cursor\.parentElement/, 'the walk must climb, not stop at body');
+  assert.match(dialog, /setAttribute\('inert', ''\)/);
+  assert.match(dialog, /removeAttribute\('inert'\)/);
+  assert.match(dialog, /NON_RENDERED/, 'skip scripts and styles rather than writing to all of them');
+});

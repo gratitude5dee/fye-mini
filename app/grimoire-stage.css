@@ -86,3 +86,23 @@
 .hand-meters i { position: relative; height: 4px; border-radius: 999px; background: rgb(246 241 232 / .12); }
 .hand-meters i::after { position: absolute; inset: 0 auto 0 0; width: calc(var(--v, 0) * 100%); border-radius: 999px; background: var(--accent); box-shadow: 0 0 10px -2px var(--accent); content: ''; transition: width .12s linear; }
 @media (prefers-reduced-motion: reduce) { .hand-meters i::after { transition: none; } }
+
+/* --- Help --------------------------------------------------------------- */
+/* Bottom right, out of the thumb arc on a phone and out of the way of the
+   stage dock, which owns the bottom centre. */
+.help-button { position: fixed; z-index: 40; right: 20px; bottom: 20px; width: 38px; height: 38px; border: 1px solid rgb(246 241 232 / .26); border-radius: 50%; color: var(--ink); background: rgb(10 12 15 / .68); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font: 700 15px/1 var(--font-sans); cursor: pointer; }
+.help-button:hover { border-color: var(--accent); color: var(--accent); }
+.help-sheet h3 { margin: 18px 0 6px; color: var(--ink); font: 600 15px/1.2 var(--font-display); }
+.help-sheet h3:first-of-type { margin-top: 12px; }
+.help-notes { display: grid; gap: 6px; margin: 0; padding-left: 16px; color: var(--muted); font: 400 12px/1.45 var(--font-sans); }
+.help-notes strong { color: var(--ink); font-weight: 600; }
+.help-rows { display: grid; gap: 7px; margin: 0; }
+.help-rows > div { display: grid; grid-template-columns: 104px 1fr; gap: 10px; align-items: baseline; }
+.help-rows--keys > div { grid-template-columns: 84px 1fr; }
+.help-rows dt { color: var(--ink); font: 600 12px/1.35 var(--font-sans); }
+.help-rows dd { margin: 0; color: var(--muted); font: 400 12px/1.45 var(--font-sans); }
+kbd { display: inline-block; min-width: 15px; border: 1px solid rgb(246 241 232 / .24); border-radius: 5px; padding: 1px 5px; color: var(--ink); background: rgb(246 241 232 / .07); font: 600 10px/1.4 var(--font-sans); text-align: center; }
+
+/* The stage dock owns the bottom centre on a phone, so the button steps up out
+   of its way rather than sitting on top of the ride control. */
+@media (max-width: 680px) { .help-button { right: 12px; bottom: auto; top: 76px; } }

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 
+const NON_RENDERED = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'TEMPLATE', 'TITLE', 'NOSCRIPT']);
+
 const FOCUSABLE = [
   'a[href]', 'button:not([disabled])', 'input:not([disabled])',
   'select:not([disabled])', 'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])'
@@ -36,14 +38,30 @@ export function useDialog<T extends HTMLElement>(open: boolean, onClose?: () => 
 
     // Hide everything else from assistive technology. `inert` also blocks
     // pointer and focus, which is what makes the modality real rather than
-    // announced. Siblings are recorded so a nested dialog cannot un-hide them.
+    // merely announced.
+    //
+    // Walk up from the dialog and inert the siblings at *every* level, not only
+    // at `document.body`. Every panel in this product is rendered inside one
+    // `<main>`, so a body-level sweep found nothing to hide and left the whole
+    // stage reachable behind an element claiming to be modal.
+    //
+    // Elements already inert are recorded and left alone, so a second dialog
+    // cannot un-hide what the first one hid.
     const hidden: HTMLElement[] = [];
-    for (const sibling of Array.from(document.body.children)) {
-      if (sibling === node || sibling.contains(node)) continue;
-      const el = sibling as HTMLElement;
-      if (el.hasAttribute('inert')) continue;
-      el.setAttribute('inert', '');
-      hidden.push(el);
+    for (let cursor: HTMLElement | null = node; cursor && cursor !== document.body; cursor = cursor.parentElement) {
+      const parent = cursor.parentElement;
+      if (!parent) break;
+      for (const sibling of Array.from(parent.children)) {
+        if (sibling === cursor) continue;
+        const el = sibling as HTMLElement;
+        // Nothing is gained by inerting a script or a stylesheet, and in a dev
+        // build there are ninety of them; skipping keeps this to a handful of
+        // attribute writes on the elements that actually render.
+        if (NON_RENDERED.has(el.tagName)) continue;
+        if (el.hasAttribute('inert')) continue;
+        el.setAttribute('inert', '');
+        hidden.push(el);
+      }
     }
 
     const focusables = () => Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE));

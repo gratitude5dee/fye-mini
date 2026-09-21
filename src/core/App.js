@@ -278,7 +278,10 @@ export class App {
       case 'togglePause': this.paused = !this.paused; this.hud.showToast(this.paused ? 'Paused.' : 'Resumed.'); break;
       // These three were bound in InputManager and had no case here, so H, T
       // and M were advertised and inert.
-      case 'toggleHelp': this.hud.toggleHelp(); break;
+      // The panel is React's; the key is the engine's. Forwarding rather than
+      // toggling `hud.toggleHelp()`, which reached for markup React has never
+      // rendered and so did nothing at all.
+      case 'toggleHelp': window.dispatchEvent(new CustomEvent('grimoire:help')); break;
       case 'togglePose': {
         const seated = this.character.togglePose?.();
         this.hud.showToast(seated ? 'The caster sits.' : 'The caster stands.');

@@ -23,8 +23,9 @@ Draw a line that reaches every waystone without clipping a hazard. The Ward answ
 for each line you solve, and a stone may honestly stay dark. You get three attempts per line, the accept rings
 quietly widen each time you miss, and a Rite always ends.
 
-**The elements are tools, not skins.** Fire and water fly; earth and wind hug the ground. So a hazard fire crosses
-by nature is one earth cannot — unless you raise your hand (see below).
+**The elements are tools, not skins.** Fire is the only one that crosses a hazard on its own; water rides a swell
+just off the ground, and stone and wind hug it. So a hazard fire clears by nature is one the others cannot —
+unless you raise your hand (see below).
 
 Layouts are generated from a seed, so the daily Rite is the same for everyone who opens it, with no account and
 no server.

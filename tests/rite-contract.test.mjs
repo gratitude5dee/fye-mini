@@ -136,3 +136,30 @@ test('a hazard always fits between the waystones it divides', () => {
     'waystones closer than this can never host a hazard, and every tier comes out short'
   );
 });
+
+test('whether a line clears a hazard cannot depend on the clock', async () => {
+  // Water's pathHeight includes a swell driven by frame.uTime. Judging against
+  // the live altitude meant the same line solved or failed depending on when it
+  // was cast, which is the clock deciding rather than the player.
+  const rite = await readFile(new URL('../src/game/Rite.js', import.meta.url), 'utf8');
+  const start = rite.indexOf('  judge(points, count, ability) {');
+  const end = rite.indexOf('  _settle(outcome) {');
+  assert.ok(start > 0 && end > start, 'both method definitions must be found');
+  const judge = rite.slice(start, end);
+  assert.match(judge, /flightFloor/, 'the element term must be the declared floor');
+  // A call, not a mention: the code's own comment explains why the live
+  // altitude is wrong here, and that explanation must not trip this.
+  assert.doesNotMatch(judge, /pathHeight\s*\(/, 'the live, time-varying altitude must not decide solvability');
+  assert.match(judge, /ability\.lift\(u\)/, "the player's own lift stays live");
+});
+
+test('exactly one element crosses a hazard unaided, and a raised hand crosses with any', () => {
+  const { flightFloor, hazardClearance } = settings.rite;
+  const unaided = Object.entries(flightFloor).filter(([, h]) => h >= hazardClearance).map(([e]) => e);
+  assert.deepEqual(unaided, ['fire'], 'fire flies; the rest are the reason the lift axis exists');
+
+  const LIFT = 2.4; // what a fully raised hand supplies
+  for (const [element, floor] of Object.entries(flightFloor)) {
+    assert.ok(floor + LIFT >= hazardClearance, `${element} must be able to cross with a raised hand`);
+  }
+});
