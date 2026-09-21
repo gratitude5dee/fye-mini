@@ -64,17 +64,22 @@ The opening makes that worse rather than better. A 2.58 MiB raster montage cover
 `z-index: 100` for 7.6 seconds, competing with the 5.66 MiB HDR and 2.27 MiB character rig for bandwidth, while the
 real loading progress renders invisibly underneath it.
 
-Four changes:
+Five changes:
 
 1. **The intro becomes the product starting.** Delete the montage. The stage fades up under one line of type and
    the first problem burns into the ground at about two seconds. The player's own first line is the introduction,
    so there is one code path instead of four and nothing to skip.
 2. **Onboarding teaches by doing, wordlessly.** One lit waystone, one ghost line running to it, and after the
-   first success the ghost never returns. Zero lines of instructional text.
-3. **The UI becomes one system.** One token set instead of the two that ship today, one HUD owner instead of the
+   first success the ghost never returns. Zero lines of instructional text. Hand tracking is offered only after
+   the player has already succeeded without a camera, and never on a phone.
+3. **Hand tracking earns its place on an axis a mouse does not have.** `PathDrawer` raycasts onto the ground
+   plane, so every point of a mouse stroke is at `y = 0` by construction. A hand adds lift, width and a free off
+   hand — so a skilled player can take *earth* over a hazard that only fire crosses by nature. Everything still
+   works with a pointer; the hand raises the ceiling, never the floor.
+4. **The UI becomes one system.** One token set instead of the two that ship today, one HUD owner instead of the
    split that leaves half of `src/ui/HUD.js` inert, and a real dock. The aim-and-circle indicators from the
    reference repositories are documented in §4.1 and **not built** — §8's loop does not need them.
-4. **The game becomes the drawn shape — a problem to solve, not a shape to copy.** Waystones light on the ground
+5. **The game becomes the drawn shape — a problem to solve, not a shape to copy.** Waystones light on the ground
    with a hazard between them: *take fire through all three without crossing the water*. You draw one line, and
    the line is yours. The test is points against a curve at release — no physics, no collision, no reference
    shape, on a polyline the code already computes and throws away. It is cheaper than grading a copy would be,
@@ -986,7 +991,11 @@ Then, and only on a click:
    closes. One success, then done.
 4. **Teach pinch by doing.** The ghost line returns, once, for hands. The pinch threshold is already hysteretic
    (down 0.32 / up 0.48 of hand scale) so a held pinch is stable.
-5. **Recovery is designed, not an error.** Tracking loss is a first-class state with its own copy, not a toast.
+5. **Teach lift by needing it, not by explaining it.** The first hand layout puts a hazard where the ghost line
+   has to rise. Nothing says "raise your palm" — the ghost itself rises, and the player's hand follows it,
+   because a hand following a line in space is what a hand does. This is the whole reason hands exist in this
+   product (§8), and it costs one authored layout.
+6. **Recovery is designed, not an error.** Tracking loss is a first-class state with its own copy, not a toast.
 
 ### The gesture guide, and the hand model underneath it
 
@@ -1068,6 +1077,8 @@ fye-mini's poses are elemental rather than slot-based, so the rows differ, but t
 |---|---|---|---|---|
 | open palm + ring | Open palm | hold it to engage | `wake` | casting |
 | pinch | Touch thumb to finger | draws; open to release | `draw` | casting |
+| palm rising | Raise your hand | lifts the line off the ground | `lift` | casting |
+| fingers spreading | Spread your fingers | widens the cast | `width` | casting |
 | two fingers | Two fingers | calls water | `water` | other |
 | horns | Index and little finger | calls fire | `fire` | other |
 | fist | Close your fist | calls stone | `earth` | other |
@@ -1075,7 +1086,12 @@ fye-mini's poses are elemental rather than slot-based, so the rows differ, but t
 | palm lowered | Lower your hand | rests the tracker | `lost` | either |
 
 To feed it, `HandInput` must publish what it already computes. Add one **throttled** event at ≤10 Hz — never per
-frame — carrying `{ engaged, wake: 0..1, pose, hold: 0..1, pinch: 0..1, tracking: 'seeking'|'found'|'lost', delegate }`.
+frame — carrying
+`{ engaged, wake: 0..1, pose, hold: 0..1, pinch: 0..1, lift: 0..1, spread: 0..1, tracking: 'seeking'|'found'|'lost', delegate }`.
+
+`lift` and `spread` are the two continuous axes §8 is built on, so they are **not** optional extras on this
+event — the guide's live highlighting is the only place a player finds out their hand height is doing anything
+before they see it in the cast.
 
 ### Mobile is a first path, not a degraded one
 `enableHands()` already refuses on `(pointer: coarse)` and says so. Touch keeps everything except the camera:
@@ -1475,39 +1491,119 @@ Two cheap, server-free returns:
 Persisted state stays small and honest: which layouts have been solved, and the best line for each, in
 `localStorage` via `src/state/preferences.js` (§9).
 
-### Hand tracking: it is a demo today, and the draft's justification was false
+### Hand tracking: what actually earns it
 
-The first draft claimed: *"with a mouse you must stop drawing to change element... a two-element sigil in one
-unbroken stroke is simply impossible with a mouse."* **Both halves are wrong, and the code says so.**
+**First, the correction that has to stand.** An earlier draft justified hands like this: *"with a mouse you must
+stop drawing to change element… a two-element sigil in one unbroken stroke is simply impossible with a mouse."*
+Both halves are false, and the code says so:
 
-1. **You can already change element mid-stroke with a mouse.** `src/core/App.js:121` binds
+1. **A mouse can already change element mid-stroke.** `src/core/App.js:121` binds
    `this.input.on('element', (index) => this.selectElement(ELEMENTS[index]))`, and `InputManager._onKeyDown`
    emits `element` on `Digit1`–`Digit4` with **no check on `isDrawing`**. Hold the left button, drag, press `2`,
-   keep dragging. §4's own controls table lists those keys.
-2. **A two-element stroke is not representable by any device**, because the element is sampled once, at release:
+   keep dragging.
+2. **A multi-element stroke is not representable by any device**, because the element is read once, at release:
    `this.abilities.cast(curve)` uses `this.abilities.selected` at that moment (`src/core/App.js:133`,
-   `src/abilities/AbilityManager.js:67`). Splitting a curve at a switch point is a change to the cast router, not
-   to the hand tracker, and a keyboard would then do it identically.
+   `src/abilities/AbilityManager.js:67`).
 
-So the honest current answer to "what is better with hands" is **nothing**. §10's own budget table ranks
-two-handed tracking first to be cut under load, while the draft called it "the ceiling of the whole design".
+That justification is dead. Here is the one that survives the code, and it is stronger.
 
-**Therefore: hands are out of scope for this update.** Ship the loop pointer-first. Leave `HandInput` working as
-it is, fix its thumbs-up bug (§11), and bring hands back when they earn a verb.
+#### A cursor is a point. A hand is a pose.
 
-**When they come back, here is the verb.** A mouse cursor is a point; a hand is a pose with continuous parameters
-MediaPipe already supplies. Bind the continuous ones to the continuous character of the cast, not to a menu:
+`PathDrawer` raycasts the pointer onto `Plane(0, 1, 0)` at `y = 0`. **Every point of a mouse stroke is on the
+ground, by construction.** A mouse has exactly two axes and no way to express anything else about a moment in the
+stroke.
 
-- **Finger spread modulates the cast's width.** Fingers together and fire travels as a thin lance; open your hand
-  mid-stroke and it blooms. `Ability` re-samples `settings` every frame by design (§11, hazard 16), so a per-frame
-  width scalar drops into the existing shaders.
-- **Wrist roll modulates `pathHeight`.** Roll your palm up and the element lifts off the ground over the stroke
-  you are still drawing. `pathHeight` already exists and fire and water already override it.
-- **Grab pressure is the release.** A loose open is a spill; a hard fist is a strike.
+A hand, through landmarks MediaPipe is already computing every frame, has at least three more: how far it is
+from the camera, how it is rolled, and how open it is. In a loop that is explicitly about getting an element
+**past obstacles** (§8), those are not decoration. They are the mechanic.
 
-That is a genuine ceiling: a hand draws a stroke **with an inflection a mouse has no axis for**, in one continuous
-gesture, visible in the VFX without reading a number. It also survives the quality ladder, because it works with
-`numHands: 1`.
+#### The three axes, and why each one matters in this loop
+
+**1. Lift — the one that carries the design.**
+
+`Ability.pathHeight(u)` is a per-element altitude function (`src/abilities/Ability.js:214`). Fire overrides it and
+flies; water overrides it and swells; **earth and wind return 0 and hug the ground.** That is exactly why §8 can
+say "fire crosses the water hazard and earth cannot" — it falls out of code already written.
+
+Now give the stroke its own additive lift, driven by hand height or wrist roll:
+
+```js
+// src/abilities/Ability.js — the only change the lift needs
+_samplePath(u, out) {
+  const t = saturate(u);
+  this.curve.getPointAt(t, out);
+  // The element's own altitude still describes its character — fire lobs, water
+  // swells — and the cast's lift rides on top of it. Composing rather than
+  // replacing means a lifted earth cast is still unmistakably earth.
+  const height = this.pathHeight(t) + this.lift(t);
+  if (height !== 0) out.y += height;
+  return out;
+}
+
+/** Per-cast additive altitude, 0 unless the stroke carried a height channel. */
+lift(_u) { return 0; }
+```
+
+`_tiltTangent` must sum the same two terms, or a lifted element points the wrong way as it climbs.
+
+**What that buys.** A hazard the fire can fly over is a hazard a skilled hand can take *earth* over, by raising
+the palm at the right point in the stroke. The element's natural advantage becomes a floor, not a ceiling. A
+novice picks the element that suits the layout; an expert takes the element they *want* through a layout that did
+not invite it. That is a real skill ceiling, it is legible the first time someone sees it happen, and **a mouse
+cannot express it at all** — not because of a missing keybinding, but because the ground plane has no third axis.
+
+**2. Width — the tactical trade.**
+
+Finger spread (the spread of landmarks 8, 12, 16, 20 normalised by `handScale`) scales the cast's radius per
+sample. Wide covers two waystones at once; narrow threads a gap a wide cast would clip. `Ability` re-samples
+`settings` every frame by design (§11, hazard 16), so a per-sample width scalar reaches the existing shaders
+without a new uniform path — `FireAbility` already multiplies `c.flameWidth * widthScale` at `:238`.
+
+**3. Element, mid-stroke — and make it actually representable.**
+
+The off hand holds the element pose while the drawing hand keeps tracing. This is proven upstream: HandCast's
+guide declares `row(['prev','next'], 'Point sideways', 'previous / next ability', 'point', 'other')`, where
+`'other'` is explicitly "which hand, when it is not the casting one", and its `HandInput` resolves MediaPipe
+`handednesses` per hand with an `aimHand` option so a left-handed player can swap them.
+
+But per the correction above, **this is worthless until the router can split a stroke.** Specify that too:
+
+```js
+/**
+ * Split a stroke at its element changes and cast each run.
+ *
+ * The element is a per-sample channel, not a property of the cast, so a single
+ * drawn line can be fire to the gate and earth over the rubble. Runs shorter
+ * than `settings.input.minPathLength` are folded into their neighbour rather
+ * than dropped — a hand that flickers between poses should not silently lose a
+ * third of the line.
+ *
+ * @returns {Array<{curve: THREE.Curve, element: string}>}
+ */
+export function splitByElement(samples, count) { /* ... */ }
+```
+
+Once that exists, the keyboard can do it too, by holding a digit mid-drag. **That is the right outcome and it
+should be said plainly: hands are not uniquely capable here, they are uninterrupted.** The honest claim is
+axes 1 and 2, which a mouse genuinely cannot reach, plus a third where hands are simply better.
+
+#### What this costs, stated up front
+
+This is the most expensive thing in the document and it should not be pretended otherwise.
+
+| Work | Why |
+|---|---|
+| `PathDrawer` carries per-sample channels, not just positions | Today `samples` is `Vector3[]` on `y = 0`. It needs a parallel preallocated `Float32Array` of lift, width and element id, written on every accepted sample and resampled alongside the curve. |
+| `Ability.lift(u)` plus the `_tiltTangent` sum | Small, and the composition above keeps each element's identity intact. |
+| `splitByElement` in the cast router | Needed for axis 3 at all, and it is where the "fold short runs" rule lives. |
+| The mature `HandInput` (§6) | Wake gate, grab hysteresis, lost state, refractory, published state, two hands with handedness. |
+| The handedness mirror fix | §11, hazard 6 — this is the single most likely bug in the two-handed work. |
+| Stroke identity on the draw events | §11, hazard 7 — without it two hands interleave into one corrupt stroke. |
+
+**And it degrades honestly.** With one hand, axes 1 and 2 still work and the element is chosen from the dock.
+With a pointer or on a phone, `lift` and `width` return their defaults, every element behaves exactly as it does
+today, and the layouts that *require* a lift are the ones fire was always meant to solve. Nothing is gated behind
+a camera. The hand raises the ceiling; it never raises the floor.
 
 ### Session state machine
 
@@ -1538,7 +1634,7 @@ Recorded so nobody re-proposes it.
 | **"Drawing to the beat of the Ward"** | A rhythm mechanic in a product that argues four paragraphs for having no audio (§5) and lists audio as out of scope (§15). |
 | **"Flow rewards an even hand" beside "the long line rewards commitment"** | The same motion scored in opposite directions: a fast committed stroke accelerates, and acceleration *is* spacing variance. |
 | **The per-sigil timer** | Contradicted §10's calm mode, which removes time pressure and then had no replacement escalation. |
-| **The two-element-stroke hand payoff** | Refuted by `src/core/App.js:121` and `:133`. |
+| **The two-element-stroke hand payoff** | Refuted by `src/core/App.js:121` and `:133`. Hands are still in scope — §8 replaces the justification with lift and width, which a ground-plane raycast genuinely cannot express, and specifies the router change that makes a multi-element stroke representable at all. |
 
 ### Before designing the ride, know what it already is
 
@@ -1622,6 +1718,22 @@ Before writing anything new, use what is there. Each of these is verified.
    ghost-sigil reticle all need.
 5. **`App.stageAnchor` is a free arena primitive** (§11, hazard 26). Writing it relocates the shadow frustum, the
    dust volume and the orbit centre together.
+
+### What the hand axes need from the engine
+
+Three bounded changes, all specified in §8 and listed here so the module map is complete.
+
+1. **`PathDrawer` carries per-sample channels.** Today `samples` is `Vector3[]` pinned to `y = 0` and `resampled`
+   is a preallocated 320-`Vector3` buffer. Add two parallel preallocated `Float32Array(320)` buffers for lift and
+   width, plus a `Uint8Array(320)` for element id, written on every accepted sample and resampled by the same
+   `i / (wanted - 1)` walk that builds the curve. No allocation per stroke, matching the existing discipline.
+2. **`Ability.lift(u)`**, additive over `pathHeight(u)`, summed in both `_samplePath` and `_tiltTangent`. Default
+   returns 0, so every existing element is bit-identical until a stroke carries a lift channel.
+3. **`splitByElement(samples, count)`** in the cast router, folding runs shorter than
+   `settings.input.minPathLength` into their neighbour rather than dropping them.
+
+**The ordering matters.** Build 1 and 2 together (P7b) and leave 3 for P7c — a lift channel is useful with one
+hand and no router change, but an element channel is useless without the split.
 
 ### Two unused hand channels, free
 
@@ -1734,7 +1846,8 @@ New features get hard budgets, and the cut order is published so nobody has to g
 | Hit tests | ≤0.05 ms (64 squared distances, zero allocation) | never |
 | Trace scoring | ≤0.3 ms, **once per release**, not per frame | never |
 | Gesture guide | ≤0.1 ms (throttled to 10 Hz, DOM only) | 3rd |
-| Two-handed tracking | +40–90 % of MediaPipe cost | **1st** |
+| Two-handed tracking (P7c) | +40–90 % of MediaPipe cost | **1st** |
+| Continuous lift and width (P7b) | ≤0.2 ms — two extra channels resampled with the curve | **never** — it is the reason hands ship |
 | Ghost sigil | ≤0.4 ms (a second `PathTrail`) | 2nd |
 
 **Free win available today**: `gl.shadowMap.needsUpdate = true` runs unconditionally every frame. The sun is static
@@ -1747,7 +1860,7 @@ Measured frame time over a rolling 90-frame window, never a user-agent sniff.
 |---|---|---|
 | **high** | < 14 ms sustained | as authored |
 | **balanced** | 14–24 ms | pixel ratio cap 1.75→1.25; bloom radius −30 %; `global.particleCount` ×0.7; shadow map 2048²; MediaPipe every 2nd frame |
-| **conservative** | > 24 ms | pixel ratio 1.0; bloom off; particles ×0.4; shadows off; distortion pass off; MediaPipe every 3rd frame; two-handed tracking refused |
+| **conservative** | > 24 ms | pixel ratio 1.0; bloom off; particles ×0.4; shadows off; distortion pass off; MediaPipe every 3rd frame; **two-handed tracking refused, single-hand lift and width kept** |
 
 It announces itself **once**, quietly, in the Workshop ("Running in balanced mode for a steady frame rate"), never
 as a toast and never repeatedly. It must also **lower** the existing `HandInput` watchdog threshold in
@@ -2037,6 +2150,12 @@ any router exists, and `App._castStagePreview` already calls it today; and that 
 `spawn(curve)`. That last one is the guard that keeps line casts from quietly rewriting the ability layer the way
 the upstream repository did.
 
+**`tests/hand-contract.test.mjs`** — lock the parts of §8's hand design that are easy to regress silently.
+Assert that `src/abilities/Ability.js` defines `lift(` and that **both** `_samplePath` and `_tiltTangent`
+reference it (a lift summed in one and not the other points a climbing element the wrong way); that
+`src/input/HandInput.js` mirrors handedness wherever it mirrors `x` (§11, hazard 6); and that the draw events
+carry a stroke identity once `numHands` is not `1` (§11, hazard 7).
+
 **`tests/rite-contract.test.mjs`** — assert that `src/state/events.js` exports a constant for every event name
 used in `app/` and `src/`, so a typo is a build failure rather than a silent no-op; and that
 `src/state/preferences.js` is the only module touching `localStorage`.
@@ -2099,6 +2218,7 @@ No phase below was estimated in the first draft, which was the tell. For one eng
 | P4 the Rite | 9–12 days |
 | P5 onboarding, reduced | 3–4 days |
 | P6 polish, reduced | 2–3 days |
+| **P7 hands** | **10–14 days** |
 | Licensing blocker (§13) | 0–5 days |
 
 ### What was cut after review, and why
@@ -2108,8 +2228,9 @@ No phase below was estimated in the first draft, which was the tell. For one eng
   no longer needs an arrow at all. Keep `curveFromAim` as three lines if a straight line is ever wanted. **This is
   the largest single saving in the document and it costs the product nothing.** §4.1 stays as reference for
   whoever wants it later.
-- **All hand work.** §8 establishes that hands are a demo today. `HandInput` keeps working as it is; only its
-  thumbs-up bug is fixed.
+- **Nothing from the hand track.** §8 gives hands a verb a mouse cannot reach, so they ship — but as **P7, after
+  the loop is proven**, not woven through the earlier phases. The pointer path must be complete and good on its
+  own first, because that is what every phone and every declined camera falls back to.
 - **Most of P3.** Keep exactly two things: one exported element-colour constant (the three-way disagreement in §7
   is a real bug, about an hour) and the focus trap, Escape and focus restoration on both dialogs (about thirty
   lines, non-negotiable). Both move into P0.
@@ -2121,7 +2242,8 @@ PROTOTYPE GATE (1 week, five people)
         │
         ▼
 P0 Foundations ──┬── P1 Intro ──┐
-                 └──────────────┴─ P4 The Rite ── P5 Onboarding ── P6 Polish
+                 └──────────────┴─ P4 The Rite ──┬── P5 Onboarding ── P6 Polish
+                                                 └── P7 Hands (a → b → c → d)
 ```
 
 ### P0 — Foundations (no visible change)
@@ -2200,8 +2322,7 @@ prototype gate says there is a product to dress.
 - The ghost line and **one** instructional line. Silent loosening on retry, never auto-completion (§6).
 - Progressive disclosure of the dock.
 - Every dead-end exit from §6's table.
-- **Cut**: the hand-tracking trust ladder, the gesture guide and the `HandInput` state event. §8 establishes that
-  hands are a demo today; §6 keeps the design for when they earn a verb.
+- **Deferred to P7, not cut**: the trust ladder, the gesture guide and the `HandInput` state event.
 - **Done when**: a first-time player solves their first layout within 15 seconds having read two words.
 
 ### P6 — Polish, reduced (depends on everything)
@@ -2212,7 +2333,40 @@ prototype gate says there is a product to dress.
 - Pin the MediaPipe version skew (§13). Self-hosting can wait.
 - **Moved into P0 because they are safety or correctness, not polish**: the `ScreenFlash` three-per-second cap,
   the focus management on both dialogs, and the three live bugs.
-- **Cut**: the MediaPipe cadence work and the camera-state indicator, both of which belong with the hand work.
+- **Deferred to P7**: the MediaPipe cadence work and the camera-state indicator, which belong with the hand work.
+
+
+### P7 — Hands (depends on P4; independent of P5 and P6)
+
+The most expensive phase, shipped last on purpose. The pointer path must already be complete, because it is what
+every phone and every declined camera falls back to.
+
+**P7a — the mature tracker (4–5 days).** Rewrite `HandInput` to the model in §6: boot disengaged behind a 600 ms
+open-palm wake gate; a continuous `grab` score with 0.7 / 0.4 hysteresis; a real 500 ms lost state; a 400 ms
+refractory after a cast and at engagement; four consecutive agreeing frames before any pose emits; and the
+ratio-based finger-extension test from §11, hazard 12. Keep the two things fye-mini already does better than
+either reference — the GPU-to-CPU delegate fallback and the frame-rate watchdog (§11, hazard 15) — and move
+detection to `requestVideoFrameCallback`. Publish one throttled state event at ≤10 Hz.
+**Done when**: the tracker cannot fire on its own across a five-minute idle with a hand in frame.
+
+**P7b — the continuous axes (3–4 days).** `PathDrawer` carries per-sample lift and width channels;
+`Ability.lift(u)` plus the `_tiltTangent` sum; the hand drives both. **This is the phase that justifies the
+others** — if a lifted earth cast does not read instantly as "I took it over the water", stop here and keep P7a
+for its own sake.
+**Done when**: a player clears a fire-only hazard with earth, on camera, and it is obvious to someone watching.
+
+**P7c — two hands and mid-stroke elements (3–5 days).** `numHands: 2` with handedness resolved and **mirrored**
+(§11, hazard 6), stroke identity on the draw events (§11, hazard 7), `splitByElement` in the cast router, and the
+watchdog retuned (§11, hazard 13). Behind the quality ladder; refused on the conservative tier.
+**Done when**: one unbroken line casts fire then earth, and the same thing works from the keyboard by holding a
+digit mid-drag.
+
+**P7d — the trust ladder and the guide (2–3 days).** §6's permission flow, the contextual gesture guide with its
+`live` highlighting and its `lost` row, the camera-state indicator, and the MediaPipe cadence work from §10.
+**Done when**: a first-time player grants the camera, attunes and casts with a hand without reading a manual —
+and a player who declines never sees the offer again that session.
+
+**Cut from P7 regardless**: the WebRTC phone camera (§15).
 
 ## 15. Out of scope — stated so nobody drifts
 - Any server, account, database, sharing, remixing or lineage. Commit 93a438e deleted all of it deliberately.
