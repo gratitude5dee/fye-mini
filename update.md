@@ -18,7 +18,7 @@ section 4 says how.
 
 Sections 5 through 8 are the four tracks the brief asks for. Section 9 is the shared skeleton they all hang on,
 and it must be built first. **Read section 11 before writing any targeting or hand-tracking code** — it lists
-twenty-eight hazards that produce working-looking code which is subtly wrong. Section 14 is the phased plan; work
+thirty-one hazards that produce working-looking code which is subtly wrong. Section 14 is the phased plan; work
 it in order.
 
 | § | Section |
@@ -69,9 +69,12 @@ Four changes:
 3. **The UI becomes one system.** One token set instead of the two that ship today, one HUD owner instead of the
    split that leaves half of `src/ui/HUD.js` inert, a dock with real slot grammar, and world-space targeting
    indicators ported from the reference repositories.
-4. **The game becomes the drawn shape.** The Grimoire shows a sigil; you trace it; the truer your line, the more
-   completely the element answers. Scoring is fidelity, not damage — a curve-to-curve comparison at release that
-   needs no physics and no collision system, on a polyline the code already computes and throws away.
+4. **The game becomes the drawn shape — a problem to solve, not a shape to copy.** Waystones light on the ground
+   with a hazard between them: *take fire through all three without crossing the water*. You draw one line, and
+   the line is yours. The test is points against a curve at release — no physics, no collision, no reference
+   shape, on a polyline the code already computes and throws away. It is cheaper than grading a copy would be,
+   and it is the only version that makes the four elements matter, because fire already flies over hazards that
+   earth cannot cross.
 
 ### Three things found on the way that should be fixed regardless
 
@@ -1126,37 +1129,255 @@ about the machine, and the machine never uses ritual language for a technical fa
 covering every string in the appendix.
 
 ---
-
 ## 8. Track D — Game flow
 
+> **This section was rewritten after review.** The first draft proposed a tracing test: the Grimoire shows a
+> sigil, you copy it, and the copy is graded. A reviewer pointed out that this is the one variant of drawn-gesture
+> casting that is known to fail — a graded reproduction turns every failure into "the computer says your
+> handwriting is bad" — and that the draft's own pitch for replay value, "you do it again because your hand is
+> getting better", is the argument for a calligraphy trainer rather than a game. They were right. What follows is
+> the replacement. §8.9 records what was cut and why, so nobody re-proposes it.
+
 ### The loop, in one sentence
-**The Grimoire shows you a sigil; you draw it; the truer your line, the more completely the element answers.**
 
-Expanded: a sigil appears burned faintly into the ritual ground. You trace it with pointer, touch or a pinched
-hand. On release, `PathDrawer` hands the stroke to the element exactly as it does today — but now the stroke is also
-scored against the sigil, and the Ward that rings the stage answers in proportion. A weak trace produces a weak
-answer; a true trace lights the Ward and opens the next sigil. You do it again because your hand is getting better,
-and you can feel it getting better.
+**The ritual ground poses a problem in space; you solve it with one drawn line; the line is yours.**
 
-### Why this and not the reference repos' loop
-Neither reference repo has a loop (see §4 — `TargetBoxes.js` is a drone's HUD, not a game). Their verb is
-*aim and click*, which is a decision about **where**. fye-mini's verb is *draw*, which is a decision about **shape**.
-Shape is a far richer skill surface, it is the only thing in this lineage nobody has built a game on, and it is
-already 90% implemented: `PathDrawer` produces a 320-point arc-length-uniform polyline every stroke
-(`src/input/PathDrawer.js:_rebuild`) and throws it away after one use.
+Expanded: waystones light on the ground and a hazard lies between them. *Take fire through all three without
+crossing the water.* You draw one stroke. `PathDrawer` hands it to the element exactly as it does today, and the
+stroke is then tested against the constraints — not against a reference shape. Four players solve the same layout
+four different ways. You do it again because the next layout is a different problem, not because your handwriting
+was marked down.
 
-Scoring a drawn shape needs **no collision system, no physics, and no per-frame hit tests** — it is one
-curve-to-curve comparison at release. That is the cheapest possible path from "sandbox" to "game" in this codebase.
+### Why a constraint, not a copy
 
-### The verbs that ship
-| Verb | Ships? | What it is for |
+There are three ways to build drawn casting and only one of them holds up.
+
+| Model | Example | Why it works, or does not |
 |---|---|---|
-| **Trace** (draw a sigil) | **Yes — primary** | The whole game. Already built; needs scoring. |
-| **Choose** (pick an element) | **Yes** | A real decision once sigils demand a specific element. |
-| **Ride** (air scooter) | **Yes — as a reward beat** | 366 lines of finished, invisible work (`WalkController`). Make it the transition between rites, not a toggle. |
-| **Line cast** (arrow, click) | **Yes — one sigil type** | The "strike" sigil: a straight line is a sigil too. Free via `LineCurve3`. |
-| **Far cast** (ground ring) | **Later** | Earns its ring indicator only when a sigil needs a placed centre. |
-| **Summon** | **No** | Needs an entity, an AI, and a control scheme. Out of scope; say so. |
+| **Recall** | the game names a spell, you draw it from memory | Works. The deck lives in the player's head, so skill compounds. |
+| **Authorship** | your stroke *is* the answer — slash the rock, draw the bridge | Works. There is no reference, so there is nothing to fail against. |
+| **Reproduction** | the game shows a shape and grades your copy | Fails. Every miss reads as "your handwriting is bad", and nobody replays a copy. |
+
+This design is **authorship**. The constraint states the problem; the line is the player's answer.
+
+It also finally delivers §2's thesis. Drawing is a richer verb than aiming *because the shape carries intent* — and
+a shape you invent carries intent in a way a shape you copy cannot.
+
+### It is cheaper than the version it replaces
+
+No resampling of two curves, no bidirectional comparison, no tolerance in metres. At release you already hold the
+polyline. The whole test is points against a curve:
+
+```js
+/**
+ * Resolve one drawn stroke against a layout.
+ *
+ * Deliberately not a shape comparison: the player's line is not being graded
+ * against a reference, it is being asked whether it solved the problem. That
+ * keeps authorship with the player and keeps failure legible — you can see
+ * that you clipped the water.
+ *
+ * Allocation-free; both scratch vectors are module-level.
+ *
+ * @param {THREE.Curve} stroke     what the player drew
+ * @param {Layout} layout          waystones, hazards, and the element it wants
+ * @param {string} element         the element actually cast
+ * @returns {{ reached: boolean[], clipped: boolean, solved: boolean }}
+ */
+export function resolveStroke(stroke, layout, element) { /* ... */ }
+```
+
+For each waystone, the minimum squared distance from the polyline to the stone, tested against a radius the player
+can **see** as a ring on the ground. For each hazard, whether any sample falls inside it. That is it.
+
+### The elements become tools, not keys
+
+This is what a constraint layout buys that a graded copy cannot: the four elements already differ in ways that
+change what a line can *do*, and none of those differences mattered under the old design.
+
+- **`pathHeight(u)` already exists** on the `Ability` base (`src/abilities/Ability.js`) and lifts an element above
+  the drawn ground path. Fire flies. So **fire can cross a water hazard and earth cannot** — a legible, diegetic
+  rule that falls out of code already written.
+- Travel speeds already differ: fire 11.5, water 7.5, earth 6.0, wind 14.0 m/s. A layout with a closing gate is a
+  wind problem.
+- `MAX_CONCURRENT` is 8 and there is no cooldown anywhere in the codebase, so a layout that needs two lines is
+  a real option.
+
+The element is now a decision with a cost and a property, not a lock with a displayed key.
+
+### The Ward: one stone per sigil, not one per element
+
+**The first draft's Ward was mathematically broken and the review caught it.** Eight stones, four elements, two
+stones per element; the tutorial Rite had zero element changes, so at most **two of eight stones could ever
+light**. The first three Rites were all unwinnable by construction, and the draft had written gentle copy to
+soften a failure the player could not avoid. That is worse than a hard loss: it teaches the player that their
+input does not matter.
+
+The fix is to stop conflating the stage geometry with the scoreboard. **The Ward that lights has one stone per
+sigil in the current Rite** — a three-sigil Rite lights a three-stone Ward. It is a progress bar made of rock: it
+reads at a glance, it fills completely on a clean run, and a dark stone is unambiguously one specific line you
+fluffed.
+
+Keep the eight-stone ring as stage dressing if it looks good, which it will. Build it from
+`createTowerGeometry(seed)` and `createSlabGeometry(seed, sides)`, which `src/assets/ProceduralGeometry.js`
+already exports.
+
+**The stones must not take point lights.** `LightPool`'s `POOL_SIZE` is 6 (`src/effects/LightPool.js:5`), it is
+shared with every cast, `acquire()` returns `null` when exhausted, and `MAX_CONCURRENT` already allows 8
+abilities. Light them with an emissive material and let bloom do the work: `post.bloomThreshold` is 0.72 against a
+`#14181d` stage, so a lit stone costs one uniform write.
+
+### Failure is legible, not quiet
+
+The first draft said failure was "a stone staying dark" and that "the lesson is delivered by the world's silence".
+Silence is not a lesson; it is ambiguity. A player facing a dark stone cannot tell wrong element from bad line
+from a bug.
+
+**A dark stone carries the line you actually drew**, burned faintly into its face beside the problem it posed, and
+it stays there for the rest of the Rite. One pooled decal quad — `GroundDecals` already pools `PlaneGeometry` plus
+`ShaderMaterial` with `uColorA` / `uColorB` / `uWidth`. The Ward becomes a gallery of your near-misses, the
+correction is spatial rather than textual, and "quiet" becomes "legible" without a word of error copy.
+
+And **never let a cast produce nothing.** A wrong element is refused *in character*: the stone flinches, the
+element lands and drains away in the wrong colour. A rejection you can see is dignified. An absence you have to
+infer is a bug you cannot report.
+
+### Spend the outcome on the caster's body
+
+`CasterPerformance.setGesture` already accepts an `intensity` that nothing passes; it is clamped to `[0.35, 1.6]`
+and multiplied into all eight arm and hand joints (§3). Pass the solve quality into it:
+
+```js
+// src/core/App.js — in the pathDrawer 'cast' handler
+const outcome = rite.resolveStroke(curve, rite.layout, this.abilities.selected);
+this.caster?.setGesture('release', {
+  element: this.abilities.selected,
+  // 0.35 is a hesitant, half-committed throw; 1.6 is a full one. The player
+  // reads the answer off the caster's posture before anything else resolves.
+  intensity: 0.35 + (outcome.reached.filter(Boolean).length / outcome.reached.length) * 1.25
+});
+```
+
+A clean solve makes the caster commit; a scrape makes them hesitate. No new animation, no HUD element, no number.
+
+### The moment of delight, given its proper weight
+
+The reviewer's sharpest observation: the first draft spent roughly forty rows of verbatim tuning constants on two
+aiming reticles and **one clause** on the only moment where the game gives the player something rather than
+measuring them. That ratio was the design.
+
+**The close is the point of the whole Rite.** When the last stone lights: the camera drops toward the ground,
+`settings.camera.autoFrame` goes to 1.0, and the caster rides **your own drawn line** out through the Ward on the
+air scooter while all its stones pass overhead. You already own 366 lines of finished `WalkController` and an
+`AirScooter` that almost nobody has seen.
+
+That is the thing a player will describe to someone else. It gets as many words in the implementation as the
+arrowhead did, and it is not cut under scope pressure — if the budget only covers the loop and the close, ship
+those two.
+
+### Difficulty, by shape rather than by clock
+
+The first draft escalated with a per-sigil timer (12 s → 9 s → 7 s) while §10 shipped a calm mode with "no time
+pressure on sigils", so calm-mode players hit a content ceiling at Rite 2 and nothing replaced the pressure.
+**Escalate the problem, not the clock** — it is the axis this design is supposedly about.
+
+| Rite | Lines | Waystones | Hazards | Elements offered |
+|---|---|---|---|---|
+| 1 (first run) | 3 | 2, both in front | none | 1 |
+| 2 | 3 | 3 | 1 | 2 |
+| 3 | 4 | 3, one behind the caster | 2 | 2 |
+| 4 | 5 | 4 | 2, one crossable only by fire | 3 |
+| 5+ | 5 | generated | generated | 4 |
+
+**Attempts per line: three, best kept, and the stone shows which attempt it was.** The first draft never stated
+this, which is the most important rule in any scored game — and without it the optimal strategy is to spam fast
+sloppy lines, since there is no cooldown anywhere in this codebase.
+
+### Content: generate, do not enumerate
+
+The first draft's entire content library was six hand-named shapes. Six shapes behind a mastery gate is a
+twenty-minute product.
+
+A layout is a seed: waystone count, their positions in polar coordinates about the stage anchor, hazard shapes
+and placement, and which elements are offered. That is a generator, and the same six primitives become hundreds of
+authored-feeling problems.
+
+Two cheap, server-free returns:
+
+1. **The daily seed.** `hash(YYYY-MM-DD)` picks today's Rite; everyone who opens it gets the same one. One hash
+   function, no account, no telemetry, fully compatible with §15. "Your best on today's Rite" is a meaningfully
+   different sentence from "your best ever".
+2. **Race your own best line.** You already store polylines and already own a second `PathTrail`. Draw over your
+   own best solve and watch yourself beat it. That is "my hand is better" made visible rather than asserted, and
+   it is the best local progression artifact available to a product that cannot have leaderboards.
+
+Persisted state stays small and honest: which layouts have been solved, and the best line for each, in
+`localStorage` via `src/state/preferences.js` (§9).
+
+### Hand tracking: it is a demo today, and the draft's justification was false
+
+The first draft claimed: *"with a mouse you must stop drawing to change element... a two-element sigil in one
+unbroken stroke is simply impossible with a mouse."* **Both halves are wrong, and the code says so.**
+
+1. **You can already change element mid-stroke with a mouse.** `src/core/App.js:121` binds
+   `this.input.on('element', (index) => this.selectElement(ELEMENTS[index]))`, and `InputManager._onKeyDown`
+   emits `element` on `Digit1`–`Digit4` with **no check on `isDrawing`**. Hold the left button, drag, press `2`,
+   keep dragging. §4's own controls table lists those keys.
+2. **A two-element stroke is not representable by any device**, because the element is sampled once, at release:
+   `this.abilities.cast(curve)` uses `this.abilities.selected` at that moment (`src/core/App.js:133`,
+   `src/abilities/AbilityManager.js:63`). Splitting a curve at a switch point is a change to the cast router, not
+   to the hand tracker, and a keyboard would then do it identically.
+
+So the honest current answer to "what is better with hands" is **nothing**. §10's own budget table ranks
+two-handed tracking first to be cut under load, while the draft called it "the ceiling of the whole design".
+
+**Therefore: hands are out of scope for this update.** Ship the loop pointer-first. Leave `HandInput` working as
+it is, fix its thumbs-up bug (§11), and bring hands back when they earn a verb.
+
+**When they come back, here is the verb.** A mouse cursor is a point; a hand is a pose with continuous parameters
+MediaPipe already supplies. Bind the continuous ones to the continuous character of the cast, not to a menu:
+
+- **Finger spread modulates the cast's width.** Fingers together and fire travels as a thin lance; open your hand
+  mid-stroke and it blooms. `Ability` re-samples `settings` every frame by design (§11, hazard 16), so a per-frame
+  width scalar drops into the existing shaders.
+- **Wrist roll modulates `pathHeight`.** Roll your palm up and the element lifts off the ground over the stroke
+  you are still drawing. `pathHeight` already exists and fire and water already override it.
+- **Grab pressure is the release.** A loose open is a spill; a hard fist is a strike.
+
+That is a genuine ceiling: a hand draws a stroke **with an inflection a mouse has no axis for**, in one continuous
+gesture, visible in the VFX without reading a number. It also survives the quality ladder, because it works with
+`numHands: 1`.
+
+### Session state machine
+
+```
+BOOT -> INTRO -> RITE_OPEN
+RITE_OPEN -> LINE_PRESENT -> LINE_DRAW -> LINE_RESOLVE
+LINE_RESOLVE -> LINE_PRESENT   (attempts remain, or lines remain)
+LINE_RESOLVE -> RITE_CLOSE     (last line resolved)
+RITE_CLOSE -> RITE_OPEN        (player continues)
+RITE_CLOSE -> FREE             ("Set the Rite aside" -> today's sandbox, unchanged)
+FREE -> RITE_OPEN              ("Begin a Rite")
+any -> FREE                    (Escape; the sandbox is always one key away)
+```
+
+The sandbox is never removed. It becomes the state you can always return to, which also protects everything the
+Workshop and the Editor already do.
+
+### 8.9 What was cut from the first draft, and why
+
+Recorded so nobody re-proposes it.
+
+| Cut | Reason |
+|---|---|
+| **Tracing a shown sigil, graded for fidelity** | Reproduction-grading. Converts failure into "your handwriting is bad", and nobody replays a copy. |
+| **The three-component score (Line / Flow / Closure)** | See §11, hazards 21–23. Flow is identically zero on the resampled buffer and measures the player's *hardware* on the raw one; metric tolerances are anisotropic on an oblique camera and gameable with the scroll wheel. |
+| **"Tolerance tightens from 0.55 m to 0.28 m"** | A world-metre tolerance is worth 6.7× more screen at the front of the stage than the back, and the player controls the zoom. |
+| **The eight-stone element-affinity Ward** | Made the first three Rites unwinnable by construction. |
+| **"Drawing to the beat of the Ward"** | A rhythm mechanic in a product that argues four paragraphs for having no audio (§5) and lists audio as out of scope (§15). |
+| **"Flow rewards an even hand" beside "the long line rewards commitment"** | The same motion scored in opposite directions: a fast committed stroke accelerates, and acceleration *is* spacing variance. |
+| **The per-sigil timer** | Contradicted §10's calm mode, which removes time pressure and then had no replacement escalation. |
+| **The two-element-stroke hand payoff** | Refuted by `src/core/App.js:121` and `:133`. |
 
 ### Before designing the ride, know what it already is
 
@@ -1180,152 +1401,6 @@ Gaps, all verified:
 So the ride is a cutscene you trigger. Making it a verb means giving the player something to do during it — at
 minimum, the ability to end it — and spending its telemetry on something the Rite can see.
 
-### The unit of play: the Rite
-A **Rite** is three to five sigils drawn in sequence, framed by a beginning and an end.
-- **Opening** (~4 s): the stage dims, the Ward's stones go dark, the first sigil burns into the ground.
-- **Body**: one sigil at a time. Each has an element it wants and a shape it wants. Draw it. The Ward answers.
-- **Close** (~6 s): the caster rides the last sigil's path out on the scooter while the Ward holds its light.
-
-First session: one Rite of three sigils, ~3 minutes with onboarding. Returning session: Rites of five, ~20 minutes
-across several, each Rite seeded differently.
-
-### The Ward, not dummies
-A ring of **eight procedural standing stones** on the ritual ground at radius ~7 m, built from
-`createTowerGeometry(seed)` and `createSlabGeometry(seed, sides)` which `src/assets/ProceduralGeometry.js` already
-exports. `DecalSystem` already has `SHOCKWAVE`, `RIPPLE`, `CRACK` and `DUSTRING`. A stone is: a position, an
-element affinity, and a `lit` float 0..1. No new asset, no physics, no collision.
-
-**The stones must not take point lights.** `LightPool`'s `POOL_SIZE` is **6** (`src/effects/LightPool.js:5`), it is
-shared by every ability, `acquire()` returns `null` when exhausted, and `MAX_CONCURRENT` already allows 8 abilities.
-Eight stones would starve the casts. Light them with an **emissive material and let bloom do the work**:
-`post.bloomThreshold` is 0.72 against a `#14181d` stage, so only emissive surfaces bloom — a lit stone costs one
-uniform write and nothing else.
-
-- A scored trace raises `lit` on the stones whose affinity matches the sigil's element, by the fidelity score.
-- Fire scorches, water ripples, earth cracks, air raises a dust ring — the four decal types already in the enum.
-- A stone at `lit >= 1` holds a standing light. A Rite is complete when the Ward is whole.
-- **Failure is a stone staying dark.** The Rite still ends. Nothing is lost; the Ward is simply not whole, and the
-  close is quieter. That is a beat, not a punishment, and it is the right failure for a product with no enemies.
-
-### Scoring: fidelity, not damage
-At release, compare the drawn stroke to the sigil's reference polyline.
-
-**One correctness trap to avoid.** `PathDrawer` resamples to a count that depends on the stroke's length —
-`wanted = clamp(round(length * settings.input.samplesPerUnit), 2, 320)` with `samplesPerUnit: 3.0`
-(`src/input/PathDrawer.js:_rebuild`). A 4 m stroke yields 12 samples and a 20 m stroke yields 60, so **sample `i`
-of the stroke does not correspond to sample `i` of the sigil**. The scorer must resample both to the same fixed
-count first. Use `curve.getPointAt(i / (N - 1))`, which is arc-length parameterised in three.js, with `N = 64`
-into two preallocated buffers — the same discipline `PathDrawer` already applies to its own 320-`Vector3` buffer.
-
-```js
-/**
- * Fidelity of a drawn stroke against a reference sigil.
- *
- * Both curves are resampled to SAMPLES points by arc length before comparison,
- * because `PathDrawer`'s own sample count scales with stroke length and two
- * strokes of different lengths would otherwise not line up index for index.
- *
- * The stroke is scored in both directions and the better result wins: drawing a
- * sigil backwards is a different hand, not a worse one.
- *
- * Allocates nothing — both buffers are module-level and reused, matching the
- * discipline in `PathDrawer`.
- *
- * @param {THREE.Curve} stroke    what the player drew
- * @param {THREE.Curve} sigil     what the Grimoire asked for
- * @param {number} tolerance      metres of deviation scored as zero fidelity
- * @returns {{ line: number, flow: number, closure: number }} each 0..1
- */
-export function scoreTrace(stroke, sigil, tolerance) { /* ... */ }
-```
-
-Three published components, because a single opaque number teaches nothing:
-- **Line** — mean deviation from the sigil. The core skill.
-- **Flow** — variance of sample spacing. Rewards an even hand; already derivable because `minPointDistance`
-  gates raw samples.
-- **Closure** — distance between the stroke's end and the sigil's end. Rewards finishing the shape.
-
-Wrong element: the trace still casts (never refuse the player's input) but the Ward does not answer. The lesson is
-delivered by the world's silence, not by an error message.
-
-**Spend the fidelity on the caster's body, not on a number.** `CasterPerformance.setGesture` already accepts an
-`intensity` that nothing passes; it is clamped to `[0.35, 1.6]` and multiplied into all eight arm and hand joints
-(§3). Pass the Line score into it:
-
-```js
-// src/core/App.js — in the pathDrawer 'cast' handler
-const fidelity = rite.scoreTrace(curve, rite.currentSigil, rite.tolerance);
-this.caster?.setGesture('release', {
-  element: this.abilities.selected,
-  // 0.35 is a hesitant, half-committed throw; 1.6 is a full one. The player
-  // reads their own accuracy off the caster's posture before any number appears.
-  intensity: 0.35 + fidelity.line * 1.25
-});
-```
-
-That is the whole feedback system for free, in the most legible place possible: a true sigil makes the caster
-commit, a sloppy one makes them hesitate. No new animation, no HUD element, no number. The numeric readout, if it
-exists at all, is a confirmation of something the player already felt.
-
-### What gets better: the hand
-No experience bars. Progression is **the sigil deck**: new sigils unlock as earlier ones are drawn truly, and the
-old ones stay in rotation. A returning player is not carrying a bigger number; they can draw a spiral cleanly at
-speed, which they could not do on day one. The only persisted state is which sigils are known and the best Line
-score for each — a few hundred bytes in `localStorage`, honestly labelled as living only in this browser.
-
-### Difficulty, with numbers
-| Rite | Sigils | Shape | Time per sigil | Element changes |
-|---|---|---|---|---|
-| 1 (tutorial) | 3 | single arc | none | 0 |
-| 2 | 3 | arc, hook | none | 1 |
-| 3 | 4 | hook, chevron, loop | 12 s | 2 |
-| 4 | 5 | loop, spiral, double-back | 9 s | 3 |
-| 5+ | 5 | seeded from the deck | 7 s | up to 4 |
-Tolerance tightens from 0.55 m to 0.28 m across the same span.
-
-### The honest hand-tracking payoff
-**With a mouse you must stop drawing to change element. With a hand you do not.**
-
-Today fye-mini forces the break in two ways at once: `numHands` is 1, and element selection is a 400 ms dwell of
-the *drawing* hand over the dock (`HandInput._trackDock`). Both hands are the same hand, so changing element
-always interrupts the stroke.
-
-Raise `numHands` to 2 and split the roles: **the drawing hand pinches and traces; the off hand holds the element
-pose.** A sigil that demands two elements in one unbroken stroke then becomes faster and more expressive with
-hands than with a mouse — and is simply impossible with a mouse without breaking the stroke.
-
-This is not speculation. `HandCastAbilityThreeJS` already ships the two-handed split: its guide declares
-`row(['prev','next'], 'Point sideways', 'previous / next ability', 'point', 'other')`, where `'other'` is
-explicitly "which hand, when it is not the casting one", and its `HandInput` resolves MediaPipe `handednesses`
-per hand with an `aimHand` option so a left-handed player can swap them. The pattern is proven upstream; fye-mini
-only has to point it at elements instead of slots.
-
-The cost is real — a second hand roughly doubles inference — so it is gated behind the adaptive quality ladder
-(§10) and is never required. With one hand, or with a pointer, or on a phone, the same sigil is drawn as two
-strokes and scored as two. The two-handed version is the ceiling, not the floor.
-
-### Three high-skill expressions
-1. **The unbroken two-element sigil** — above. Hands only; the ceiling of the whole design.
-2. **Drawing to the beat of the Ward.** Stones pulse at a fixed cadence; a release landing on the pulse adds a
-   resonance bonus to `Closure`. Rhythm on top of shape, no new input.
-3. **The long line.** Tolerance scales with sigil length, so a big, fast, confident stroke is worth more than a
-   small careful one at equal fidelity. Rewards commitment, which is what casting should feel like.
-
-### Session state machine
-```
-BOOT -> INTRO -> ATTUNE(onboarding, first session only) -> RITE_OPEN
-RITE_OPEN -> SIGIL_PRESENT -> SIGIL_TRACE -> SIGIL_RESOLVE
-SIGIL_RESOLVE -> SIGIL_PRESENT   (sigils remain)
-SIGIL_RESOLVE -> RITE_CLOSE      (last sigil resolved)
-RITE_CLOSE -> RITE_OPEN          (player continues)
-RITE_CLOSE -> FREE               ("Set the Rite aside" -> today's sandbox, unchanged)
-FREE -> RITE_OPEN                ("Begin a Rite")
-any -> FREE                      (Escape; the sandbox is always one key away)
-```
-The sandbox is never removed. It becomes the state you can always return to, which also protects everything the
-Workshop and the Editor already do.
-
----
 
 ## 9. Shared architecture
 
@@ -1378,7 +1453,7 @@ Before writing anything new, use what is there. Each of these is verified.
    free and already hold the live camera.** Promote to a public `projectPointer(pointer, out)`, or lift
    `GROUND_PLANE` into a shared module. It is the exact code an aim indicator, a far-cast target picker and a
    ghost-sigil reticle all need.
-5. **`App.stageAnchor` is a free arena primitive** (§11, hazard 23). Writing it relocates the shadow frustum, the
+5. **`App.stageAnchor` is a free arena primitive** (§11, hazard 26). Writing it relocates the shadow frustum, the
    dust volume and the orbit centre together.
 
 ### Two unused hand channels, free
@@ -1642,9 +1717,40 @@ because they are the things an implementer discovers at the worst possible momen
 20. **Keep `PathDrawer` a pure draw-to-curve device.** Every mode decision belongs in `App._bindEvents` or the new
     router, not inside the drawer.
 
+### Anything that scores a drawn line
+
+These three are why §8 no longer scores fidelity in metres. They apply to any future scoring too.
+
+21. **`PathDrawer` smooths per pointer *event*, not per frame, and is not delta-corrected.**
+    `move()` runs `this._smoothed.lerp(this._hit, clamp(1 - settings.input.smoothing, 0.05, 1))` from inside the
+    `pointermove` handler. A 1000 Hz gaming mouse converges on the true cursor almost instantly; a 60 Hz trackpad
+    lags and rounds every corner, **from identical hand motion**. Any sub-metre tolerance is smaller than that
+    difference. Fix it before anything is scored: make the coefficient time-based, `1 - Math.exp(-k * dt)`, with
+    `dt` the real elapsed time since the last accepted sample. Two lines.
+22. **A world-metre tolerance is anisotropic on this camera, and the player controls the zoom.** The default rig
+    sits at `(-6.5, 6.0, 9.5)` looking at `(0, 1.35, 0)` — about 22° of elevation — so ground deviation *in
+    depth* is foreshortened by roughly `sin(ε)` while deviation *across* the view is not. The same tolerance is
+    worth several times more screen at the front of the stage than at the back, and more sideways than in depth.
+    On top of that, `CameraRig` lets the wheel drive `settings.camera.distance` anywhere from 3.5 m to 30 m and
+    right-drag the polar angle. **Difficulty would be bound to the scroll wheel**, and §7's plan to frame phones
+    tighter would make phones easier than desktop, which is backwards. Any scoring must be **scale- and
+    position-normalised** (subtract the centroid, divide by RMS radius) before it is compared to anything.
+23. **"Variance of sample spacing" measures the hardware, or nothing at all.** On `PathDrawer.resampled` it is
+    **identically zero** — `_rebuild` resamples arc-length-uniform via `getPointAt(i / (wanted - 1))`, so spacing
+    is `length / (wanted - 1)` by construction. On the raw `samples` array it measures the interval between
+    accepted pointer events, which is polling rate times hand speed, gated at `minPointDistance 0.22`. Neither is
+    a property of the player.
+
+**If a future version does need shape comparison**, use the solved approach rather than point-to-point distance:
+resample both to N = 64, normalise out scale and position as above, then compare **turning-angle profiles**
+(cumulative signed curvature against normalised arc length). That is the `$1 Recognizer` / Protractor family, it
+is roughly thirty allocation-free lines, and it is what every gesture recogniser uses because it distinguishes
+"same shape, shaky hand" from "wrong shape". Keep the first draft's instinct of testing both directions and
+taking the better: drawing a shape backwards is a different hand, not a worse one.
+
 ### Live bugs found while writing this, all verified
 
-21. **The Cast button in the stage dock does nothing.** `app/grimoire-stage.css:14` sets
+24. **The Cast button in the stage dock does nothing.** `app/grimoire-stage.css:14` sets
     `.stage-hud { pointer-events: none; }` and its children opt back in one at a time —
     `.element-selector { pointer-events: auto }` (`:15`) and `.ride-button { pointer-events: auto }` (`:22`).
     **No `.cast-button` rule in the file ever does**, and `app/GrimoireStage.tsx` renders it as a direct child of
@@ -1655,7 +1761,7 @@ because they are the things an implementer discovers at the worst possible momen
     .stage-hud { pointer-events: none; }
     .stage-hud > * { pointer-events: auto; }
     ```
-22. **A thumbs-up selects Stone.** In `src/input/HandInput._trackPose`:
+25. **A thumbs-up selects Stone.** In `src/input/HandInput._trackPose`:
     ```js
     const four = [fingers.index, fingers.middle, fingers.ring, fingers.pinky];
     if (!four.some(Boolean)) next = 'earth';
@@ -1663,26 +1769,26 @@ because they are the things an implementer discovers at the worst possible momen
     The fist test ignores the thumb, and `fingers.thumb` is computed on the line above. Four fingers curled with
     the thumb out is read as a fist. Tighten to `!four.some(Boolean) && !fingers.thumb`. That fixes the misread
     **and** frees thumbs-up and thumbs-down as two unused verbs.
-23. **`App.stageAnchor` is allocated and never written.** `src/core/App.js:50` allocates it; `:288`, `:291` and
+26. **`App.stageAnchor` is allocated and never written.** `src/core/App.js:50` allocates it; `:288`, `:291` and
     `:304` read it, so it is permanently `(0, 0, 0)`. Writing it moves three things at once with no
     re-allocation: the sun's shadow frustum (`environment.setFocus`), the dust volume (`dust.update`) and the
     camera's orbit centre (`rig.setAnchor`). **That is a complete arena-relocation primitive, already wired end to
     end, pinned to the origin.** If the Rite ever moves the ritual ground — between rounds, for the intro, for a
     close — this is the one line.
-24. **A raw engine key leaks to the UI at `app/GrimoireStage.tsx:244`.** Elements are internally
+27. **A raw engine key leaks to the UI at `app/GrimoireStage.tsx:244`.** Elements are internally
     `['fire','water','earth','wind']` and publicly `air` for wind; `App.js` translates by hand at `:141`, `:201`
     and `:222`. The React island does not, in that one place.
-25. **The `DIALS` literals at `app/GrimoireStage.tsx:26-47` duplicate engine defaults into React.** That is
+28. **The `DIALS` literals at `app/GrimoireStage.tsx:26-47` duplicate engine defaults into React.** That is
     already a desync bug, not a pattern to copy. `src/config/settings.js` is the single source of truth.
-26. **`app/grimoire-stage.css` uses `backdrop-filter` without the `-webkit-` prefix**, so the panel blur is absent
+29. **`app/grimoire-stage.css` uses `backdrop-filter` without the `-webkit-` prefix**, so the panel blur is absent
     on older WebKit.
-27. **The engine has authority to open React UI.** `app/GrimoireStage.tsx`'s `grimoire:input-status` listener
+30. **The engine has authority to open React UI.** `app/GrimoireStage.tsx`'s `grimoire:input-status` listener
     calls `setHandsOpen(true)` when the state is `ready` or `tracking`. Remove it before adding any further
     engine-to-React signals, or the seam rots.
 
 ### Licensing
 
-28. **Both reference repositories are MIT, Copyright (c) 2026 mohamedachrefelouafi.** Any transplanted file,
+31. **Both reference repositories are MIT, Copyright (c) 2026 mohamedachrefelouafi.** Any transplanted file,
     shader or substantial code fragment must carry attribution. `THIRD_PARTY_NOTICES.md` already exists and is
     where it goes. Do this in the same commit as the transplant, not afterwards.
 
@@ -1766,14 +1872,14 @@ The boring PR that makes the other five cheap. Ship it first and alone.
   screen (§7) and splitting it belongs with the token work in P3.
 - Fix `gl.shadowMap.needsUpdate` to stop re-rendering a 4096² map 60×/s.
 - Give `toggleHelp` / `togglePose` / `toggleMode` real cases, or stop emitting them.
-- **The three live bugs (§11, hazards 21, 22 and the loader race in §5).** All are a few lines and none of them
+- **The three live bugs (§11, hazards 24, 25 and the loader race in §5).** All are a few lines and none of them
   should wait behind a design track:
   - `.stage-hud > * { pointer-events: auto }`, so the Cast button is clickable.
   - `&& !fingers.thumb` on the fist test, so a thumbs-up stops selecting Stone.
   - Drive the loader's reveal and React's `stageReady` from one signal, so the Cast button stops reading
     "Waking" for up to 920 ms over a live stage.
 - Also cheap and here: the raw engine key leaking at `app/GrimoireStage.tsx:244`, the missing
-  `-webkit-backdrop-filter`, and removing the engine's ability to open a React dialog (§11, hazards 24, 26, 27).
+  `-webkit-backdrop-filter`, and removing the engine's ability to open a React dialog (§11, hazards 27, 29, 30).
 - **Done when**: `npm test` passes, the product looks and behaves identically **except that the Cast button now
   works**, and the bundle is smaller.
 
