@@ -103,8 +103,10 @@ None of the three is more than a few lines to fix.
 Both reference repositories are aim-and-click skillshot ranges. Their verb is *aim*, which is a decision about
 **where**. fye-mini's verb is *draw*, which is a decision about **shape**. Shape is a far richer skill surface, it
 is the only thing in this lineage nobody has built a game on, and it is already 90% implemented: `PathDrawer`
-produces a 320-point arc-length-uniform polyline on every stroke and discards it after one use
-(`src/input/PathDrawer.js:_rebuild`).
+resamples every stroke into a preallocated 320-`Vector3` buffer, filling
+`clamp(round(length × settings.input.samplesPerUnit), 2, 320)` arc-length-uniform points at `samplesPerUnit: 3.0`,
+then discards them after one use (`src/input/PathDrawer.js:_rebuild`). **320 is the buffer's capacity, not the
+output count** — a 4 m stroke yields about twelve points, which §8 depends on.
 
 There is a sharper version of this. `LinearAbiltyCastingExtendedThreeJS` contains a directory called
 `src/archive/` holding `FireAbility.js`, `WaterAbility.js`, `EarthAbility.js`, `WindAbility.js`, `PathDrawer.js`,
@@ -434,9 +436,13 @@ branch table, and `RibbonGeometry.build(points, {count, width, mode, widthProfil
 ### Settings convention we are missing
 
 The reference ability blocks carry `range`, `minRange`, `speed` and `cooldown` keyed by element id. fye-mini's
-element blocks have `speed` and `lifetime` but **no `range`, `minRange` or `cooldown`**. Those three keys must be
-added to `settings.fire/water/earth/wind`, to `EXACT_SPELL_RANGES`, and to the `SPELL_SETTING_BLOCKS` snapshot, or
-`validateSpellSettings` will report them as "not a spell setting" and `App._applyFlatPatch` will silently drop them.
+element blocks have `speed` and `lifetime` but **no `range`, `minRange` or `cooldown`**. Add those to
+`settings.fire/water/earth/wind` **and to `EXACT_SPELL_RANGES` under the public `air.*` spelling**, or
+`App._applyFlatPatch` silently drops them.
+
+Nothing else is needed. An earlier draft also said to update `SPELL_SETTING_BLOCKS`, or `validateSpellSettings`
+would reject the keys; both clauses were wrong. `SPELL_SETTING_BLOCKS` is a flat list of *block names* that
+already contains `'fire'`, and `validateSpellSettings` has **zero live callers** (§3).
 
 ### The gesture guide — the best onboarding artifact in either repo
 
@@ -1367,6 +1373,13 @@ this.caster?.setGesture('release', {
 
 A clean solve makes the caster commit; a scrape makes them hesitate. No new animation, no HUD element, no number.
 
+**One catch.** `CasterPerformance` auto-advances `release → recovery` at `t > 0.28` and `recovery → idle` at
+`t > 0.78`, and both calls pass **no options** — and `:52` is
+`MathUtils.clamp(Number(options.intensity) || 1, .35, 1.6)`, so `undefined` resets intensity to **1** after
+0.28 s. Either accept that the reading lands on the 0.28 s release beat only, or have the auto-advance carry
+`this.intensity` forward. Note also that `Number(0) || 1 === 1`, so a literal zero is silently promoted; clamp
+from a sentinel rather than from falsiness if zero ever needs to mean something.
+
 ### The moment of delight, given its proper weight
 
 The reviewer's sharpest observation: the first draft spent roughly forty rows of verbatim tuning constants on two
@@ -1786,9 +1799,14 @@ because they are the things an implementer discovers at the worst possible momen
    `confirm()`. Anything that treats targeting as a two-way branch produces a summon that promises a target it does
    not have. Even though summons are out of scope (§15), model the enum with three members now so adding one later
    is not a refactor.
-2. **Update order in `App.frame()` is load-bearing.** `hands.update(raw)` must run **before** `aim.update(raw)` or
-   the indicator trails the hand by a frame. `applyHits()` must run **after** the abilities are stepped, or the
-   volume tested is last frame's.
+2. **Hand input and the render loop are two independent `requestAnimationFrame` chains with no ordering
+    guarantee.** `App.frame()` never calls anything hand-related; `HandInput` drives its own loop
+    (`src/input/HandInput.js:169-196`). Anything in `App.frame()` that reads a landmark reads whatever the
+    *other* loop last wrote, so a one-frame lag is not something you can order your way out of. Either fold
+    `HandInput._loop` into `App.frame()` or state the lag and accept it. The reference repos run both from one
+    loop, which is where their "hands before aim" ordering comes from; **it does not transfer to fye-mini as
+    written.** Within `App.frame()` one ordering genuinely is load-bearing: `applyHits()` must run **after** the
+    abilities are stepped, or the volume tested is last frame's.
 3. **Targeting and hand tracking run on the real delta; effects and gameplay run on the scaled one.** In
    `App.frame()` those are `raw` and `dt` respectively (`src/core/App.js:frame`). Pass `raw` to the aim controller
    or the indicator freezes the moment someone presses `P`.
@@ -1818,9 +1836,15 @@ because they are the things an implementer discovers at the worst possible momen
     for as long as it is shut, and false the instant the hand is lost.
 11. **Element stepping by hand must emit a relative sign (+1/−1), never an absolute index.** An absolute slot
     desynchronises permanently the first time a selection is refused, with no way for the player to notice.
-12. **Never derive finger extension from screen-space y.** fye-mini already does this correctly — `isExtended`
-    compares two distances from the wrist and normalises by the wrist-to-middle-knuckle span
-    (`src/input/HandInput.js:_trackPose`). Keep it that way.
+12. **Never derive finger extension from screen-space y — and fye-mini's own test is only half right.**
+    `src/input/HandInput.js:243` is
+    `const isExtended = (tip, pip) => distance(landmarks[tip], landmarks[0]) > distance(landmarks[pip], landmarks[0])`.
+    It correctly avoids screen-space y, but it does **not** normalise: it is a bare comparison of two wrist
+    distances with no margin, so it flips on noise near the threshold. `handScale`
+    (`distance(landmarks[0], landmarks[9])`) is computed on `:214` but is used only for `pinchRatio` on `:215`
+    and never reaches `_trackPose`. Adopt the reference's ratio form —
+    `dist(tip, wrist) > dist(pip, wrist) * EXTEND_RATIO` with `EXTEND_RATIO = 1.15`. An earlier draft said
+    fye-mini already did this correctly; it does not.
 13. **Retune the FPS watchdog before raising `numHands`.** The `<15 fps over 3 s` hard-stop
     (`src/input/HandInput.js:185-193`) will trip routinely with two hands on the CPU delegate and silently demote
     the player to pointer with no diagnostic.
@@ -1960,8 +1984,9 @@ documented allowlist for the two MediaPipe CDN URLs in `src/input/HandInput.js` 
 widens the existing single-file `assert.doesNotMatch(stage, /fetch\(/)` into a real guard.
 
 **`tests/cast-contract.test.mjs`** — lock the targeting contract. Assert that `src/input/AimController.js` emits
-`'cast'`, `'arm'`, `'cancel'` and `'reject'`; that `src/input/CastRouter.js` is the only module in `src/` that
-calls `abilities.cast(`; and that **no file under `src/abilities/` changed its `spawn(` signature away from
+`'cast'`, `'arm'`, `'cancel'` and `'reject'`; that the **only** modules in `src/` calling
+`abilities.cast(` are `src/input/CastRouter.js` and `src/intro/IntroDirector.js` — the intro ships in P1, before
+any router exists, and `App._castStagePreview` already calls it today; and that **no file under `src/abilities/` changed its `spawn(` signature away from
 `spawn(curve)`. That last one is the guard that keeps line casts from quietly rewriting the ability layer the way
 the upstream repository did.
 
