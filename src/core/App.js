@@ -80,7 +80,12 @@ export class App {
       scene: this.scene, decals: this.decals, bursts: this.bursts,
       shake: this.shake, flash: this.flash, abilities: this.abilities,
       // The suggestion starts at the caster's feet, wherever they are.
-      casterPosition: () => this.character?.position ?? this.stageAnchor
+      casterPosition: () => this.character?.position ?? this.stageAnchor,
+      // How much ground the line in front of the player needs on screen. A
+      // portrait phone sees a fraction of what a laptop does across, so this
+      // is the difference between a waystone the player can draw to and one
+      // they have to orbit to find.
+      frameGround: (metres) => this.rig.requireGroundSpan(metres)
     });
 
     this.character = new CharacterController(this.environment);

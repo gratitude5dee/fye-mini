@@ -8,7 +8,7 @@
 
 ## Build status
 
-Implemented on this branch, verified by `npm test` (30 contract tests) and by driving the real app in a browser:
+Implemented on this branch, verified by `npm test` (54 contract tests) and by driving the real app in a browser:
 
 | Phase | State |
 |---|---|
@@ -18,9 +18,9 @@ Implemented on this branch, verified by `npm test` (30 contract tests) and by dr
 | **P5 Onboarding** | **Partly built.** The ghost line ships and retires after one solve. The trust ladder and the full contextual guide do not. |
 | **P7a Tracker** | **Built.** All four anti-misfire guards, the lost state, the ratio-based extension, and the throttled state channel. |
 | **P7b Continuous axes** | **Built.** Lift and spread, end to end. Measured: earth flat peaks at 0.00 m and 2.40 m with a raised hand. Hazard clearance is judged against a declared per-element `flightFloor` rather than the live `pathHeight`, because water's altitude reads the clock and the same line could otherwise solve or fail depending on when it was cast. Only fire clears unaided. |
-| P3 UI system | Not built. The token block, the HUD ownership migration and the three breakpoints are still as specified. |
-| P6 Polish | Not built, except the photosensitivity cap, which shipped in P0 as a safety issue. |
-| P7c Two hands | Not built. Needs the handedness mirror fix (§11, hazard 6) and stroke identity (hazard 7) first. |
+| **P3 UI system** | **Built.** One `:root` token block, one stylesheet, `src/ui/HUD.js` down to a toast and a loading screen, the dock with slot grammar (sigil, name, bound key, active, offered, dwell ring), and three real layouts at 679/680–1024/above. React now also listens for `SELECTED`, which it never did — keys 1–4, Q/E and every hand gesture changed the engine's element while the dock went on showing the old one. |
+| **P6 Polish** | **Built**, less the debug overlay. Adaptive quality ladder on measured median frame time with hysteresis, calm mode as a preference independent of `prefers-reduced-motion`, MediaPipe cadence with the watchdog lowered in proportion, and `SettingsLease` so the ladder, calm mode and the opening can borrow the same settings tree the editor writes to without reverting a dial the player moved. The photosensitivity cap shipped in P0 and is now rate-limited without ever dimming a live flash. |
+| P7c Two hands | Not built. Needs the handedness mirror fix (§11, hazard 6) and stroke identity (hazard 7) first. The quality ladder already refuses it on the conservative tier, which is where §10 put it. |
 | P7d Guide and trust ladder | Not built. The hand sheet mirrors the tracker's live state, but the contextual per-slot guide does not exist. |
 
 **The prototype gate in §14 was never run.** Nobody has watched five people play this. Everything below is still
@@ -1307,8 +1307,14 @@ reset (§6).
 
 ### Responsive
 One 680px breakpoint is not enough for a product whose primary input is a drag across the stage.
-- **Phone (<680px)**: dock as a bottom bar inside the thumb arc; sheets full-width; `.hand-mirror` never shown;
-  the ritual ground framed tighter (`settings.camera.distance` down) so a 4 m sigil fits a 360px-wide viewport.
+- **Phone (<680px)**: dock as a bottom bar inside the thumb arc; sheets full-width; `.hand-mirror` never shown.
+  ~~The ritual ground framed tighter (`settings.camera.distance` down) so a 4 m sigil fits a 360px-wide
+  viewport.~~ **This instruction is backwards and was not implemented.** The camera is a perspective camera with
+  a *vertical* fov, so a portrait viewport already sees less world across than a landscape one, and moving the
+  camera *closer* sees less still. Fitting the same play area on a phone would need the camera pushed past
+  `maxDistance`, at which point the caster is a speck. The honest reading is the one hazard 22 already states:
+  a phone gets a smaller play area, and anything the game measures in world units must be expressed as a
+  fraction of what is visible rather than as an absolute — see the measurements in §17.
   **Verify `minPathLength 1.6` and `minPointDistance 0.22` are still reachable at that framing** — they are world
   units and a tighter camera changes how much screen a world unit is.
 - **Tablet (680–1024px)**: dock bottom-centre, sheets as right-hand panels at 380px.

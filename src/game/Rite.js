@@ -79,10 +79,29 @@ export class Rite {
     // here is left showing for the rest of the session. `clear()` takes the
     // stones; this takes the suggestion, which used to survive into free play.
     this.ghost.cut();
+    // Back to the authored framing: free play has nothing wide to show.
+    this.ctx.frameGround?.(0);
     this.layouts = [];
     this._pending = null;
     this._timer = 0;
     this._publish();
+  }
+
+  /**
+   * The widest the line is, left to right, including the caster at the origin
+   * and the outer edge of every ring — which is what has to be on screen, not
+   * the centres.
+   */
+  static extentOf(layout) {
+    let min = 0;
+    let max = 0;
+    for (const list of [layout.waystones, layout.hazards]) {
+      for (const feature of list) {
+        min = Math.min(min, feature.x - feature.radius);
+        max = Math.max(max, feature.x + feature.radius);
+      }
+    }
+    return max - min;
   }
 
   _present() {
@@ -90,6 +109,10 @@ export class Rite {
     const layout = this.layouts[lineIndex];
     if (!layout) return;
     this._failedAttempts = 0;
+    // Asked for per line rather than once per Rite: most lines need far less
+    // than the widest one, and framing every line for the widest would push a
+    // phone's camera back for the whole session.
+    this.ctx.frameGround?.(Rite.extentOf(layout));
     store.presentLine(layout);
     this.ward.setLayout(layout, ELEMENT_ACCENT[layout.elements[0]] ?? '#bfe8df');
     if (this._teaching) this.ghost.show(this.ctx.casterPosition?.() ?? { x: 0, z: 0 }, layout);

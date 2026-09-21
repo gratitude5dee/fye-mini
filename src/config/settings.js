@@ -162,7 +162,10 @@ export const settings = {
   camera: {
     distance: 11.5,
     minDistance: 3.5, // scroll-wheel zoom range
-    maxDistance: 30,
+    // Raised from 30: a portrait phone needs a long push back to show a wide
+    // layout, and the ceiling was cutting that short rather than the framing
+    // solve deciding it.
+    maxDistance: 40,
     zoomSpeed: 1.0,
     zoomDamping: 0.002, // fraction of the zoom gap left after 1s
     minPolar: 0.35,
@@ -170,7 +173,24 @@ export const settings = {
     fov: 46,
     targetHeight: 1.35,
     damping: 0.06,
-    autoFrame: 0.35 // how strongly the rig drifts toward active abilities
+    autoFrame: 0.35, // how strongly the rig drifts toward active abilities
+    /**
+     * Metres of ground the player must be able to see across the screen, in
+     * free play, when there is no layout asking for more.
+     *
+     * `fov` is vertical, so visible ground *across* the screen is proportional
+     * to aspect: measured on the real rig at the authored distance, a 1280x720
+     * laptop sees 22.8 m, a 900x1200 tablet 9.62 m and a 390x844 phone 5.93 m.
+     * This floor keeps a phone from framing so tight that the caster has no
+     * room to cast into; a Rite asks for more, per line, through
+     * `CameraRig.requireGroundSpan`.
+     */
+    minGroundSpan: 9.0,
+    /**
+     * Metres of clear ground kept outside whatever the Rite asks to fit, so a
+     * waystone never sits flush against the edge of the screen.
+     */
+    groundSpanMargin: 2.4
   },
 
   /* ------------------------------------------------------------------ */

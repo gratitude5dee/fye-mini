@@ -163,3 +163,59 @@ test('exactly one element crosses a hazard unaided, and a raised hand crosses wi
     assert.ok(floor + LIFT >= hazardClearance, `${element} must be able to cross with a raised hand`);
   }
 });
+
+test('every layout the seed can produce fits on the screen it is drawn on', () => {
+  // `fov` is vertical, so how much ground is visible *across* the screen is
+  // proportional to the aspect ratio. Measured against the real rig at the
+  // authored distance: a 1280x720 laptop sees 22.8 m, a 390x844 phone 5.93 m.
+  // Generated layouts span up to 12.1 m, so on a phone most of them did not fit
+  // and the player would have had to orbit mid-Rite to find a waystone.
+  //
+  // The camera now holds `minGroundSpan` by pushing back on a narrow viewport.
+  // This pins the other side of that contract: the generator must never produce
+  // a layout wider than what the camera guarantees to show.
+  let widest = 0;
+  let worstSeed = null;
+  for (let day = 0; day < 120; day++) {
+    const seed = dailySeed(new Date(2026, 0, 1 + day));
+    for (const layout of generateRite(seed, settings.rite.lines, 0)) {
+      // The caster stands at the origin and is part of every line, so the span
+      // the player has to see includes it.
+      const xs = [0, ...layout.waystones.map((w) => w.x + w.radius), ...layout.waystones.map((w) => w.x - w.radius),
+        ...layout.hazards.map((h) => h.x + h.radius), ...layout.hazards.map((h) => h.x - h.radius)];
+      const span = Math.max(...xs) - Math.min(...xs);
+      if (span > widest) { widest = span; worstSeed = seed; }
+    }
+  }
+  // The rig can reach `maxDistance`, and the span it can show there is
+  // proportional to it. The narrowest viewport the product supports is a
+  // portrait phone, measured at 5.93m of ground at the authored distance of
+  // 11.5 — so the widest it can ever show is that ratio times the ceiling.
+  const PHONE_SPAN_AT_AUTHORED = 5.93;
+  const reachable = PHONE_SPAN_AT_AUTHORED * (settings.camera.maxDistance / settings.camera.distance);
+  assert.ok(
+    widest + settings.camera.groundSpanMargin <= reachable,
+    `the widest layout in 120 days spans ${widest.toFixed(2)}m (seed ${worstSeed}), and with the ` +
+    `${settings.camera.groundSpanMargin}m margin a portrait phone can only ever reach ` +
+    `${reachable.toFixed(2)}m at maxDistance ${settings.camera.maxDistance}`
+  );
+});
+
+test('the Rite asks for the line in front of the player, not the worst line there is', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const [rite, rig] = await Promise.all([
+    readFile(new URL('../src/game/Rite.js', import.meta.url), 'utf8'),
+    readFile(new URL('../src/core/CameraRig.js', import.meta.url), 'utf8')
+  ]);
+
+  // Framing every viewport for the widest layout the generator can produce
+  // would leave a phone pushed back far enough that the caster is fifty pixels
+  // tall — in free play, where there is nothing wide to look at.
+  assert.match(rite, /this\.ctx\.frameGround\?\.\(Rite\.extentOf\(layout\)\)/);
+  assert.match(rite, /this\.ctx\.frameGround\?\.\(0\)/, 'and hands the framing back when set aside');
+  assert.match(rig, /requireGroundSpan\(metres\) \{/);
+  // The extent must include the rings, not just the centres: a waystone framed
+  // to its centre is half off the screen.
+  assert.match(rite, /feature\.x - feature\.radius/);
+  assert.match(rite, /feature\.x \+ feature\.radius/);
+});

@@ -90,7 +90,11 @@
   .stage-header { padding: 17px; }
   .wordmark strong { font-size: 28px; }
   .header-actions { gap: 5px; }
-  .quiet-button { padding: 9px 10px; font-size: 9px; }
+  /* `nowrap` because "Hand mode" wrapped to two lines in a 390px-wide desktop
+     window — narrow enough for the phone layout, wide-pointered enough to still
+     be offered the camera. */
+  .quiet-button { padding: 9px 9px; font-size: 9px; white-space: nowrap; }
+  .wordmark span { white-space: nowrap; }
   .stage-message { top: 22%; }
   .stage-hud { right: 0; bottom: 0; left: 0; gap: 7px; padding: 0 0 max(10px, env(safe-area-inset-bottom)); }
   .dock { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 0; padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
