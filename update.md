@@ -1929,3 +1929,49 @@ behind a `z-index: 100` overlay (§5).
 
 The rewrite changes three of the four. **Update the assertions in the same commit as the copy**, and keep their
 intent: a fallback message exists, mobile is camera-free, the attunement is taught, the intro is skippable.
+
+---
+
+## 17. Verification log
+
+So a reader knows how much to trust each claim, and what to re-check first.
+
+### Verified by reading this repository
+Every `file:line` in sections 3, 5, 7, 9 and 11 was read directly at `2408e9c`. Specifically confirmed by running
+the check rather than by inference:
+
+| Claim | How it was confirmed |
+|---|---|
+| `src/ui/glyphs.js` and `src/world/ContactShadows.js` have no importers | `grep -rn` across `src/` and `app/` |
+| Seven `spell-contract.js` exports have no live callers | `grep -rn` per export name, excluding the defining file |
+| `H`, `T`, `M` emit actions with no handler | read `App._handleAction`'s full switch |
+| `PathDrawer`'s `start` and `cancel` have no listeners | `grep -rn "on('cancel'\|on('start'"` returns nothing |
+| The Cast button is not clickable | read every `.cast-button` rule; none sets `pointer-events` |
+| A thumbs-up selects Stone | read the `four` array and the `earth` branch |
+| `App.stageAnchor` is never written | `grep -n stageAnchor src/core/App.js` — one allocation, three reads |
+| `setGesture`'s `intensity` is never passed | `grep -rn "setGesture(" src` — seven call sites, all `{ element }` |
+| No accessibility primitives exist | `grep -rnE "Escape\|keydown\|\.focus\(\|inert\|tabIndex" app/` returns nothing |
+| `src/ui/styles.css` styles the loader | `grep -c "loader\|sigil" app/grimoire-stage.css` returns `0` |
+| `SittingPose` is live | read `CharacterController:118-119` and `WalkController:203` |
+| Asset sizes | `stat -c %s` on each file |
+| Colour and label divergence | read all three definitions side by side |
+
+### Verified by reading the reference repositories
+Both were cloned and read, not summarised from their READMEs. `AimController.js`, `settings.aim`, `settings.zone`,
+`DummyField.applyHits` and `gestures.js` are quoted from source. **Two README claims turned out to be
+misleading**, and section 4 says which.
+
+### Not verified, and why
+- **Anything about three.js itself.** `node_modules` is absent from this checkout, so
+  `OrbitControls.setAzimuthalAngle` and similar could not be checked against the installed `three@0.185.1`.
+  Section 5 flags this and gives a fallback that needs no OrbitControls API at all.
+- **Runtime behaviour.** Nothing here was observed in a browser. The frame budgets in section 10 are estimates
+  from reading the render path, not measurements. Measure before cutting anything.
+- **The deployed site.** `avatar.wzrd.tech` was not reachable from the environment this was written in, so every
+  statement about what a visitor sees is derived from the source at `2408e9c`. If the deployment is behind that
+  commit, check the three live defects there first.
+
+### Re-check these first
+Line numbers drift. Before relying on a citation, confirm it. The claims most worth re-confirming because the most
+depends on them: `Ability.spawn`'s use of only `getLength` / `getPointAt` / `getTangentAt`; the `onAbilityImpact`
+callback discarding its argument; and `CameraRig.update` re-deriving the camera position every frame.
