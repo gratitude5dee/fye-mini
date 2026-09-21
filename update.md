@@ -790,30 +790,94 @@ Then, and only on a click:
    (down 0.32 / up 0.48 of hand scale) so a held pinch is stable.
 5. **Recovery is designed, not an error.** Tracking loss is a first-class state with its own copy, not a toast.
 
-### The gesture guide — port `src/ui/gestures.js`'s idea, not its content
-The single best artifact in either reference repo. It is **contextual and live**: rows change with what is armed,
-and the row matching the tracker's current state lights up. Rebuild it for fye-mini's four poses plus the two
-states fye-mini is missing.
+### The gesture guide, and the hand model underneath it
 
-`HandInput` must publish what it already computes. It currently holds `pose`, `poseStartedAt`, `poseTriggered`,
-`filtered`, `isDrawing`, and per-frame landmark data, and emits none of it. Add one throttled event (≤10 Hz, not
-per frame) carrying `{ pose, hold: 0..1, pinch: 0..1, tracking: 'seeking' | 'found' | 'lost', delegate }`.
+Both are read from the real source at `HandCastAbilityThreeJS` (`src/ui/gestures.js`, 266 lines;
+`src/input/HandInput.js`, 733 lines — fye-mini's is 380). This is the most mature part of either reference repo
+and the largest single upgrade available to fye-mini.
 
-Rows, each `{ glyph, name, does, live }` where `live` is the tracker state that lights it:
+#### The hand model fye-mini is missing
 
-| Glyph | Name | Does | `live` |
-|---|---|---|---|
-| open palm + ring | Open your hand | Wakes the stage and attunes | `wake` |
-| two fingers | Two fingers | Calls water | `water` |
-| horns | Index and little finger | Calls fire | `fire` |
-| fist | Close your fist | Calls stone | `earth` |
-| open palm | Spread your hand | Calls wind | `air` |
-| pinch | Touch thumb to finger | Draws; open to release | `draw` |
-| palm lowered | Lower your hand | Rests the tracker | `lost` |
+| Behaviour | HandCast | fye-mini today |
+|---|---|---|
+| Hands tracked | **`numHands: 2`**, with MediaPipe `handednesses` resolved per hand and an `aimHand` option so a left-handed player can swap | `numHands: 1` |
+| Engagement | **Boots disengaged.** An open palm held `WAKE_MS` = 600 ms engages it | None. Any hand in frame is immediately an input |
+| Cast gesture | A continuous `grab` score with hysteresis, `GRAB_ENTER 0.7` / `GRAB_EXIT 0.4` | Binary pinch distance, `PINCH_DOWN 0.32` / `PINCH_UP 0.48` |
+| Lost | `LOST_MS` = 500 ms, a real disengage with its own guide row | `DROPOUT_GRACE_MS` = 120 ms, only used to end a stroke |
+| Repeat fire | `REFRACTORY_MS` = 400 ms after a cast | None — nothing stops one gesture firing twice |
+| Slot stepping | Point sideways with the **off hand**; `POINT_RATIO 1.2` decides the axis; a held point repeats after `POINT_HOLD_MS` 700 ms then every `POINT_REPEAT_MS` 400 ms | Dwell the drawing hand over the dock for 400 ms, which interrupts drawing |
+| Published state | `state.wake` is a 0..1 progress the UI reads directly | Nothing is published; `pose`, `poseStartedAt` and `isDrawing` stay private |
 
-**The `lost` row is the one fye-mini most needs.** Today there is no way to tell the player *"I can see you, you
-are simply not posing"* apart from *"I cannot see you."* The reference guide treats lowered-hand as a legitimate
-pose, which turns an error into a control.
+**The off-hand row is the important one.** `STEP_ROW` is declared
+`row(['prev','next'], 'Point sideways', 'previous / next ability', 'point', 'other')` — that final `'other'`
+means *the hand that is not casting*. Upstream already proved the two-handed split: one hand stays on the cast
+while the other changes what is armed. That is precisely the payoff §8 asks hand tracking to justify, and it is
+not speculative.
+
+Take, in order of value: the engagement gate, the published `wake` progress, the lost state, the refractory
+window, and then `numHands: 2` behind the quality ladder (§10).
+
+#### The guide itself
+
+Not a legend. A **contextual, live-highlighting panel** rebuilt whenever the armed slot changes.
+
+```js
+/**
+ * @typedef {object} GestureRow
+ * @property {string[]} icons  glyph names, left to right
+ * @property {string}   name   the gesture
+ * @property {string}   does   what it does to the ability in the slot
+ * @property {'other'|null} hand  which hand, when it is not the casting one
+ * @property {'wake'|'aim'|'grab'|'point'|'lost'} live
+ */
+const row = (icons, name, does, live, hand = null) => ({ icons, name, does, live, hand });
+```
+
+`live` names the tracker reading that lights the tile. The line-cast guide, verbatim:
+
+```js
+{
+  kind: 'Line cast · aimed with an arrow',
+  rows: [
+    row(['wake'],  'Open palm',      'hold it to engage',        'wake'),
+    row(['aim'],   'Move hand',      'swings the arrow',         'aim'),
+    row(['cast'],  'Close a fist',   'casts along the arrow',    'grab'),
+    row(['prev','next'], 'Point sideways', 'previous / next ability', 'point', 'other'),
+    row(['lower'], 'Lower hand',     'cancels the cast',         'lost')
+  ]
+}
+```
+
+Note how short the `does` copy is — "swings the arrow", "drops it there", "cancels the cast". The source says why:
+"the copy is short on purpose — a tile is a third of the panel wide, and the hand does most of the telling."
+
+#### The glyphs, and why they are built the way they are
+
+Inline SVG silhouettes that inherit `currentColor`, so a tile lights simply by changing its colour. Each hand is
+drawn **through a mask that carves the seams out as transparency**. The source explains the reasoning, and it is
+worth honouring rather than reinventing:
+
+> "A one-colour hand loses everything inside its outline — the thumb lying across a fist, the fingers curled under
+> a point — and without those it is a blob with bumps. So each hand carries a mask that cuts thin transparent
+> lines where the fingers meet, and the panel behind shows through them. The cuts are transparency rather than a
+> painted colour so the same hand sits on the plain tile and on the lit one without a halo."
+
+#### fye-mini's rows
+
+fye-mini's poses are elemental rather than slot-based, so the rows differ, but the shape does not.
+
+| Glyph | Name | Does | `live` | Hand |
+|---|---|---|---|---|
+| open palm + ring | Open palm | hold it to engage | `wake` | casting |
+| pinch | Touch thumb to finger | draws; open to release | `draw` | casting |
+| two fingers | Two fingers | calls water | `water` | other |
+| horns | Index and little finger | calls fire | `fire` | other |
+| fist | Close your fist | calls stone | `earth` | other |
+| open hand | Spread your hand | calls wind | `air` | other |
+| palm lowered | Lower your hand | rests the tracker | `lost` | either |
+
+To feed it, `HandInput` must publish what it already computes. Add one **throttled** event at ≤10 Hz — never per
+frame — carrying `{ engaged, wake: 0..1, pose, hold: 0..1, pinch: 0..1, tracking: 'seeking'|'found'|'lost', delegate }`.
 
 ### Mobile is a first path, not a degraded one
 `enableHands()` already refuses on `(pointer: coarse)` and says so. Touch keeps everything except the camera:
@@ -1099,14 +1163,24 @@ Tolerance tightens from 0.55 m to 0.28 m across the same span.
 
 ### The honest hand-tracking payoff
 **With a mouse you must stop drawing to change element. With a hand you do not.**
-`HandInput` already detects the four poses on the *non-drawing* hand state, and the pinch is a separate channel.
-Raise `numHands` to 2: the off hand holds the element pose while the drawing hand keeps tracing. A sigil that
-demands two elements in one unbroken stroke is *genuinely faster and more expressive* with hands than with a mouse,
-and it is impossible with a mouse without breaking the stroke.
 
-That is a real answer. It is also a real cost — two hands roughly doubles inference. It must be gated behind the
-adaptive quality ladder and must never be required: with one hand, or with a pointer, the same sigil is drawn as
-two strokes and scored as two.
+Today fye-mini forces the break in two ways at once: `numHands` is 1, and element selection is a 400 ms dwell of
+the *drawing* hand over the dock (`HandInput._trackDock`). Both hands are the same hand, so changing element
+always interrupts the stroke.
+
+Raise `numHands` to 2 and split the roles: **the drawing hand pinches and traces; the off hand holds the element
+pose.** A sigil that demands two elements in one unbroken stroke then becomes faster and more expressive with
+hands than with a mouse — and is simply impossible with a mouse without breaking the stroke.
+
+This is not speculation. `HandCastAbilityThreeJS` already ships the two-handed split: its guide declares
+`row(['prev','next'], 'Point sideways', 'previous / next ability', 'point', 'other')`, where `'other'` is
+explicitly "which hand, when it is not the casting one", and its `HandInput` resolves MediaPipe `handednesses`
+per hand with an `aimHand` option so a left-handed player can swap them. The pattern is proven upstream; fye-mini
+only has to point it at elements instead of slots.
+
+The cost is real — a second hand roughly doubles inference — so it is gated behind the adaptive quality ladder
+(§10) and is never required. With one hand, or with a pointer, or on a phone, the same sigil is drawn as two
+strokes and scored as two. The two-handed version is the ceiling, not the floor.
 
 ### Three high-skill expressions
 1. **The unbroken two-element sigil** — above. Hands only; the ceiling of the whole design.
