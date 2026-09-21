@@ -1254,6 +1254,38 @@ export function curveFromAim(origin, direction, distance) {
 ```
 A zone cast reads its centre as `curve.getPointAt(1)` and works outward — no third code path.
 
+### Five hooks that already exist
+
+Before writing anything new, use what is there. Each of these is verified.
+
+1. **`App._castStagePreview()` (`src/core/App.js:186-194`) is the shipping proof** that a hand-authored
+   `CatmullRomCurve3` casts with zero engine changes — it builds four `Vector3`s and calls `abilities.cast(path)`.
+   Generalise it into one `castCurve(points, element)` that the intro director, the tutorial ghost, the line cast
+   and the far cast all call. Do not write a second path.
+2. **The impact callback already carries the ability and the app throws it away.** `src/core/App.js:70` passes
+   `onAbilityImpact: () => this._onAbilityImpact()`, while `Ability._beginImpact()` calls
+   `this.ctx.onAbilityImpact?.(this)`. Change it to `(ability) => this._onAbilityImpact(ability)` and widen the
+   handler to read `ability.position`, `ability.element` and `ability.u`. One line, and it is the cheapest hook
+   for scoring, hit resolution and a `grimoire:impact` event to the React island.
+3. **The game-rules system has exactly one correct home in the frame loop**: `App.frame()`, between
+   `this.abilities.update(dt)` (`:293`) and `this.particles.flush()` (`:297`). From there it can read
+   `this.abilities.active` for swept `previousPosition → position` tests, emit through `this.decals` /
+   `this.bursts` / `this.shake` / `this.flash`, and force an early detonation via `ability._beginImpact()` — all
+   before particles are uploaded for the frame.
+4. **`PathDrawer._project(pointer, out)` (`:49-52`) and its module-level `GROUND_PLANE` (`:6`) are side-effect
+   free and already hold the live camera.** Promote to a public `projectPointer(pointer, out)`, or lift
+   `GROUND_PLANE` into a shared module. It is the exact code an aim indicator, a far-cast target picker and a
+   ghost-sigil reticle all need.
+5. **`App.stageAnchor` is a free arena primitive** (§11, hazard 21). Writing it relocates the shadow frustum, the
+   dust volume and the orbit centre together.
+
+### Two unused hand channels, free
+
+- `handScale` — `distance(landmark 0, landmark 9)` — is already computed every frame in `HandInput._process` and
+  is a direct hand-to-camera-distance proxy. **Its derivative is a palm-push gesture for nothing.**
+- The same pinch expression on landmarks `(4, 12)` instead of `(4, 8)` gives a **second, non-colliding pinch
+  channel** — thumb to middle finger — without touching the existing thumb-to-index draw trigger.
+
 ### Where game state lives
 Not in React (the engine reads it at 60 fps) and not scattered across modules (React must render it). One
 authoritative store in `src/state/`, plain JS, with a `useSyncExternalStore`-compatible subscription so the React
@@ -1496,15 +1528,43 @@ because they are the things an implementer discovers at the worst possible momen
 18. **Keep `PathDrawer` a pure draw-to-curve device.** Every mode decision belongs in `App._bindEvents` or the new
     router, not inside the drawer.
 
-### Existing bugs worth fixing while you are in there
+### Live bugs found while writing this, all verified
 
-19. **A raw engine key leaks to the UI at `app/GrimoireStage.tsx:244`.** Elements are internally
-    `['fire','water','earth','wind']` and publicly `air` for wind; `enginePath()` / `publicKey()` translate, and
-    `App.js` does it by hand at `:141`, `:201` and `:222`. The React island does not, in that one place.
-20. **The `DIALS` literals at `app/GrimoireStage.tsx:26-47` duplicate engine defaults into React.** That is already
-    a desync bug, not a pattern to copy. `src/config/settings.js` is the single source of truth.
-21. **`app/grimoire-stage.css` uses `backdrop-filter` without the `-webkit-` prefix**, so the panel blur is absent
+19. **The Cast button in the stage dock does nothing.** `app/grimoire-stage.css:14` sets
+    `.stage-hud { pointer-events: none; }` and its children opt back in one at a time —
+    `.element-selector { pointer-events: auto }` (`:15`) and `.ride-button { pointer-events: auto }` (`:22`).
+    **No `.cast-button` rule in the file ever does**, and `app/GrimoireStage.tsx` renders it as a direct child of
+    `<section className="stage-hud">`. The primary call to action on the stage is not clickable. The same class
+    inside `.side-sheet` works, because that ancestor is not `pointer-events: none`, which is presumably why
+    nobody noticed. Fix the class of bug rather than the instance:
+    ```css
+    .stage-hud { pointer-events: none; }
+    .stage-hud > * { pointer-events: auto; }
+    ```
+20. **A thumbs-up selects Stone.** In `src/input/HandInput._trackPose`:
+    ```js
+    const four = [fingers.index, fingers.middle, fingers.ring, fingers.pinky];
+    if (!four.some(Boolean)) next = 'earth';
+    ```
+    The fist test ignores the thumb, and `fingers.thumb` is computed on the line above. Four fingers curled with
+    the thumb out is read as a fist. Tighten to `!four.some(Boolean) && !fingers.thumb`. That fixes the misread
+    **and** frees thumbs-up and thumbs-down as two unused verbs.
+21. **`App.stageAnchor` is allocated and never written.** `src/core/App.js:50` allocates it; `:288`, `:291` and
+    `:304` read it, so it is permanently `(0, 0, 0)`. Writing it moves three things at once with no
+    re-allocation: the sun's shadow frustum (`environment.setFocus`), the dust volume (`dust.update`) and the
+    camera's orbit centre (`rig.setAnchor`). **That is a complete arena-relocation primitive, already wired end to
+    end, pinned to the origin.** If the Rite ever moves the ritual ground — between rounds, for the intro, for a
+    close — this is the one line.
+22. **A raw engine key leaks to the UI at `app/GrimoireStage.tsx:244`.** Elements are internally
+    `['fire','water','earth','wind']` and publicly `air` for wind; `App.js` translates by hand at `:141`, `:201`
+    and `:222`. The React island does not, in that one place.
+23. **The `DIALS` literals at `app/GrimoireStage.tsx:26-47` duplicate engine defaults into React.** That is
+    already a desync bug, not a pattern to copy. `src/config/settings.js` is the single source of truth.
+24. **`app/grimoire-stage.css` uses `backdrop-filter` without the `-webkit-` prefix**, so the panel blur is absent
     on older WebKit.
+25. **The engine has authority to open React UI.** `app/GrimoireStage.tsx`'s `grimoire:input-status` listener
+    calls `setHandsOpen(true)` when the state is `ready` or `tracking`. Remove it before adding any further
+    engine-to-React signals, or the seam rots.
 
 ### Licensing
 
