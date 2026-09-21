@@ -69,8 +69,8 @@ Four changes:
 1. **The intro becomes the product starting.** Delete the montage. The opening is four real casts from the real
    ability system with the real caster, choreographed against the real load milestones, ending with the player's
    hand on the controls.
-2. **Onboarding teaches by doing.** A ghost sigil the player traces, four lines of text in total, progressive
-   disclosure of the dock, and a hand-tracking trust ladder that never asks for a camera before the player has
+2. **Onboarding teaches by doing.** A ghost line the player follows once and then never sees again, zero lines of
+   instructional text, progressive disclosure of the dock, and a hand-tracking trust ladder that never asks for a camera before the player has
    already succeeded without one.
 3. **The UI becomes one system.** One token set instead of the two that ship today, one HUD owner instead of the
    split that leaves half of `src/ui/HUD.js` inert, a dock with real slot grammar, and world-space targeting
@@ -236,8 +236,8 @@ three events — `start`, `cast` and `cancel` — and `App` listens to **only `c
   sites in `src/core/App.js` (`:110`, `:114`, `:118`, `:127`, `:132`, `:191`, `:197`) pass only `{ element }`.
   `CasterPerformance` clamps it to `[0.35, 1.6]` and multiplies it into `strength`, which scales **every one of the
   eight arm and hand joints**. That is a finished, clamped, per-cast power channel for the caster's body language,
-  wired end to end and never used. §8's trace fidelity should drive it: a true sigil makes the caster commit, a
-  sloppy one makes them hesitate, with no new animation code at all.
+  wired end to end and never used. §8's solve quality should drive it: a clean solve makes the caster commit, a
+  scrape makes them hesitate, with no new animation code at all.
 
 ### Dead / dormant code (verified by grep, not assumed)
 - `src/ui/HUD.js` queries `.element-card`, `.mode-card`, `[data-stat="fps|particles|calls|abilities"]`, `.hud__help`,
@@ -860,41 +860,48 @@ First self-directed successful cast by **15 s** from first paint. First "I did t
 Camera never requested before the player has succeeded without it.
 
 ### The first sixty seconds
+
+Rewritten alongside §8. The old version taught tracing; this one teaches the verb and then gets out of the way.
+
 | t | What the player does | What the product does |
 |---|---|---|
-| 0–7 s | Watches (or skips) | The intro's four casts show what an element looks like before any word explains it (§5) |
-| 7 s | — | A ghost sigil burns into the ground: a single shallow arc, ~4 m long. One line of type: **"Trace it."** |
-| 7–14 s | Traces | `PathTrail` follows the finger. The ghost brightens where the stroke is close and dims where it is not — the correction is spatial, not textual |
-| ~14 s | Releases | Air answers along their line. The nearest Ward stone lights. **First success.** |
-| 14–20 s | — | The element dock fades in with the four sigils, air already active. One line: **"Wind answered. There are three more."** |
-| 20–35 s | Switches element, traces again | A second ghost, a hook this time, wanting stone. If they trace it with the wrong element it still casts — the stone simply stays dark |
-| ~35 s | Releases correctly | Second stone lights. The dock's key hints appear: `1 2 3 4` |
-| 35–45 s | Traces freely | No ghost. The Ward holds two lights. **"The Rite is open."** appears with a begin control |
-| 45–60 s | Chooses | Either begins the Rite, or ignores it and keeps playing. Both are correct and neither is nagged |
+| 0–2 s | Watches | The stage fades up. One line of type: *The Living Grimoire* (§5) |
+| ~2 s | — | One waystone lights on the ground, a few metres from the caster. A **ghost line** curves from the caster to it |
+| 2–8 s | Draws | `PathTrail` follows the finger. The ghost brightens where the stroke runs near it and dims where it does not — the correction is spatial, not textual |
+| ~8 s | Releases | The element travels their line. The waystone lights. **First success, inside ten seconds.** |
+| 8–12 s | — | The ghost does not return. A **second** waystone lights, further out and off to one side. No text |
+| 12–20 s | Draws again, unguided | Their own line. Second stone. This is the first line that is entirely theirs |
+| 20–30 s | — | A third problem, now with a hazard between the caster and the stone, and the dock fades in with the element that can cross it already active |
+| 30–45 s | Chooses an element and draws | The first real decision |
+| 45–60 s | — | The Rite opens, or they keep playing. Both are correct, neither is nagged |
 
-**Counted honestly, the first draft broke its own rule.** It claimed "four short lines", and the flow above is
-seven before the Rite even opens — and §16's copy deck ships 31 new or rewritten strings totalling over two
-hundred words, before the gesture guide's rows, the pre-permission panel, the privacy note and the accessibility
-statement. So the rule was right and the draft failed it.
+**Counted honestly, the first draft broke its own rule.** It claimed "four short lines" and then shipped seven
+before the Rite opened, on top of §16's 31 new or rewritten strings, the gesture guide's rows, the pre-permission
+panel, the privacy note and the accessibility statement.
 
-**The ghost is the whole tutorial. Ship it and `"Trace it."` and delete the rest.** A player will read two words
-on an empty dark stage with one glowing line. Every line after that competes with something they are now actively
-doing, and loses. If the ghost does not teach on its own, the ghost is wrong and more text will not save it.
+**The ghost is the whole tutorial, and the total instructional text is zero lines.** A lit stone on an empty dark
+stage with a glowing line running to it needs no caption. Every word after that competes with something the
+player is now actively doing, and loses. If the ghost does not teach on its own, the ghost is wrong and more text
+will not save it.
 
-### The guided first cast
+### The ghost line
+
+The single best mechanism in the first draft, and it survives the rewrite intact — **but its job changed**. It no
+longer shows a shape to copy. It shows, once, that *a line can be drawn from here to there*, and then it never
+appears again. The player's second line is already their own.
+
 Reuse, do not rebuild: a second `PathTrail` instance with a dimmer material is the ghost renderer, and
 `RibbonGeometry.build(points, { count, width, mode, widthProfile })` already accepts an arbitrary polyline.
 
-- **Tolerance**: 0.75 m for the tutorial arc (generous; it tightens later — §8).
 - **Live feedback**: per-sample proximity drives the ghost's per-vertex alpha. Drawing near it makes it glow;
   drifting makes it fade. No text, no counter, no "try again".
-- **Retirement**: after **one** success. **Do not auto-complete it on failure** — the first draft had the ghost
-  finish itself in front of the player, which is the game taking the pen out of your hand in the first thirty
-  seconds. Instead **loosen silently**: widen the tolerance by about 40 % on each retry until they succeed. The
+- **Retirement**: after **one** success, permanently. **Do not auto-complete it on failure** — the first draft
+  had the ghost finish itself in front of the player, which is the game taking the pen out of your hand in the
+  first thirty seconds. Instead **widen the waystone's radius silently** on each retry until they succeed. The
   player never learns they were helped, which is the only kind of help that does not sting.
 - **`minPathLength` (1.6 world units) currently discards a short stroke in total silence** (`PathDrawer.end()`
-  emits `cancel`, which has no listener). During onboarding a too-short stroke must say something: the ghost
-  pulses once and the line reads **"Longer. Follow it to the end."**
+  emits `cancel`, which has no listener — §3). This is the cheapest real fix in the document and it is about five
+  lines. During onboarding a too-short stroke makes the ghost pulse once. Still no words.
 
 ### The hand-tracking trust ladder
 Camera permission is the product's single biggest trust cliff. Never ask before the player has succeeded
@@ -911,7 +918,7 @@ Then, and only on a click:
 3. **Calibration as ritual, not setup.** The existing 450 ms pose hold with the ring fill
    (`HandInput._trackPose`, `.hand-mirror i` clip-path) becomes the attunement: hold an open palm until the ring
    closes. One success, then done.
-4. **Teach pinch by doing.** A ghost sigil returns, once, for hands. The pinch threshold is already hysteretic
+4. **Teach pinch by doing.** The ghost line returns, once, for hands. The pinch threshold is already hysteretic
    (down 0.32 / up 0.48 of hand scale) so a held pinch is stable.
 5. **Recovery is designed, not an error.** Tracking loss is a first-class state with its own copy, not a toast.
 
@@ -1006,7 +1013,7 @@ frame — carrying `{ engaged, wake: 0..1, pose, hold: 0..1, pinch: 0..1, tracki
 
 ### Mobile is a first path, not a degraded one
 `enableHands()` already refuses on `(pointer: coarse)` and says so. Touch keeps everything except the camera:
-the ghost sigil, the Rite, the Ward, the dock, the Workshop. The attunement ritual's touch equivalent is a
+the ghost line, the Rite, the Ward, the dock, the Workshop. The attunement ritual's touch equivalent is a
 **held touch on the ritual ground** for 450 ms — same duration, same ring, same feeling, no camera. The element
 dock's dwell target keeps its `data-element` attribute, which `HandInput._trackDock` depends on.
 
@@ -1132,7 +1139,7 @@ Today a cast produces one `aria-live` sentence. Replace with a layered response,
 | aim | trail follows; ghost proximity glow | — |
 | release | `ScreenFlash.trigger` at low strength; `CameraShake` at the element's own strength | `navigator.vibrate?.(12)` on coarse pointers, behind a guard |
 | impact | element decal (`SCORCH`/`RIPPLE`/`CRACK`/`DUSTRING`); Ward stone lights | the fidelity readout resolves |
-| recovery | caster settles | `aria-live` sentence, **polite, and only on a scored trace** |
+| recovery | caster settles | `aria-live` sentence, **polite, and only on a resolved line** |
 
 **Do not scale `CameraShake` by how well the player did.** The first draft did, and it is the most tonally wrong
 idea in it: the world's physical violence becomes a function of your handwriting grade, so the universe is
@@ -1703,7 +1710,7 @@ shipped. This is a **release blocker**, not a nit, and it is the owner's decisio
 ### Quality loop without analytics
 No telemetry is allowed and none should be added. Instead:
 - A **local debug overlay** behind a key chord, carrying what the dead `[data-stat]` readout was meant to show plus
-  the quality tier, the MediaPipe cadence and the last trace's three score components.
+  the quality tier and the last line's resolution — which waystones it reached and whether it clipped a hazard.
 - A **written playtest script**: five tasks, and the five questions worth asking (when did you first feel powerful;
   what did you think the ghost line wanted; did you know why a stone stayed dark; did you ever feel stuck; would
   you open it again tomorrow).
@@ -2165,7 +2172,7 @@ Three lines already get it right and should not be touched: *"Two stones stayed 
 | Ride armed | Draw a path for the air ride. | Draw the path you want to ride. |
 | Ride begun | The caster rides the current. | *(keep)* |
 | Ride disarmed | Casting mode restored. | Back to casting. |
-| Cast resolved | `${Label} released. The caster is recovering.` | *(replaced by the trace resolution — §8)* |
+| Cast resolved | `${Label} released. The caster is recovering.` | *(replaced by the line's resolution — §8)* |
 
 #### The loader (`App.load`, bound to real progress)
 | Today | Ship |
