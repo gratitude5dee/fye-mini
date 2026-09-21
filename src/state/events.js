@@ -30,6 +30,8 @@ export const TO_ENGINE = Object.freeze({
   RIDE: 'grimoire:ride',
   /** Begin a Rite, or set one aside. */
   RITE: 'grimoire:rite',
+  /** Calm mode was switched. Carries `{ enabled }`. */
+  CALM: 'grimoire:calm',
   /** Collapse the remaining beats of the opening. */
   SKIP_INTRO: 'grimoire:skip-intro'
 });
@@ -53,7 +55,9 @@ export const TO_UI = Object.freeze({
   /** Session state changed: the Rite opened, a line resolved, the Ward moved. */
   RITE_STATE: 'grimoire:rite-state',
   /** The help key was pressed. The interface owns the panel; the engine owns the key. */
-  HELP: 'grimoire:help'
+  HELP: 'grimoire:help',
+  /** The quality ladder stepped. Named to the player once, in the Workshop. */
+  QUALITY: 'grimoire:quality'
 });
 
 /** Every name, for tests and for the debug overlay. */

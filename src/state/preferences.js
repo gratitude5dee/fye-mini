@@ -26,6 +26,13 @@ const DEFAULTS = Object.freeze({
   element: 'air',
   /** Flat `block.key` → number, already clamped by the engine on apply. */
   dials: {},
+  /**
+   * Calm mode: no shake, no flash, no auto-framing, the glow well down.
+   *
+   * Independent of `prefers-reduced-motion` on purpose. That is the operating
+   * system's statement about animation; this is the player's about this stage.
+   */
+  calm: false,
   onboarding: Object.freeze({
     firstSolve: false,
     firstElementChange: false,
@@ -81,6 +88,9 @@ function normalise(raw) {
     version: 3,
     introSeen: clean(raw.introSeen, DEFAULTS.introSeen),
     element: ELEMENTS.includes(raw.element) ? raw.element : DEFAULTS.element,
+    // Absent from every blob written before calm mode existed, which `clean`
+    // resolves to `false` — so no version bump and no migration.
+    calm: clean(raw.calm, DEFAULTS.calm),
     dials: isRecord(raw.dials)
       ? Object.fromEntries(Object.entries(raw.dials).filter(([, v]) => Number.isFinite(v)))
       : {},

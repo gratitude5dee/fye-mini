@@ -30,6 +30,8 @@ import { RANGES, SPELLWRIGHT_COLOR_PATHS, enginePath } from '../config/spell-con
 import { Rite } from '../game/Rite.js';
 import { IntroDirector } from '../intro/IntroDirector.js';
 import { TO_ENGINE, TO_UI } from '../state/events.js';
+import { QualityLadder } from './QualityLadder.js';
+import { CalmMode } from './CalmMode.js';
 
 /** Owns the local stage, input sources, caster performance, and effects. */
 export class App {
@@ -85,8 +87,17 @@ export class App {
     this.walk = null;
     this.caster = null;
 
+    // Watches measured frame time and steps the stage down when it has to.
+    // Constructed before the tracker, which reads its cadence every frame.
+    this.quality = new QualityLadder({ renderer: this.renderer, environment: this.environment });
+    // One switch the player owns, distinct from the ladder the machine owns.
+    this.calm = new CalmMode();
+
     this.input = new InputManager(canvas);
     this.handInput = new HandInput(this.input, {
+      // The tracker asks rather than being told, so a step that happens while
+      // the camera is off is already in force when it comes back on.
+      quality: this.quality,
       onElement: (element) => this.selectElement(element),
       onStatus: (message, state = 'notice') => {
         this.hud?.showToast(message);
@@ -182,6 +193,7 @@ export class App {
   }
 
   _bindGrimoireEvents() {
+    this._onGrimoireCalm = (event) => this.calm.set(Boolean(event.detail?.enabled));
     this._onGrimoireSelect = (event) => this.selectElement(event.detail?.element === 'air' ? 'wind' : event.detail?.element);
     this._onGrimoirePatch = (event) => {
       const patch = event.detail?.patch ?? event.detail;
@@ -210,6 +222,7 @@ export class App {
     window.addEventListener(TO_ENGINE.CAST, this._onGrimoireCast);
     window.addEventListener(TO_ENGINE.RIDE, this._onGrimoireRide);
     window.addEventListener(TO_ENGINE.RITE, this._onGrimoireRite);
+    window.addEventListener(TO_ENGINE.CALM, this._onGrimoireCalm);
     window.addEventListener(TO_ENGINE.SKIP_INTRO, this._onGrimoireSkipIntro);
   }
 
@@ -367,6 +380,7 @@ export class App {
     const gl = this.renderer.gl;
     gl.info.reset();
     const raw = this.time.tick();
+    this.quality.sample(raw);
     const dt = this.paused ? 0 : raw * settings.global.timeScale;
     this.elapsed += dt;
     frame.uTime.value = this.elapsed;
@@ -444,6 +458,7 @@ export class App {
     window.removeEventListener(TO_ENGINE.CAST, this._onGrimoireCast);
     window.removeEventListener(TO_ENGINE.RIDE, this._onGrimoireRide);
     window.removeEventListener(TO_ENGINE.RITE, this._onGrimoireRite);
+    window.removeEventListener(TO_ENGINE.CALM, this._onGrimoireCalm);
     window.removeEventListener(TO_ENGINE.SKIP_INTRO, this._onGrimoireSkipIntro);
   }
 }

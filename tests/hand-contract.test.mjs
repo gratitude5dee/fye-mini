@@ -147,5 +147,10 @@ test('the two things fye-mini does better than either reference survive', async 
   const hand = await source('../src/input/HandInput.js');
   assert.match(hand, /delegate: 'GPU'/);
   assert.match(hand, /delegate: 'CPU'/);
-  assert.match(hand, /fps < 15/);
+  // The threshold is now proportional to the inference cadence, because `fps`
+  // counts inference passes: thinning the cadence lowers the measured rate by
+  // construction, and a fixed 15 would make the watchdog kill tracking exactly
+  // when the quality ladder had just stepped down to keep it alive.
+  assert.match(hand, /const WATCHDOG_FPS = 15;/);
+  assert.match(hand, /if \(fps < WATCHDOG_FPS \/ cadence\)/);
 });

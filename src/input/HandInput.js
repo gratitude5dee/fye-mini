@@ -30,6 +30,8 @@ const EXTEND_RATIO = 1.15;
 /** How often the continuous state is published. Never per frame. */
 const PUBLISH_MS = 100;
 const DOCK_DWELL_MS = 400;
+/** Inference passes per second below which the tracker hands back to the pointer. */
+const WATCHDOG_FPS = 15;
 const ONE_EURO = { minCutoff: 1.2, beta: 0.02, dCutoff: 1.0 };
 /**
  * How high a raised hand lifts the cast, in metres.
@@ -56,11 +58,14 @@ const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
  * coordinates already calculated in this browser tab.
  */
 export class HandInput {
-  constructor(input, { onElement, onStatus, onState } = {}) {
+  constructor(input, { onElement, onStatus, onState, quality = null } = {}) {
     this.input = input;
     this.onElement = onElement;
     this.onStatus = onStatus;
     this.onState = onState;
+    /** The quality ladder, asked each frame how often to run inference. */
+    this.quality = quality;
+    this._skipped = 0;
     this.pointer = new Vector2();
     this.filtered = new Vector2();
     this.active = false;
@@ -221,6 +226,18 @@ export class HandInput {
   _loop = () => {
     if (!this.active || !this._landmarker || !this._video) return;
     const now = performance.now();
+
+    // Inference is the single most expensive thing in a frame on a slow
+    // machine, so the ladder thins it rather than the stage. The filter is fed
+    // `performance.now()` either way, and it already derives its own elapsed
+    // time from that — so a variable rate is a thing it handles rather than a
+    // thing that has to be corrected for.
+    const cadence = this.quality?.cadence ?? 1;
+    if (cadence > 1 && ++this._skipped % cadence !== 0) {
+      this._raf = requestAnimationFrame(this._loop);
+      return;
+    }
+
     let result;
     try {
       result = this._landmarker.detectForVideo(this._video, now);
@@ -238,7 +255,10 @@ export class HandInput {
       const fps = this.frameCount / ((now - this.lastFrameAt) / 1000);
       this.lastFrameAt = now;
       this.frameCount = 0;
-      if (fps < 15) {
+      // `fps` counts inference passes, not animation frames, so thinning the
+      // cadence lowers it by construction. The threshold has to fall with it or
+      // the watchdog kills tracking *because* the ladder just saved it.
+      if (fps < WATCHDOG_FPS / cadence) {
         this.onStatus?.('Tracking slowed, so pointer casting is ready.', 'fallback');
         this.stop();
         return;

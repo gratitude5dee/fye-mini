@@ -109,6 +109,11 @@ export function GrimoireStage() {
   // Offering the button anyway is an invitation the product declines, so the
   // same query that refuses it also decides whether it is there to press.
   const [coarsePointer, setCoarsePointer] = useState(false);
+  const [calm, setCalm] = useState(false);
+  // What the quality ladder settled on, said once and only in the Workshop.
+  // Never a toast: a stage that interrupts you to announce it is coping badly
+  // is worse company than one that just copes.
+  const [quality, setQuality] = useState<{ tier: string; cadence: number } | null>(null);
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
 
@@ -137,6 +142,7 @@ export function GrimoireStage() {
     setIntroVisible(!preferences.introSeen);
     setElement(preferences.element as ElementId);
     setDialValues(preferences.dials);
+    setCalm(preferences.calm);
     setStorageAvailable(isPersistent());
   }, []);
 
@@ -188,6 +194,11 @@ export function GrimoireStage() {
         return chosen;
       });
     };
+    const qualityListener = (event: Event) => {
+      const detail = (event as CustomEvent<{ tier?: string; cadence?: number }>).detail;
+      if (detail?.tier) setQuality({ tier: detail.tier, cadence: detail.cadence ?? 1 });
+    };
+    window.addEventListener(TO_UI.QUALITY, qualityListener);
     window.addEventListener(TO_UI.SELECTED, selectedListener);
     window.addEventListener(TO_UI.CAST_COMPLETE, castListener);
     window.addEventListener(TO_UI.RITE_STATE, riteListener);
@@ -207,6 +218,7 @@ export function GrimoireStage() {
       window.removeEventListener(TO_UI.READY, ready);
       window.removeEventListener(TO_UI.INPUT_STATUS, inputStatusListener);
       window.removeEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
+      window.removeEventListener(TO_UI.QUALITY, qualityListener);
       window.removeEventListener(TO_UI.SELECTED, selectedListener);
       window.removeEventListener(TO_UI.CAST_COMPLETE, castListener);
       window.removeEventListener(TO_UI.RITE_STATE, riteListener);
@@ -220,6 +232,13 @@ export function GrimoireStage() {
   useEffect(() => {
     if (stageReady) emit(TO_ENGINE.SELECT, { element });
   }, [element, stageReady]);
+
+  // Same replay as the element: the preference is read after the renderer has
+  // begun loading, so a player who left calm mode on gets it back rather than
+  // a stage that shakes once before catching up.
+  useEffect(() => {
+    if (stageReady) emit(TO_ENGINE.CALM, { enabled: calm });
+  }, [calm, stageReady]);
 
   const closeHelp = useCallback(() => setHelpOpen(false), []);
   const closeHands = useCallback(() => setHandsOpen(false), []);
@@ -257,6 +276,12 @@ export function GrimoireStage() {
     setElement(next);
     persistPreferences({ element: next });
     emit(TO_ENGINE.SELECT, { element: next });
+  };
+
+  const toggleCalm = (next: boolean) => {
+    setCalm(next);
+    persistPreferences({ calm: next });
+    emit(TO_ENGINE.CALM, { enabled: next });
   };
 
   const adjustDial = (dial: Dial, value: number) => {
@@ -423,6 +448,17 @@ export function GrimoireStage() {
         <p className="eyebrow">Local workshop</p><h2 id="workshop-title">Shape the next cast.</h2>
         <p className="sheet-copy">These presets and dials only change this browser’s live stage. Nothing is uploaded or bound to an account.</p>
         {!storageAvailable && <p className="sheet-copy">This browser is not keeping site data, so your element and dials will not be here next time. Casting is unaffected.</p>}
+        <div className="stage-settings">
+          <label className="switch">
+            <input type="checkbox" checked={calm} onChange={(event) => toggleCalm(event.target.checked)} />
+            <span><strong>Calm mode</strong>No shake, no flash, no drifting camera, the glow well down. Separate from your system’s reduced-motion setting, so you can have either or both.</span>
+          </label>
+          {quality && quality.tier !== 'high' && <p className="stage-settings__note">
+            {quality.tier === 'balanced'
+              ? 'Running in balanced mode for a steady frame rate.'
+              : 'Running in conservative mode for a steady frame rate.'}
+          </p>}
+        </div>
         <div className="preset-grid" aria-label="Local spell presets">{HOUSE_SEED_SPELLS.map((preset) => <button key={preset.slug} onClick={() => choosePreset(preset)} data-element={preset.element}><small>{labelOf(preset.element)}</small><strong>{preset.name}</strong></button>)}</div>
         <fieldset className="local-dials"><legend>{currentElement.label} dials</legend>{activeDials.map((dial) => {
           const value = dialValues[dial.path] ?? dial.value;

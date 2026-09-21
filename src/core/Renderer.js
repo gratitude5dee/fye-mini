@@ -23,6 +23,7 @@ export class Renderer {
       preserveDrawingBuffer: true
     });
 
+    this.maxPixelRatio = 1.75;
     this.gl.setPixelRatio(this.targetPixelRatio());
     this.gl.setSize(window.innerWidth, window.innerHeight, false);
 
@@ -47,7 +48,21 @@ export class Renderer {
 
   /** Cap the pixel ratio: 4K + heavy transparency is not worth the fill rate. */
   targetPixelRatio() {
-    return Math.min(window.devicePixelRatio || 1, 1.75);
+    return Math.min(window.devicePixelRatio || 1, this.maxPixelRatio);
+  }
+
+  /**
+   * Lower (or restore) the cap. Fill rate is the cheapest thing to give back on
+   * a stage this transparent, so it is the first thing the quality ladder takes.
+   */
+  setPixelRatioCap(cap) {
+    if (this.maxPixelRatio === cap) return;
+    this.maxPixelRatio = cap;
+    const next = this.targetPixelRatio();
+    if (this.gl.getPixelRatio() === next) return;
+    this.gl.setPixelRatio(next);
+    this.gl.setSize(window.innerWidth, window.innerHeight, false);
+    this._onResize?.(window.innerWidth, window.innerHeight, next);
   }
 
   get domElement() {
