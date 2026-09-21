@@ -27,10 +27,10 @@ const TARGET_HEIGHT = 1.78;
 /**
  * Loads the rigged FBX, normalises it for the scene and drives its animation.
  *
- * The character is intentionally stationary — it only ever idles. The class is
- * still built around a small action registry with cross-fading so additional
- * clips (a casting flourish, a reaction) can be dropped in without touching
- * anything else.
+ * The bundled asset contributes its idle clip. Travel and casting are layered
+ * procedurally over that same rig, so the caster can run, jump, and perform
+ * spells without pretending an unlicensed or incompatible animation clip is
+ * part of the source asset.
  *
  * On top of the clip sits a second, procedural layer: `SittingPose` bakes a
  * cross-legged meditation pose straight onto the skeleton, and `settings.

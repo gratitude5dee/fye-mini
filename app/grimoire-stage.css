@@ -5,6 +5,8 @@
 .stage-header { inset: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between; padding: clamp(17px, 3vw, 30px); pointer-events: none; }
 .header-actions { display: flex; gap: 8px; pointer-events: auto; }
 .wordmark { display: grid; gap: 6px; text-shadow: 0 3px 18px #000; }
+.wordmark--home { border: 0; padding: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; pointer-events: auto; }
+.wordmark--home:hover strong { color: var(--accent); }
 .wordmark span, .eyebrow { margin: 0; color: var(--accent); font: 700 10px/1 var(--font-sans); letter-spacing: .18em; text-transform: uppercase; }
 .wordmark strong { font: 500 clamp(25px, 3.3vw, 42px)/.86 var(--font-display); letter-spacing: -.055em; }
 .quiet-button, .ride-button, .sheet-close { border: 1px solid rgb(246 241 232 / .25); border-radius: 999px; padding: 10px 13px; color: var(--ink); background: rgb(10 12 15 / .58); box-shadow: 0 8px 24px #0004; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); font: 700 10px/1 var(--font-sans); letter-spacing: .09em; text-transform: uppercase; cursor: pointer; }

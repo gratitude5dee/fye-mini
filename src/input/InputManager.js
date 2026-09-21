@@ -87,7 +87,12 @@ export class InputManager extends EventEmitter {
   _onKeyDown = (event) => {
     if (event.repeat) return;
     const target = event.target;
-    if (target && ['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT', 'A'].includes(target.tagName || '') || target?.isContentEditable) return;
+    const tag = target?.tagName || '';
+    // A world card, spell button, or the FYE home mark naturally retains focus
+    // after it is clicked.  Treating every button as a text field meant the
+    // very next WASD key silently did nothing.  Only genuine text-entry
+    // controls keep the keyboard for themselves.
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) || target?.isContentEditable) return;
 
     this.keys.add(event.code);
 

@@ -1,4 +1,4 @@
-import { Group, Raycaster, Vector3 } from 'three';
+import { Box3, Group, Raycaster, Vector3 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { LAYER, setLayerRecursive } from '../core/Layers.js';
@@ -17,12 +17,20 @@ export class WorldManager {
     this.scene = scene;
     this.gltf = new GLTFLoader();
     this.raycaster = new Raycaster();
-    this.raycaster.far = 200;
+    // Colliders deliberately do not render in the beauty pass.  Raycaster
+    // layers are independent of camera layers, so it must be opt-in here too;
+    // without this every remote-world floor test misses and the caster falls.
+    this.raycaster.layers.set(LAYER.COLLIDER);
+    this.raycaster.far = 2000;
     this.spark = new SparkRenderer({
       renderer: renderer.gl,
       sortRadial: true,
       lodSplatScale: 1,
-      enableLod: true
+      enableLod: true,
+      // Marble scenes can look soft in a third-person shot.  A modest focal
+      // adjustment keeps the actual 500k source crisp without downloading a
+      // full-resolution splat on every visit.
+      focalAdjustment: 1.25
     });
     this.spark.name = 'SparkWorldRenderer';
     this.spark.layers.set(LAYER.SPLAT);
@@ -31,6 +39,9 @@ export class WorldManager {
     this.splat = null;
     this.collider = null;
     this.entry = null;
+    this.colliderBounds = null;
+    this.safeFloor = 0;
+    this.groundRayHeight = 160;
     this.loading = false;
     this._serial = 0;
   }
@@ -94,6 +105,13 @@ export class WorldManager {
       this.collider = collider;
       this.entry = entry;
       this.scene.add(group);
+      group.updateMatrixWorld(true);
+      this.colliderBounds = new Box3().setFromObject(collider);
+      this.safeFloor = number(entry.spawn?.y, 0);
+      this.groundRayHeight = Math.max(
+        80,
+        this.colliderBounds.max.y - this.colliderBounds.min.y + 24
+      );
       return true;
     } catch (error) {
       if (serial === this._serial) {
@@ -115,6 +133,9 @@ export class WorldManager {
     this.splat = null;
     this.collider = null;
     this.entry = null;
+    this.colliderBounds = null;
+    this.safeFloor = 0;
+    this.groundRayHeight = 160;
   }
 
   unload() {
@@ -129,17 +150,23 @@ export class WorldManager {
       out.set(point.x, 0, point.z);
       return true;
     }
-    _origin.set(point.x, point.y + 40, point.z);
+    if (!this._insideColliderBounds(point)) return false;
+    _origin.set(point.x, Math.max(point.y, this.safeFloor) + this.groundRayHeight, point.z);
     this.raycaster.set(_origin, _down);
     const hit = this.raycaster.intersectObject(this.collider, true)[0];
-    if (!hit) return false;
-    out.copy(hit.point);
+    // Generated colliders can have small holes, especially around water and
+    // cliff seams.  Stay within their known footprint and use the calibrated
+    // spawn plane as a last-resort safety floor rather than letting a player
+    // fall through the world while a world is awaiting a tighter calibration.
+    if (hit) out.copy(hit.point);
+    else out.set(point.x, this.safeFloor, point.z);
     return true;
   }
 
   /** Reject a step that intersects a wall at waist height. */
   canTraverse(from, to) {
     if (!this.collider) return true;
+    if (!this._insideColliderBounds(to)) return false;
     _delta.copy(to).sub(from).setY(0);
     const distance = _delta.length();
     if (distance < 1e-4) return true;
@@ -147,8 +174,15 @@ export class WorldManager {
     this.raycaster.set(_origin, _delta.multiplyScalar(1 / distance));
     this.raycaster.far = distance + 0.18;
     const blocked = this.raycaster.intersectObject(this.collider, true).some((hit) => hit.distance < distance + 0.12);
-    this.raycaster.far = 200;
+    this.raycaster.far = 2000;
     return !blocked;
+  }
+
+  _insideColliderBounds(point) {
+    if (!this.colliderBounds) return true;
+    const margin = 1.25;
+    return point.x >= this.colliderBounds.min.x - margin && point.x <= this.colliderBounds.max.x + margin &&
+      point.z >= this.colliderBounds.min.z - margin && point.z <= this.colliderBounds.max.z + margin;
   }
 
   projectRay(ray, out) {

@@ -158,6 +158,7 @@ export function GrimoireStage() {
   const introVideoRef = useRef<HTMLVideoElement>(null);
   const trackerActiveRef = useRef(false);
   const restoredWorldRef = useRef(false);
+  const homeChooserRef = useRef(false);
   const [introVisible, setIntroVisible] = useState(true);
   const [stageReady, setStageReady] = useState(false);
   const [element, setElement] = useState<ElementId>('air');
@@ -357,11 +358,33 @@ export function GrimoireStage() {
         setWorldStatus('That world could not load. Ritual Stage is ready.');
       }
     };
+    const homeListener = () => {
+      // The engine already returned to the local floor. React owns the part a
+      // player sees: reset the film, close transient sheets, then open the
+      // chooser only after the title resolves.
+      homeChooserRef.current = true;
+      setHandsOpen(false);
+      setWorkshopOpen(false);
+      setHelpOpen(false);
+      setWorldPickerOpen(false);
+      setSelectedWorld('ritual-stage');
+      setWorldStatus('Choose your ground.');
+      persistPreferences({ lastWorld: 'ritual-stage' });
+      const video = introVideoRef.current;
+      if (video) {
+        video.pause();
+        video.currentTime = 0;
+      }
+      setIntroBeat('dark');
+      setOpeningHolds(true);
+      setIntroVisible(true);
+    };
     window.addEventListener(TO_UI.QUALITY, qualityListener);
     window.addEventListener(TO_UI.SELECTED, selectedListener);
     window.addEventListener(TO_UI.CAST_COMPLETE, castListener);
     window.addEventListener(TO_UI.RITE_STATE, riteListener);
     window.addEventListener(TO_UI.WORLD_STATUS, worldStatusListener);
+    window.addEventListener(TO_UI.HOME, homeListener);
     // `H` is bound in the engine's InputManager, so the key and the button have
     // to end up in the same place rather than two panels that disagree.
     // Closes the others first, exactly as the buttons do. Without this, `H`
@@ -384,6 +407,7 @@ export function GrimoireStage() {
       window.removeEventListener(TO_UI.CAST_COMPLETE, castListener);
       window.removeEventListener(TO_UI.RITE_STATE, riteListener);
       window.removeEventListener(TO_UI.WORLD_STATUS, worldStatusListener);
+      window.removeEventListener(TO_UI.HOME, homeListener);
       window.removeEventListener(TO_UI.HELP, helpListener);
     };
   }, []);
@@ -453,6 +477,10 @@ export function GrimoireStage() {
       if (detail.finished) {
         setIntroVisible(false);
         persistPreferences({ introSeen: true });
+        if (homeChooserRef.current) {
+          homeChooserRef.current = false;
+          setWorldPickerOpen(true);
+        }
       }
     };
     window.addEventListener(TO_UI.INTRO, onIntro);
@@ -478,11 +506,17 @@ export function GrimoireStage() {
 
   const selectWorld = (world: WorldCatalogEntry) => {
     if (!stageReady) return;
+    (document.activeElement as HTMLElement | null)?.blur?.();
     setSelectedWorld(world.slug);
     persistPreferences({ lastWorld: world.slug });
     setWorldStatus(`Entering ${world.title}…`);
     setWorldPickerOpen(false);
     emit(TO_ENGINE.SELECT_WORLD, { world });
+  };
+
+  const returnHome = () => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    emit(TO_ENGINE.HOME);
   };
 
   const adjustDial = (dial: Dial, value: number) => {
@@ -539,7 +573,7 @@ export function GrimoireStage() {
         <div id="hud" className="hud" aria-live="polite" />
 
         <header className="stage-header">
-          <div className="wordmark"><span>Elemental explorer</span><strong>FYE</strong></div>
+          <button className="wordmark wordmark--home" onClick={returnHome} aria-label="Return to FYE home and world selection"><span>Elemental explorer</span><strong>FYE</strong></button>
           <div className="header-actions">
             {!coarsePointer && <button className="quiet-button" onClick={openHands} aria-expanded={handsOpen}>Hand mode</button>}
             <button className="quiet-button" onClick={() => { setHandsOpen(false); setHelpOpen(false); setWorldPickerOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>

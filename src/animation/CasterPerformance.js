@@ -73,8 +73,13 @@ export class CasterPerformance {
     const pulse = 1 + Math.sin(this.elapsed * 3.2) * .045;
     const elementWeight = COLORLESS[this.element] ?? 1;
     const strength = this.intensity * elementWeight;
-    const gait = locomotion.moving ? Math.sin(this.elapsed * (locomotion.sprinting ? 11 : 7.4)) : 0;
-    const gaitWeight = locomotion.moving ? (locomotion.sprinting ? .78 : .52) : 0;
+    const travelling = Boolean(locomotion.moving && locomotion.grounded !== false);
+    const sprinting = Boolean(locomotion.sprinting);
+    const gait = travelling ? Math.sin(this.elapsed * (sprinting ? 11.2 : 7.2)) : 0;
+    const gaitWeight = travelling ? (sprinting ? .82 : .56) : 0;
+    const armGaitWeight = gaitWeight * (this.gesture === 'idle' ? .48 : .12);
+    const jumpPhase = locomotion.jumpPhase ?? 'grounded';
+    const jumping = jumpPhase !== 'grounded';
 
     let gather = 0;
     let aim = 0;
@@ -87,31 +92,64 @@ export class CasterPerformance {
 
     // A quiet breathing posture keeps the caster readable even before a hand
     // enters frame. Each later phase adds a clear, purposeful silhouette.
-    this._joint('mixamorig:Hips', 0, 0, Math.sin(this.elapsed * 1.6) * .01);
-    this._joint('mixamorig:Spine', -.035 * pulse - .08 * gather + .04 * recovery, 0, 0);
-    this._joint('mixamorig:Spine1', -.025 * pulse - .11 * gather + .05 * recovery, .04 * aim, 0);
-    this._joint('mixamorig:Spine2', -.02 * pulse - .09 * gather, .05 * aim, 0);
+    const runningLean = travelling ? (sprinting ? -.11 : -.045) : 0;
+    const jumpLean = jumpPhase === 'rise' ? -.13 : jumpPhase === 'apex' ? -.04 :
+      jumpPhase === 'fall' ? .04 : jumpPhase === 'landing' ? -.16 : 0;
+    this._joint('mixamorig:Hips', jumpLean * .55, 0, Math.sin(this.elapsed * 1.6) * .01 + gait * gaitWeight * .045);
+    this._joint('mixamorig:Spine', -.035 * pulse - .08 * gather + .04 * recovery + runningLean + jumpLean, 0, 0);
+    this._joint('mixamorig:Spine1', -.025 * pulse - .11 * gather + .05 * recovery + runningLean * .65 + jumpLean * .7, .04 * aim, 0);
+    this._joint('mixamorig:Spine2', -.02 * pulse - .09 * gather + runningLean * .35 + jumpLean * .35, .05 * aim, 0);
 
     const lead = .2 * gather + .38 * aim + .56 * release - .18 * recovery;
     const trail = .16 * gather + .18 * aim - .28 * release - .08 * recovery;
-    this._joint('mixamorig:RightShoulder', -.12 * lead, .07 * lead, -.08 * lead, strength);
-    this._joint('mixamorig:RightArm', -.36 * lead, .06 * lead, -.44 * lead, strength);
-    this._joint('mixamorig:RightForeArm', -.18 * lead, 0, -.62 * lead, strength);
+    const rightSwing = -gait * armGaitWeight;
+    const leftSwing = gait * armGaitWeight;
+    this._joint('mixamorig:RightShoulder', -.12 * lead + rightSwing * .2, .07 * lead, -.08 * lead, strength);
+    this._joint('mixamorig:RightArm', -.36 * lead + rightSwing, .06 * lead, -.44 * lead, strength);
+    this._joint('mixamorig:RightForeArm', -.18 * lead - Math.max(0, rightSwing) * .16, 0, -.62 * lead, strength);
     this._joint('mixamorig:RightHand', .14 * lead, .12 * release, -.18 * lead, strength);
-    this._joint('mixamorig:LeftShoulder', -.12 * trail, -.08 * trail, .1 * trail, strength);
-    this._joint('mixamorig:LeftArm', -.22 * trail, -.06 * trail, .4 * trail, strength);
-    this._joint('mixamorig:LeftForeArm', -.2 * trail, 0, .45 * trail, strength);
+    this._joint('mixamorig:LeftShoulder', -.12 * trail + leftSwing * .2, -.08 * trail, .1 * trail, strength);
+    this._joint('mixamorig:LeftArm', -.22 * trail + leftSwing, -.06 * trail, .4 * trail, strength);
+    this._joint('mixamorig:LeftForeArm', -.2 * trail - Math.max(0, leftSwing) * .16, 0, .45 * trail, strength);
     this._joint('mixamorig:LeftHand', -.06 * trail, -.1 * release, .16 * trail, strength);
 
-    // The asset only ships an idle clip. A restrained lower-body cycle makes
-    // direct movement readable while deliberately leaving the casting arms in
-    // charge of every gather, aim, release, and recovery silhouette.
-    this._joint('mixamorig:LeftUpLeg', gait * gaitWeight, 0, 0);
-    this._joint('mixamorig:RightUpLeg', -gait * gaitWeight, 0, 0);
-    this._joint('mixamorig:LeftLeg', -Math.max(0, gait) * gaitWeight * .5, 0, 0);
-    this._joint('mixamorig:RightLeg', Math.min(0, gait) * gaitWeight * .5, 0, 0);
-    this._joint('mixamorig:LeftFoot', -Math.min(0, gait) * gaitWeight * .2, 0, 0);
-    this._joint('mixamorig:RightFoot', Math.max(0, gait) * gaitWeight * .2, 0, 0);
+    // The asset only ships an idle clip. This lower-body layer supplies a
+    // complete travelling performance — weight shift, heel recovery, a faster
+    // run cadence, and a compact crouch → air → landing arc — while keeping
+    // the casting silhouette in control of the upper body.
+    let leftThigh = gait * gaitWeight;
+    let rightThigh = -gait * gaitWeight;
+    let leftKnee = -Math.max(0, gait) * gaitWeight * .58;
+    let rightKnee = Math.min(0, gait) * gaitWeight * .58;
+    let leftFoot = -Math.min(0, gait) * gaitWeight * .28;
+    let rightFoot = Math.max(0, gait) * gaitWeight * .28;
+
+    if (jumping) {
+      if (jumpPhase === 'rise') {
+        leftThigh = .36; rightThigh = .36;
+        leftKnee = -.72; rightKnee = -.72;
+        leftFoot = .22; rightFoot = .22;
+      } else if (jumpPhase === 'apex') {
+        leftThigh = .24; rightThigh = .24;
+        leftKnee = -.58; rightKnee = -.58;
+        leftFoot = .14; rightFoot = .14;
+      } else if (jumpPhase === 'fall') {
+        leftThigh = .11; rightThigh = .11;
+        leftKnee = -.31; rightKnee = -.31;
+        leftFoot = .06; rightFoot = .06;
+      } else if (jumpPhase === 'landing') {
+        leftThigh = -.44; rightThigh = -.44;
+        leftKnee = .68; rightKnee = .68;
+        leftFoot = -.16; rightFoot = -.16;
+      }
+    }
+
+    this._joint('mixamorig:LeftUpLeg', leftThigh, 0, 0);
+    this._joint('mixamorig:RightUpLeg', rightThigh, 0, 0);
+    this._joint('mixamorig:LeftLeg', leftKnee, 0, 0);
+    this._joint('mixamorig:RightLeg', rightKnee, 0, 0);
+    this._joint('mixamorig:LeftFoot', leftFoot, 0, 0);
+    this._joint('mixamorig:RightFoot', rightFoot, 0, 0);
 
     // Release is intentionally short; then the live figure visibly settles.
     if (this.gesture === 'release' && t > .28) this.setGesture('recovery');

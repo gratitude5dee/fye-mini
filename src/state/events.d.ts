@@ -19,6 +19,7 @@ export interface GrimoireEventMap {
   'grimoire:ride': undefined;
   'grimoire:rite': { action: 'begin' | 'aside' };
   'grimoire:select-world': { world: unknown; silent?: boolean };
+  'grimoire:home': undefined;
 
   'grimoire:ready': { app: unknown };
   'grimoire:input-status': {
@@ -50,6 +51,7 @@ export interface GrimoireEventMap {
     ward: boolean[];
   };
   'grimoire:world-status': { state: 'loading' | 'ready' | 'failed'; world: string; title?: string };
+  'grimoire:home-ready': undefined;
 }
 
 export const TO_ENGINE: Readonly<Record<string, keyof GrimoireEventMap>>;

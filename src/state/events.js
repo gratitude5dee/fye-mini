@@ -35,7 +35,9 @@ export const TO_ENGINE = Object.freeze({
   /** Collapse the remaining beats of the opening. */
   SKIP_INTRO: 'grimoire:skip-intro',
   /** Change between the local ritual stage and an approved World Labs world. */
-  SELECT_WORLD: 'grimoire:select-world'
+  SELECT_WORLD: 'grimoire:select-world',
+  /** Return to the FYE opening and the prepared-world chooser. */
+  HOME: 'grimoire:home'
 });
 
 /** Engine → React. */
@@ -61,7 +63,9 @@ export const TO_UI = Object.freeze({
   /** The quality ladder stepped. Named to the player once, in the Workshop. */
   QUALITY: 'grimoire:quality',
   /** Loading, ready, or failure state of an approved world. */
-  WORLD_STATUS: 'grimoire:world-status'
+  WORLD_STATUS: 'grimoire:world-status',
+  /** The engine has reset to the FYE home state and restarted its opening. */
+  HOME: 'grimoire:home-ready'
 });
 
 /** Every name, for tests and for the debug overlay. */

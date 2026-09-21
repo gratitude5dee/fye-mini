@@ -156,16 +156,29 @@ export class App {
 
     // Constructed before the first frame so the stage is black from the very
     // first paint rather than flashing a lit scene and then fading in.
-    this.intro = new IntroDirector({ rig: this.rig, sigil: this.sigil }, {
-      reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
-      returning: Boolean(options.returning)
-    });
+    this.intro = this._createIntro({ returning: Boolean(options.returning) });
 
     settings.mode = 'casting';
     this._bindEvents();
     this._bindGrimoireEvents();
     // The stage's opening element. Silent: nothing has been chosen yet.
     this.selectElement(options.element === 'air' ? 'wind' : (options.element ?? 'wind'), { announce: false });
+  }
+
+  _createIntro({ returning = false } = {}) {
+    return new IntroDirector({ rig: this.rig, sigil: this.sigil }, {
+      reducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+      returning
+    });
+  }
+
+  _restartIntro() {
+    this.intro?.dispose();
+    // Home is deliberately a full replay, even for a returning visitor. It is
+    // a chosen transition, not the abbreviated opening shown on page reload.
+    this.intro = this._createIntro({ returning: false });
+    this.intro.onProgress(1);
+    this.intro.onStageReady();
   }
 
   _bindEvents() {
@@ -344,6 +357,7 @@ export class App {
     this._onGrimoireStopHands = () => this.handInput.stop();
     this._onGrimoireCast = () => this._castStagePreview();
     this._onGrimoireSkipIntro = () => this.intro.skip();
+    this._onGrimoireHome = () => this._returnHome();
     this._onGrimoireRite = (event) => {
       if (event.detail?.action === 'aside') this.rite.setAside();
       else if (this.worlds.active && !this.worlds.isWithinRitualArea(this.character.position)) {
@@ -368,6 +382,23 @@ export class App {
     window.addEventListener(TO_ENGINE.CALM, this._onGrimoireCalm);
     window.addEventListener(TO_ENGINE.SKIP_INTRO, this._onGrimoireSkipIntro);
     window.addEventListener(TO_ENGINE.SELECT_WORLD, this._onGrimoireWorld);
+    window.addEventListener(TO_ENGINE.HOME, this._onGrimoireHome);
+  }
+
+  _returnHome() {
+    if (this.worldLoading) return;
+    this.rite.setAside();
+    this.clearEffects();
+    this.rideNextStroke = false;
+    this.handInput.stop();
+    this.worlds.unload();
+    this.ground.mesh.visible = true;
+    this.locomotion?.setSpawn({ x: 0, y: 0, z: 0, yaw: 0 });
+    window.dispatchEvent(new CustomEvent(TO_UI.RIDE_STATUS, { detail: { active: false } }));
+    // Let React restore the intro overlay before the new director publishes
+    // its first beat, then offer the picker after its title has landed.
+    window.dispatchEvent(new CustomEvent(TO_UI.HOME));
+    this._restartIntro();
   }
 
   async _selectWorld(world, { silent = false } = {}) {
@@ -672,5 +703,6 @@ export class App {
     window.removeEventListener(TO_ENGINE.CALM, this._onGrimoireCalm);
     window.removeEventListener(TO_ENGINE.SKIP_INTRO, this._onGrimoireSkipIntro);
     window.removeEventListener(TO_ENGINE.SELECT_WORLD, this._onGrimoireWorld);
+    window.removeEventListener(TO_ENGINE.HOME, this._onGrimoireHome);
   }
 }

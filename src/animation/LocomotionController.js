@@ -21,9 +21,19 @@ export class LocomotionController {
     this.velocityY = 0;
     this.grounded = true;
     this.jumpHeld = false;
-    this.state = { moving: false, sprinting: false, speed: 0 };
+    this.state = {
+      moving: false,
+      sprinting: false,
+      speed: 0,
+      grounded: true,
+      verticalVelocity: 0,
+      jumpPhase: 'grounded',
+      jumpTime: 0
+    };
     this.spawn = new Vector3(0, 0, 0);
     this.spawnYaw = 0;
+    this.airTime = 0;
+    this.landingTime = 0;
   }
 
   setSpawn(spawn = {}) {
@@ -38,6 +48,9 @@ export class LocomotionController {
     this.character.setLean(0);
     this.velocityY = 0;
     this.grounded = true;
+    this.airTime = 0;
+    this.landingTime = 0;
+    this._syncState();
   }
 
   stop() {
@@ -46,6 +59,9 @@ export class LocomotionController {
     this.state.speed = 0;
     this.velocityY = 0;
     this.jumpHeld = this.input.keys.has('Space');
+    this.airTime = 0;
+    this.landingTime = 0;
+    this._syncState();
   }
 
   update(dt, { locked = false } = {}) {
@@ -90,21 +106,38 @@ export class LocomotionController {
     if (wantsJump && !this.jumpHeld && this.grounded) {
       this.velocityY = 6.1;
       this.grounded = false;
+      this.airTime = 0;
+      this.landingTime = 0;
     }
     this.jumpHeld = wantsJump;
 
     if (!this.grounded) {
+      this.airTime += dt;
       this.velocityY -= 17.5 * dt;
       this.character.position.y += this.velocityY * dt;
       if (this.worlds.groundAt(this.character.position, _ground) && this.character.position.y <= _ground.y) {
         this.character.position.y = _ground.y;
         this.velocityY = 0;
         this.grounded = true;
+        this.landingTime = 0.16;
       } else if (this.character.position.y < this.spawn.y - 8) {
         this.resetToSpawn();
       }
     } else if (this.worlds.groundAt(this.character.position, _ground)) {
       this.character.position.y = _ground.y;
     }
+    if (this.landingTime > 0) this.landingTime = Math.max(0, this.landingTime - dt);
+    this._syncState();
+  }
+
+  _syncState() {
+    this.state.grounded = this.grounded;
+    this.state.verticalVelocity = this.velocityY;
+    this.state.jumpTime = this.airTime;
+    if (this.landingTime > 0) this.state.jumpPhase = 'landing';
+    else if (this.grounded) this.state.jumpPhase = 'grounded';
+    else if (this.velocityY > 1.15) this.state.jumpPhase = 'rise';
+    else if (this.velocityY < -1.15) this.state.jumpPhase = 'fall';
+    else this.state.jumpPhase = 'apex';
   }
 }

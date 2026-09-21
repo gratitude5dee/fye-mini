@@ -58,6 +58,9 @@ test('world rendering applies Marble alignment and disposes the prior world', as
   assert.match(manager, /groundPlaneOffset/);
   assert.match(manager, /_disposeCurrent\(\)/);
   assert.match(manager, /deviceMemory/);
+  assert.match(manager, /raycaster\.layers\.set\(LAYER\.COLLIDER\)/);
+  assert.match(manager, /safeFloor/);
+  assert.match(manager, /focalAdjustment: 1\.25/);
   assert.match(renderer, /antialias: false/);
   assert.match(post, /camera\.layers\.enable\(LAYER\.COLLIDER\)/);
 });
@@ -74,6 +77,7 @@ test('third-person controls coexist with casting, air travel, and opt-in hands',
   assert.match(app, /this\.pathDrawer\.active/);
   assert.match(app, /new LocomotionController/);
   assert.match(app, /new WorldManager/);
+  assert.match(app, /TO_ENGINE\.HOME/);
   assert.match(stage, /Hand mode/);
   assert.match(stage, /Enable hands/);
   assert.match(stage, /Mobile never requests your camera/);
@@ -81,5 +85,7 @@ test('third-person controls coexist with casting, air travel, and opt-in hands',
   assert.match(stage, /world-drawer/);
   assert.match(stage, /WORLD_PREVIEWS\.map/);
   assert.match(stage, /LOCAL_WORLD\n  \]/);
+  assert.match(stage, /wordmark--home/);
+  assert.match(stage, /TO_ENGINE\.HOME/);
   assert.match(css, /cursor: not-allowed/);
 });
