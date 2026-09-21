@@ -46,7 +46,7 @@ it in order.
 | 16 | Appendix — the complete copy deck |
 
 ```sh
-npm install          # node_modules is NOT in this checkout
+npm install          # already present in this checkout (153 packages)
 npm run dev          # vinext dev on the Cloudflare vite plugin
 npm run build        # required before tests: `npm test` runs the build first
 npm test             # node --test over tests/*.test.mjs
@@ -109,9 +109,11 @@ then discards them after one use (`src/input/PathDrawer.js:_rebuild`). **320 is 
 output count** — a 4 m stroke yields about twelve points, which §8 depends on.
 
 There is a sharper version of this. `LinearAbiltyCastingExtendedThreeJS` contains a directory called
-`src/archive/` holding `FireAbility.js`, `WaterAbility.js`, `EarthAbility.js`, `WindAbility.js`, `PathDrawer.js`,
-`PathTrail.js`, `AirScooter.js`, `WalkController.js` and `ProceduralGeometry.js` — **fye-mini's own code, retired
-upstream as "the previous four-element bending sandbox"**. fye-mini is that archive, kept alive and given a
+`src/archive/` holding `Ability.js`, `FireAbility.js`, `WaterAbility.js`, `EarthAbility.js`, `WindAbility.js`,
+`PathDrawer.js`, `PathTrail.js`, `AirScooter.js`, `WalkController.js`, `ProceduralGeometry.js`,
+`config/legacySettings.js` and six materials — **fye-mini's own code, retired upstream**. **Both** reference
+repositories carry that directory; the sibling's `README.md:737` calls it "the previous incarnation of this
+project: a four-element bending sandbox". fye-mini is that archive, kept alive and given a
 caster. Upstream moved to straight-line casts and threw the curves away. The curve is the asset.
 
 So: take from the reference repositories the things that survive contact with a different verb — the hit test,
@@ -137,8 +139,8 @@ Verified by reading the tree at `2408e9c` on 2026-09-21. Do not re-derive these.
   `dist/.openai/` after the bundle closes. README's "static Sites-ready bundle" is a simplification.
 - Consequence: server code is *technically* possible, but `tests/caster-first-contract.test.mjs` asserts
   `app/api/casts/route.ts` and `gateway/server.mjs` do NOT exist, and that `fetch(` appears in neither
-  `app/GrimoireStage.tsx` nor `src/core/App.js`. Commit 93a438e deliberately deleted 12 API routes, a MongoDB
-  bootstrap, a Docker gateway, and the Spellwright AI endpoint. Local-first is a product decision, not an accident.
+  `app/GrimoireStage.tsx` nor `src/core/App.js`. Commit 93a438e deliberately deleted 10 API routes and 6 shared
+  helpers, a MongoDB bootstrap, a Docker gateway, and the Spellwright AI endpoint. Local-first is a product decision, not an accident.
   Do not reintroduce a server.
 
 ### The stage is DARK
@@ -157,7 +159,7 @@ Any UI contrast reasoning must assume a near-black stage with bright VFX, not a 
   `this.velocity`, `this.u` (0..1 arc-length progress), `this.age`, and a 64-point `trailPoints` window.
   => `ability.position` is the per-frame world point a hit test would sample. It already exists.
 - `_beginImpact()` calls `this.ctx.onAbilityImpact?.(this)` — **it passes the ability instance**.
-  `App._onAbilityImpact()` currently ignores the argument (`src/core/App.js:189`). Free hook for impact-radius damage.
+  `App._onAbilityImpact()` currently ignores the argument (`src/core/App.js:196`). Free hook for impact-radius damage.
 - `pathHeight(u)` lets an element fly above the drawn ground path; `_tiltTangent` pitches the tangent to match.
 - Subclass hooks: `createShaders`, `createParticles`, `onSpawn`, `onTravel(dt)`, `onImpact`, `onFade(dt,t)`, `onDestroy`.
 - `impactDuration` 1.1s, `fadeDuration` 1.2s by default.
@@ -281,7 +283,8 @@ three events — `start`, `cast` and `cancel` — and `App` listens to **only `c
   ride pose and the forward-axis source, and 451 lines of it run on every boot.
 - Reachable but unsurfaced: `src/ui/PresetManager.js` (used by `Editor`), `src/effects/AirScooter.js` (used by
   `WalkController`). `src/materials/DistortionMaterial.js` is live in fire, water and wind abilities.
-- `public/intro/{fire,water,earth,wind}-fallback.svg` (4 KB each) are referenced nowhere.
+- `public/intro/{fire,water,earth,wind}-fallback.svg` (850–1008 bytes each; `du` rounds them to 4 KiB blocks) are
+  referenced nowhere.
 - `App._handleAction` has cases only for `nextElement`, `prevElement`, `toggleEditor`, `clear`, `togglePause`.
   `InputManager` also emits `toggleHelp` (H), `togglePose` (T) and `toggleMode` (M), which fall through to
   `default: break`. **Three advertised keys do nothing.**
@@ -293,7 +296,7 @@ three events — `start`, `cast` and `cancel` — and `App` listens to **only `c
 | `public/intro/elemental-montage.png` | 2.58 MiB |
 | `public/og.png` | 2.50 MiB |
 | `public/models/Standing Idle.fbx` | 2.27 MiB |
-| `public/angtexture.png` | 12 KiB |
+| `public/angtexture.png` | 10.98 KiB |
 | `output/imagegen/elemental-montage-source.png` | 2.58 MiB (in-repo, not shipped) |
 | **`public/` total** | **13.02 MiB** |
 The HDR and the FBX block first paint (`App.load` awaits both). The montage PNG is fetched for the intro overlay.
@@ -352,8 +355,13 @@ architecture with fye-mini: `settings.js` as the single source of truth, an `Abi
 `createShaders / createParticles / onTravel / onImpact / onFade`, per-type pooling, `LightPool` parking lights at
 zero intensity instead of add/remove, `renderer.compileAsync()` at boot, a depth prepass -> distortion -> bloom ->
 tone map -> grade composer, and `Editor` + `PresetManager` + `glyphs.js` in `src/ui`. fye-mini already has all of it.
-**Five files in `LinearAbilty...`'s `src/effects/` are byte-siblings of fye-mini's own** (`BurstSphere`, `CameraShake`,
-`GroundDecals`, `LightPool`, `ScreenFlash`). We are not importing a foreign architecture; we are re-joining a fork.
+**Three files in the reference `src/effects/` are byte-identical to fye-mini's own** — `CameraShake.js`,
+`LightPool.js` and `ScreenFlash.js`, verified with `cmp`. `BurstSphere.js` and `GroundDecals.js` are **not**:
+the reference's are 326 and 411 lines against fye-mini's 275 and 265. That second gap matters, because the
+indicator work below leans on `GroundDecals` — fye-mini's copy is about 64 % the size, and while its `DecalType`
+enum, its `uAge` / `uIntensity` / `uWidth` / `uColorA` / `uColorB` uniforms and its `#if DECAL == n` branches all
+check out, **do not assume parity**. We are not importing a foreign architecture; we are re-joining a fork, but
+the fork has moved.
 
 ### The single most important thing to take: one cast event for every cast shape
 
@@ -373,7 +381,8 @@ constructor(camera) {
 ```
 
 Public API: `setOrigin(position)`, `arm()`, `cancel()`, `toggle()`, `point(pointerNDC)`, `confirm() -> boolean`,
-`update(dt)`, `setElement(element)`. Events: `'arm'`, `'cancel'`, and
+`update(dt)`, `setElement(element)`. **Four** events — `'arm'`, `'cancel'`, `'reject'` (fired by `confirm()` when
+the target is inside `minRange`) and
 
 ```js
 this.emit('cast', this.origin, this.direction, this.distance);
@@ -386,7 +395,8 @@ emitted only when `confirm()` succeeds on a valid aim. Distance is clamped to
 *rewritten* to take the triple directly:
 
 ```js
-// linear/src/abilities/Ability.js:173
+// LinearAbilty…/src/abilities/Ability.js — the byte-identical copy is at
+// HandCastAbilityThreeJS/src/abilities/Ability.js:184
 spawn(origin, direction, distance) {
   this.origin.set(origin.x, 0, origin.z);
   this.direction.copy(direction).setY(0).normalize();
@@ -405,7 +415,8 @@ line casting to a curve-based engine.
 
 **fye-mini is in the stronger position, and this is worth saying plainly.** It kept the general form:
 `spawn(curve)` calls only `curve.getLength()`, `getPointAt(t, out)` and `getTangentAt(t, out)`
-(`src/abilities/Ability.js:129-152`). A `THREE.LineCurve3` satisfies all three. So fye-mini can add line casts and
+(`src/abilities/Ability.js:136-159`; `getPointAt` is reached indirectly,
+via `_samplePath` at `:148` → `:221`). A `THREE.LineCurve3` satisfies all three. So fye-mini can add line casts and
 far casts **without touching `Ability`, `AbilityManager` or the four element files** — and it keeps drawn curves,
 which the reference repo can no longer do. Add a curve adapter, not a second spawn path:
 
@@ -420,9 +431,11 @@ A zone cast reads its centre as `curve.getPointAt(1)` and works outward, exactly
 ### The indicators, precisely
 
 **`src/effects/AimIndicator.js` (line cast).** One ground quad; the entire arrow is a single signed distance field
-in the fragment shader. Outline, chevrons, noise and the range-cap arc are all derived from that one distance.
-**The shaft stays 0.42 m wide regardless of cast distance** — it does not scale with range, so a long cast does not
-read as a fat cast.
+in the fragment shader. (The brief called it a "swinging" arrow. It does not swing — it snaps to the heading and
+only the body eases.) Outline, chevrons, noise and the range-cap arc are all derived from that one distance.
+**`shaftWidth: 0.42` is a *half*-width**, so the shaft is 0.84 m across — and it stays that way regardless of
+cast distance, so a long cast does not read as a fat cast. Same for `headWidth: 1.35`, which is the half-width at
+the base of the head.
 
 **`src/effects/ZoneIndicator.js` (far cast).** Two parts: a footprint quad whose fragment shader remaps UV into
 *metres from the target* so the boundary stays **0.34 m thick at any radius**, plus a reach ring built from the
@@ -481,7 +494,7 @@ Two things fye-mini lacks and must copy:
 
 ### Hit detection: they solved it, and the solution ports directly
 
-`linear/src/combat/` is 2,658 lines across `Dummy.js`, `DummyField.js` and `Ragdoll.js` — a real hit system with a
+`linear/src/combat/` is 2,658 lines (the equivalent in the sibling repo is 2,720) across `Dummy.js`, `DummyField.js` and `Ragdoll.js` — a real hit system with a
 ragdoll solver that cuts bodies in half along a plane. `DummyField.applyHits(abilities)` is the part to copy, and
 its own doc comment states the principle:
 
@@ -509,7 +522,17 @@ The rules, verbatim from the source:
 distances per frame at `MAX_CONCURRENT`** — free, and with no allocation if the target positions live in one flat
 array.
 
-### But there is still no game
+#**A note on attribution.** Both reference repositories carry `src/archive/` and `src/combat/`, with slightly
+different contents — the combat directory is 2,658 lines in one and 2,720 in the other, the difference being
+`Dummy.js`. The quotes in this section were read from the clone of `LinearAbiltyCastingExtendedThreeJS`; every
+one of them also appears in `HandCastAbilityThreeJS`. If you clone either to check, you will find them. One
+inline attribution to correct: the "Nothing was added to any ability" passage is the **class-level** comment on
+`DummyField`, not `applyHits`'s own.
+
+Also worth knowing, since §4 opens by calling these four-element sandboxes: that is only true of their archives.
+The live `src/abilities/` in the sibling repo holds **nine**.
+
+## But there is still no game
 
 `applyHits` is hit detection, not a game. The source says so itself: **"One hit is a kill. This is a test range,
 not a fight: `hit.impulse`, `lift` and `spin` are the whole of the damage model, and they are there to be dragged
@@ -588,6 +611,13 @@ arc are all derived from that single distance. Do not build it from meshes.
 | `core` / `coreSize` | 0.85 / 0.4 | the mark at the exact target point |
 | `crosshair` / `crosshairLength` | 0.5 / 1.1 | four arms out of the core |
 | `pulse` / `pulseSpeed` | 0.22 / 2.0 | breathing |
+| `reveal` / **`snap`** | 0.07 / **1.18** | `snap` is what makes the circle "snap out past its radius and settle back" |
+| `reach` / `reachWidth` / `reachDashes` | 0.7 / 0.05 / 64 | the reach ring at `range` |
+| `reachDashGap` / `reachSpin` / `reachLead` / `reachSegments` | 0.42 / 0.03 / 0.9 / 192 | its dashes and rotation |
+| `height` | 0.035 | hover above the floor |
+
+The reach-ring group and `snap` were missing from an earlier draft of this table, and `snap` is precisely the key
+that implements the settling behaviour the prose describes.
 
 Two meshes: a **footprint** quad whose fragment shader is a signed-distance ring evaluated in *metres from the
 target*, and a **reach ring** — a ribbon strip bent into a circle at the caster's feet at `range`.
@@ -651,12 +681,12 @@ reference does. **64 squared distances per frame at `MAX_CONCURRENT` = 8 against
 | 0 ms | React mounts `GrimoireStage`. `introVisible` starts `true`, so the overlay paints **before** preferences are read. | `app/GrimoireStage.tsx` initial state |
 | ~0 ms | `.intro` paints: `position: fixed; z-index: 100; inset: 0; background: #08090a`. | `app/grimoire-stage.css:24` |
 | ~0 ms | The browser begins fetching `/intro/elemental-montage.png` — **2.58 MiB** — for `.intro__art`. | `INTRO_ART` |
-| ~0 ms | A second effect dynamic-imports `../src/main.js`, which constructs `App` and calls `app.load()`. | `GrimoireStage.tsx` mount effect |
+| ~0 ms | The **second** effect dynamic-imports `../src/main.js`, which constructs `App` and calls `app.load()`. | `GrimoireStage.tsx` mount effect |
 | ~0 ms | `App.load()` starts `Promise.all([character.load(), assets.loadHDR('/hdri/spruit_sunrise.hdr')])` — **2.27 MiB + 5.66 MiB**. | `src/core/App.js:243` |
 | 0–850 ms | Four `.intro__panel::before` clip-path wipes run, staggered 120 ms. | `panel-reveal` |
 | 400–880 ms | Four `figcaption` labels fade in. | `intro-label` |
 | 0–∞ | `panel-drift` (7.2 s alternating scale/translate) and `panel-sheen` (3.4 s infinite) loop. | CSS |
-| ~1 frame later | A third effect reads `localStorage` and calls `setIntroVisible(!preferences.introSeen)`. **A returning visitor sees one frame of the intro, then a hard cut.** | `readPreferences()` effect |
+| same commit, **before** the import | The **first** effect reads `localStorage` and calls `setIntroVisible(!preferences.introSeen)`. React runs effects in declaration order, so this is not "a frame later" — but `useState(true)` has already painted, so **a returning visitor still sees one frame of intro, then a hard cut.** | `readPreferences()` effect |
 | 7600 ms | `setTimeout` fires `dismissIntro`. Reduced motion: 900 ms. | intro effect |
 
 #### The five problems, ranked
@@ -678,16 +708,20 @@ reference does. **64 squared distances per frame at `MAX_CONCURRENT` = 8 against
    scripted curve with a character performing gather → aim → release → recovery. The intro instead shows a raster
    montage of four static figures behind four empty `<figure>` elements whose only content is a CSS wipe.
 
-4. **The reduced-motion path is a 900 ms blink.** Not an alternative — an absence. `prefers-reduced-motion` also
-   nukes every animation globally via `animation-duration: .01ms !important`, so the montage simply appears and
-   vanishes.
+4. **The reduced-motion path is a 900 ms blink.** Not an alternative — an absence. The
+   `prefers-reduced-motion` block is **scoped to `.grimoire-stage` descendants**, not global, and it does not
+   break the loader: `#loader-fill`'s motion is a `transition: width 0.25s ease` that the rule merely makes
+   instant, while `LoadingScreen.setProgress` writes `style.width` directly, so the bar still tracks progress —
+   it just stops gliding.
 
 5. **The returning visitor gets a flash of intro then a cut**, because `introVisible` initialises to `true` and is
    corrected one effect later.
 
-**The arithmetic is the argument.** The panel wipes finish at 850 ms, the labels at 880 ms, and nothing after that
-is new information — `panel-drift` and `panel-sheen` simply loop. Roughly 2.75 s of content is stretched across
-7600 ms, so **about 64 % of the intro's runtime is dead air** laid over a stage that is already rendering.
+**The arithmetic is the argument, and it is worse than an earlier draft claimed.** `panel-reveal` runs 850 ms
+with `animation-delay: calc(var(--panel-index) * 120ms)` across four panels, so the last wipe finishes at
+360 + 850 = **1210 ms**. `intro-label` runs 400 ms from `400ms + index * 120ms`, so the last label lands at
+**1160 ms**. After that nothing is new: `panel-drift` and `panel-sheen` simply loop. So about **1.2 s of content
+is stretched across 7600 ms — roughly 84 % dead air**, laid over a stage that is already rendering.
 
 #### The loader handoff, and the 920 ms the Cast button spends lying
 
@@ -735,7 +769,7 @@ already on the controls. The loading bar becomes the ritual, not a thing hidden 
 #### The first draft's sequence, bound to real load milestones
 `App.load()` already publishes honest progress. Bind each beat to a milestone rather than a clock, so the sequence
 can never outrun the load or wait on an empty screen. `LoadingScreen.setProgress(ratio, message)` is called at
-0.05, then `0.05 + ratio * 0.48` while assets stream, then 0.62, 0.85, 1.0 (`src/core/App.js:241-262`).
+0.05, then `0.05 + ratio * 0.48` while assets stream, then 0.62, 0.85, 1.0 (`src/core/App.js:237-262`).
 
 | Beat | Gate | Duration | What is on screen |
 |---|---|---|---|
@@ -812,7 +846,7 @@ export class IntroDirector { /* ... */ }
 Ground-plane `CatmullRomCurve3`s, each drawn *as a hand would draw it* — no straight lines, no symmetry.
 Fire hooks, water sweeps wide, earth drives short and heavy, air spirals. Each cast is issued with
 `abilities.cast(curve, element)` — the element argument already exists on `AbilityManager.cast`
-(`src/abilities/AbilityManager.js:63`) and the current app never uses it.
+(`src/abilities/AbilityManager.js:67`) and the current app never uses it.
 
 #### The title composite
 DOM over canvas, not canvas text. `mix-blend-mode: screen` on a `Fraunces` wordmark sitting above `#viewport`,
@@ -838,8 +872,9 @@ criterion was really asking for, and it gets it by construction rather than by t
 
 **Reduced motion is a designed variant, not a disabled one.** The rig sits at the play framing from the first
 frame, there is no dolly and no drift, and the wordmark cross-fades rather than wiping. Same information, no
-vestibular load. Note that the current blanket `animation-duration: .01ms !important`
-(`app/grimoire-stage.css:53`) also breaks the loader's progress fill, so it needs replacing rather than extending.
+vestibular load. Note that the current `prefers-reduced-motion` block
+(`app/grimoire-stage.css:53`) is scoped to `.grimoire-stage` descendants and removes the loader fill's 0.25 s
+ease rather than breaking it; it needs replacing with designed variants rather than extending.
 
 #### What happens to the old assets
 - `public/intro/elemental-montage.png` (2.58 MiB) — **deleted**. It is 2.58 MiB on the critical path for a picture of a
@@ -878,7 +913,7 @@ audience. If audio is ever added it is one toggle, off by default, and it respec
    `CameraRig.update()` is called late in `App.frame()` (after `shake.update` and `flash.update`). Verify the method
    exists in `three@0.185.1` and verify the call ordering before relying on it. The fallback needs no OrbitControls
    API at all: drive `settings.camera.minPolar`/`maxPolar` pinned to the same value — `CameraRig.update()` copies
-   both into the controls every frame (`src/core/CameraRig.js:95-96`) — and let the rig resolve the rest.
+   both into the controls every frame (`src/core/CameraRig.js:96-97`) — and let the rig resolve the rest.
 2. **`npm test` runs `npm run build` first** (`package.json`), so every test run is a full vinext + Cloudflare build.
    Expect it to be slow and to need network access for the first `npm install`.
 
@@ -956,7 +991,7 @@ Then, and only on a click:
 ### The gesture guide, and the hand model underneath it
 
 Both are read from the real source at `HandCastAbilityThreeJS` (`src/ui/gestures.js`, 266 lines;
-`src/input/HandInput.js`, 733 lines — fye-mini's is 380). This is the most mature part of either reference repo
+`src/input/HandInput.js`, 733 lines — fye-mini's is 357). This is the most mature part of either reference repo
 and the largest single upgrade available to fye-mini.
 
 #### The hand model fye-mini is missing
@@ -1121,7 +1156,9 @@ wins. `color-scheme: dark` is already set in `app/globals.css`.
   /* motion */
   --g-fast: 120ms; --g-base: 240ms; --g-slow: 420ms; --g-beat: 900ms;
   --g-ease: cubic-bezier(.2,.8,.2,1);  --g-ease-out: cubic-bezier(.16,1,.3,1);
-  /* layers — currently ad hoc (30 / 45 / 100). Name them. */
+  /* layers — currently ad hoc (20 / 30 / 45 / 100). Name them.
+     Note `.hud` is z-index 20 in src/ui/styles.css, BELOW the 30 of .stage-header /
+     .stage-message / .stage-hud. Mapping it to --g-z-hud: 30 would silently raise it. */
   --g-z-world: 0; --g-z-hud: 30; --g-z-mirror: 45; --g-z-sheet: 60; --g-z-intro: 100;
 }
 ```
@@ -1166,7 +1203,7 @@ cost in the plan. The construction is kept here and in §4.1 so a later version 
 <summary>The indicator design, for whoever needs it later</summary>
 
 Two pooled ground quads, following the reference repos' construction exactly (§4):
-- **`AimIndicator`** — one SDF in a ground quad; shaft **0.42 m wide regardless of distance**; outline, chevrons
+- **`AimIndicator`** — one SDF in a ground quad; shaft **0.42 m *half*-width, constant at any distance** (so 0.84 m across); outline, chevrons
   and the range-cap arc all derived from the one distance field.
 - **`ZoneIndicator`** — a footprint quad whose fragment shader remaps UV into *metres from target* so the boundary
   stays **0.34 m thick at any radius**, plus a reach ring from `RibbonGeometry` bent into a circle. On arm it snaps
@@ -1209,8 +1246,10 @@ as a five-axis readout. It is 20 lines of correct, finished, completely unused c
 reset (§6).
 
 ### Accessibility, concretely
-- Both side sheets are `role="dialog" aria-modal="true"` with **no focus trap, no Escape handler, no focus
-  restoration, and no `inert` on the background**. This is provable by absence:
+- **Three** elements carry `role="dialog" aria-modal="true"` — the intro overlay as well as both side sheets —
+  and none has **a focus trap, an Escape handler, focus restoration, or `inert` on the background**. The intro is
+  the first thing every new visitor meets, so it is the one that matters most and the one an earlier draft
+  omitted. This is provable by absence:
   ```sh
   grep -rnE "Escape|keydown|\.focus\(|inert|tabIndex" app --include="*.tsx" --include="*.ts"
   # zero hits
@@ -1445,7 +1484,7 @@ unbroken stroke is simply impossible with a mouse."* **Both halves are wrong, an
    keep dragging. §4's own controls table lists those keys.
 2. **A two-element stroke is not representable by any device**, because the element is sampled once, at release:
    `this.abilities.cast(curve)` uses `this.abilities.selected` at that moment (`src/core/App.js:133`,
-   `src/abilities/AbilityManager.js:63`). Splitting a curve at a switch point is a change to the cast router, not
+   `src/abilities/AbilityManager.js:67`). Splitting a curve at a switch point is a change to the cast router, not
    to the hand tracker, and a keyboard would then do it identically.
 
 So the honest current answer to "what is better with hands" is **nothing**. §10's own budget table ranks
@@ -1544,7 +1583,9 @@ site — and because the `cast-contract` test in §12.2 enforces exactly that.
 Drawing is and stays the product's primary verb (§8). Any `AimController` is added **beside** `PathDrawer`, never
 over it, and `CastRouter` is the only thing `App` talks to.
 `Ability`, `AbilityManager` and the four element files are **not touched** — verified: `Ability.spawn(curve)` calls
-only `getLength()`, `getPointAt()` and `getTangentAt()` (`src/abilities/Ability.js:129-152`), which `LineCurve3`
+only `getLength()`, `getPointAt()` and `getTangentAt()`
+(`src/abilities/Ability.js:136-159`; `getPointAt` is reached indirectly via `_samplePath` at `:148` → `:221`),
+which `LineCurve3`
 satisfies. This is the same conclusion the `LinearAbilty...` README reaches for its own codebase.
 
 ```js
@@ -1620,7 +1661,7 @@ them with a bus is churn that buys nothing at this event count. Constants + type
 `HOUSE_SEED_SPELLS[].settingsPatch` and `App._applyFlatPatch` can write any path with a `RANGES` entry under
 `global`, `trail`, `fire`, `water`, `earth`, `air`, `post`. Cooldowns, tolerances, scores and difficulty must not be
 reachable from a cosmetic preset. Add a **`settings.rite` block** and give it no `RANGES` entries, so
-`_applyFlatPatch` refuses it by its existing guard (`if (!range && !isColor) continue;` — `src/core/App.js:169`).
+`_applyFlatPatch` refuses it by its existing guard (`if (!range && !isColor) continue;` — `src/core/App.js:170`).
 Presentation values that genuinely affect the cast's feel (`range`, `minRange`) go in the element blocks **with**
 `RANGES` entries, registered under the public `air.*` spelling, never `wind.*` (`src/config/spell-ranges.js`).
 
@@ -1644,7 +1685,7 @@ is a few dozen squared distances per frame, with no allocation if the responder 
 
 Run pass 2 **after** the abilities are stepped, so the volume tested is the one that was just drawn (§11,
 hazard 2). Impact-radius effects hook `ctx.onAbilityImpact(ability)`, which **already passes the ability
-instance** and which `App._onAbilityImpact()` currently throws away (`src/core/App.js:189`).
+instance** and which `App._onAbilityImpact()` currently throws away (`src/core/App.js:196`).
 
 Crucially, **pass 2 must never change the outcome of pass 1.** The player's line is judged on what they drew, not
 on where the VFX happened to fly — otherwise fire's `pathHeight` lift would silently change whether a waystone
@@ -1703,7 +1744,7 @@ Measured frame time over a rolling 90-frame window, never a user-agent sniff.
 | Tier | Trigger | Changes |
 |---|---|---|
 | **high** | < 14 ms sustained | as authored |
-| **balanced** | 14–24 ms | pixel ratio cap 1.5→1.25; bloom radius −30 %; `global.particleCount` ×0.7; shadow map 2048²; MediaPipe every 2nd frame |
+| **balanced** | 14–24 ms | pixel ratio cap 1.75→1.25; bloom radius −30 %; `global.particleCount` ×0.7; shadow map 2048²; MediaPipe every 2nd frame |
 | **conservative** | > 24 ms | pixel ratio 1.0; bloom off; particles ×0.4; shadows off; distortion pass off; MediaPipe every 3rd frame; two-handed tracking refused |
 
 It announces itself **once**, quietly, in the Workshop ("Running in balanced mode for a steady frame rate"), never
@@ -1750,7 +1791,9 @@ The camera claim is the trust anchor. Make it verifiable, not asserted.
   mirror, and sweeps orphaned `.hand-mirror` nodes. Document it in-product in one sentence.
 - A short in-product privacy note the player can actually reach, listing exactly what `localStorage` holds.
 - **Extend the guard test.** `tests/caster-first-contract.test.mjs` already does
-  `assert.doesNotMatch(stage, /fetch\(/)`. Widen it across `src/` and `app/` to also reject `XMLHttpRequest`,
+  **two** fetch guards — `assert.doesNotMatch(stage, /fetch\(/)` and
+`assert.doesNotMatch(app, /fetch\(/)`, covering `app/GrimoireStage.tsx` and `src/core/App.js`. Widen both across
+all of `src/` and `app/` to also reject `XMLHttpRequest`,
   `WebSocket`, `RTCPeerConnection`, `navigator.sendBeacon`, `sendBeacon` and `EventSource`, with a documented
   allowlist for the two MediaPipe CDN URLs until they are self-hosted. That test is the privacy claim's only
   enforcement, and it is cheap.
@@ -1866,7 +1909,7 @@ because they are the things an implementer discovers at the worst possible momen
 16. **Never copy a settings value into a per-cast record at spawn time.** The entire "editor stays live, even while
     paused" property depends on every system re-sampling `settings[...]` each frame. Records may hold unitless
     dice rolls and timestamps, nothing else.
-17. **Any new per-cast state must be reset in `spawn()`** (`src/abilities/Ability.js:129`), which is the pooling
+17. **Any new per-cast state must be reset in `spawn()`** (`src/abilities/Ability.js:136`), which is the pooling
     reset point. Miss it and a pooled ability inherits the previous cast's charge, combo tier or target.
 18. **The particle system is GPU-simulated and the CPU can never read a particle's position.** Position is
     computed in the vertex shader from spawn data. No per-particle hit detection, attraction or gameplay is
@@ -1935,9 +1978,12 @@ taking the better: drawing a shape backwards is a different hand, not a worse on
     camera's orbit centre (`rig.setAnchor`). **That is a complete arena-relocation primitive, already wired end to
     end, pinned to the origin.** If the Rite ever moves the ritual ground — between rounds, for the intro, for a
     close — this is the one line.
-27. **A raw engine key leaks to the UI at `app/GrimoireStage.tsx:244`.** Elements are internally
-    `['fire','water','earth','wind']` and publicly `air` for wind; `App.js` translates by hand at `:141`, `:201`
-    and `:222`. The React island does not, in that one place.
+27. **`app/GrimoireStage.tsx:244` shows a raw lowercase element id as display text.** It renders
+    `<small>{preset.element}</small>`, and every entry in `src/config/house-spells.js` already uses the public
+    ids `fire` / `water` / `earth` / `air` — never `wind`. So this is **not** a key-translation bug, which an
+    earlier draft called it; it is unlabelled data shown as copy. Fix it with the element's display name from the
+    single colour-and-label constant (§7), not with `publicKey()` — which is a module-local `const` in
+    `spell-contract.js` and is not exported anyway.
 28. **The `DIALS` literals at `app/GrimoireStage.tsx:26-47` duplicate engine defaults into React.** That is
     already a desync bug, not a pattern to copy. `src/config/settings.js` is the single source of truth.
 29. **`app/grimoire-stage.css` uses `backdrop-filter` without the `-webkit-` prefix**, so the panel blur is absent
@@ -1967,7 +2013,7 @@ introducing a browser test runner.
 | `assert.match(stage, /elemental-montage\.png/)` | pins the raster intro | Replace with assertions that `src/intro/IntroDirector.js` exists and names all four elements | The test's intent is "the opening is four-element". The evidence moves; the intent is preserved. |
 | `await access('../public/intro/elemental-montage.png')` | pins the file | Delete | The file is deleted in the same commit. |
 | `await access('../output/imagegen/elemental-montage-source.png')` | pins the in-repo source | Delete | Same. |
-| `assert.match(stage, /Hold an open palm until the ring fills/)` | pins onboarding copy | Update to the new string | Section 15 rewrites it to "Hold an open palm until the ring closes." Change the copy and the assertion in one commit. |
+| `assert.match(stage, /Hold an open palm until the ring fills/)` | pins onboarding copy | Update to the new string | Section 16 rewrites it to "Hold an open palm until the ring closes." Change the copy and the assertion in one commit. |
 | `assert.match(hand, /Camera permission or hand tracking was unavailable/)` | pins fallback copy | Update to the new string | Same. |
 | `assert.match(stage, /Mobile never requests your camera/)` | pins the mobile promise | Update to the new string | Same. |
 
@@ -1980,8 +2026,7 @@ deleted API and gateway deleted.
 
 **`tests/no-network.test.mjs`** — the privacy claim's only enforcement. Walk every file under `src/` and `app/`
 and reject `fetch(`, `XMLHttpRequest`, `WebSocket`, `RTCPeerConnection`, `EventSource` and `sendBeacon`, with a
-documented allowlist for the two MediaPipe CDN URLs in `src/input/HandInput.js` until they are self-hosted. This
-widens the existing single-file `assert.doesNotMatch(stage, /fetch\(/)` into a real guard.
+documented allowlist for the two MediaPipe CDN URLs in `src/input/HandInput.js` until they are self-hosted. This widens the existing **two-file** guard into a real one.
 
 **`tests/cast-contract.test.mjs`** — lock the targeting contract. Assert that `src/input/AimController.js` emits
 `'cast'`, `'arm'`, `'cancel'` and `'reject'`; that the **only** modules in `src/` calling
@@ -2097,8 +2142,10 @@ The boring PR that makes the other five cheap. Ship it first and alone.
     "Waking" for up to 920 ms over a live stage.
 - Also cheap and here: the raw engine key leaking at `app/GrimoireStage.tsx:244`, the missing
   `-webkit-backdrop-filter`, and removing the engine's ability to open a React dialog (§11, hazards 27, 29, 30).
-- **Done when**: `npm test` passes, the product looks and behaves identically **except that the Cast button now
-  works**, and the bundle is smaller.
+- **Done when**: `npm test` passes and the product looks and behaves identically **except that the Cast button now
+  works**. Do **not** expect a smaller bundle: `glyphs.js` and `ContactShadows.js` have no importers and the seven
+  dead exports are unused exports of a module that is imported, so Rollup already drops all of them. The source
+  tree gets smaller; the bundle does not. The real bundle win is the 2.58 MiB montage, and it lands in P1.
 
 ### P1 — The intro (depends on P0)
 - `src/intro/IntroDirector.js` and its four scripted curves.
@@ -2345,14 +2392,27 @@ Both were cloned and read, not summarised from their READMEs. `AimController.js`
 misleading**, and section 4 says which.
 
 ### Not verified, and why
-- **Anything about three.js itself.** `node_modules` is absent from this checkout, so
-  `OrbitControls.setAzimuthalAngle` and similar could not be checked against the installed `three@0.185.1`.
-  Section 5 flags this and gives a fallback that needs no OrbitControls API at all.
+- **~~Anything about three.js itself.~~** Superseded. `node_modules` **is** installed (153 packages,
+  `three@0.185.1`), and checking it caught a real error: `OrbitControls` has `getAzimuthalAngle()` and **no
+  setter**, so §5's original camera path would have thrown. `LineCurve3` was also checked and does override
+  `getPointAt` and `getTangentAt` analytically while inheriting `getLength`, so the central claim in §4 holds.
 - **Runtime behaviour.** Nothing here was observed in a browser. The frame budgets in section 10 are estimates
   from reading the render path, not measurements. Measure before cutting anything.
 - **The deployed site.** `avatar.wzrd.tech` was not reachable from the environment this was written in, so every
   statement about what a visitor sees is derived from the source at `2408e9c`. If the deployment is behind that
   commit, check the three live defects there first.
+
+### What a second, adversarial pass found
+Every claim in this document was then re-checked against the tree by a reviewer instructed to assume it was
+wrong. They found **six claims that would have caused a regression or wasted work** — `HUD.setElement` is not
+inert, `src/ui/styles.css` also owns the toast, the MediaPipe version skew does not exist,
+`OrbitControls.setAzimuthalAngle` does not exist, two intro gates fired before the thing they gated, and the
+watchdog advice was inverted — plus **seven drifted `file:line` citations** and **a dozen numeric or attribution
+errors**. All are corrected above, and each correction says what the earlier draft claimed so the same mistake is
+not reintroduced.
+
+That is the honest state of this document: heavily verified, and it still had that many errors in it. Treat the
+remaining citations with the same suspicion.
 
 ### Re-check these first
 Line numbers drift. Before relying on a citation, confirm it. The claims most worth re-confirming because the most
