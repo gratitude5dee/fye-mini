@@ -93,6 +93,10 @@ asset needs the same distribution-rights review. See section 13 of `update.md`.
 `npm run build` produces a Cloudflare Worker bundle with Sites metadata. There is no database, gateway,
 object store or AI secret to configure, because there is nothing to configure.
 
+`npm run deploy:dev` deploys the current tested build to `https://dev.avatar.wzrd.tech` through the separate
+`fye-dev` Worker. It never changes `https://avatar.wzrd.tech`; production promotion is an explicit, separate
+release step after the five-person prototype gate.
+
 ## update.md
 
 `update.md` is the specification this product was built to, including what was tried and rejected, the verified
