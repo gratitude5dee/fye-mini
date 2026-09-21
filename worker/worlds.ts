@@ -68,7 +68,15 @@ function catalogEntry(row: WorldRow) {
 
 function authorised(request: Request, env: Env) {
   const token = env.FYE_WORLD_OPERATOR_TOKEN;
-  return Boolean(token) && request.headers.get('authorization') === `Bearer ${token}`;
+  // Some front-door configurations reserve Authorization for their own access
+  // layer. Keep standard bearer support, with a deliberately named operator
+  // header as the equivalent non-browser fallback. Neither route accepts a
+  // query parameter, body field, or player-controlled value.
+  const bearer = request.headers.get('authorization');
+  const supplied = bearer?.startsWith('Bearer ')
+    ? bearer.slice('Bearer '.length)
+    : request.headers.get('x-fye-operator-token');
+  return Boolean(token) && supplied === token;
 }
 
 function fixedImagePayload(prior: (typeof WORLD_PRIORS)[number], origin: string) {

@@ -57,6 +57,10 @@ test('the public interface keeps camera data local and opens with a motion-safe,
   // It cannot advance until the stage is genuinely playable.
   assert.match(intro, /onStageReady/);
   assert.match(stage, /Skip intro/);
+  assert.match(stage, /INTRO_VIDEO_URL/);
+  assert.match(stage, /muted/);
+  assert.match(css, /intro__video/);
+  await access(new URL('../public/intro/elemental-arrival.mp4', import.meta.url));
   // And the raster montage it replaced is gone from the bundle and the repo.
   assert.doesNotMatch(stage, /elemental-montage/);
   await assert.rejects(access(new URL('../public/intro/elemental-montage.png', import.meta.url)));

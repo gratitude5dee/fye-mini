@@ -33,8 +33,10 @@ const BEATS = {
   // The sigil, once the load is done: a held moment on the assembled shape,
   // then it lets go. Under reduced motion it is barely a beat — the cloud is
   // already crisp by then and holding it is the only part that is motion.
-  sigil: [0.9, 0.25, 0.08],
-  reveal: [1.0, 0.6, 0.12],
+  sigil: [1.1, 0.25, 0.08],
+  // The live stage is still the exit; the film simply gives its fade a richer
+  // eight-second surface on capable, motion-permitting devices.
+  reveal: [6.1, 0.6, 0.12],
   settle: [0.4, 0.4, 0.05]
 };
 

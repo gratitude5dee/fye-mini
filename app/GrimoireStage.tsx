@@ -46,6 +46,7 @@ type WorldCatalogEntry = {
 
 const LOCAL_WORLD = RITUAL_WORLD as WorldCatalogEntry;
 const WORLD_PREVIEWS = WORLD_PRIORS.map((world) => world as WorldCatalogEntry);
+const INTRO_VIDEO_URL = '/intro/elemental-arrival.mp4';
 
 /**
  * What the tracker publishes through `INPUT_STATUS`.
@@ -154,6 +155,7 @@ function emit(name: string, detail?: unknown) {
 
 export function GrimoireStage() {
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const introVideoRef = useRef<HTMLVideoElement>(null);
   const trackerActiveRef = useRef(false);
   const restoredWorldRef = useRef(false);
   const [introVisible, setIntroVisible] = useState(true);
@@ -189,6 +191,7 @@ export function GrimoireStage() {
   // Offering the button anyway is an invitation the product declines, so the
   // same query that refuses it also decides whether it is there to press.
   const [coarsePointer, setCoarsePointer] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [handsGranted, setHandsGranted] = useState(false);
   const [calm, setCalm] = useState(false);
   // What the quality ladder settled on, said once and only in the Workshop.
@@ -233,6 +236,7 @@ export function GrimoireStage() {
   useEffect(() => {
     // Read after mount, never during render: the server has no `matchMedia`.
     setCoarsePointer(Boolean(window.matchMedia?.('(pointer: coarse)').matches));
+    setPrefersReducedMotion(Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches));
     const preferences = readPreferences();
     setIntroVisible(!preferences.introSeen);
     setElement(preferences.element as ElementId);
@@ -243,6 +247,19 @@ export function GrimoireStage() {
     setShowChooserOnReady(!preferences.introSeen);
     setHandsGranted(Boolean(preferences.onboarding?.handsGranted));
   }, []);
+
+  useEffect(() => {
+    const video = introVideoRef.current;
+    if (!video) return;
+    // The generated film is enhancement, never a load gate. It begins when
+    // the real stage can be handed to the player, remains silent for reliable
+    // autoplay, and gives reduced-motion visitors the authored static opening.
+    if (introVisible && stageReady && !prefersReducedMotion) {
+      void video.play().catch(() => undefined);
+      return;
+    }
+    video.pause();
+  }, [introVisible, prefersReducedMotion, stageReady]);
 
   useEffect(() => {
     let alive = true;
@@ -608,6 +625,15 @@ export function GrimoireStage() {
         ref={introRef}
         tabIndex={-1}
       >
+        <video
+          ref={introVideoRef}
+          className="intro__video"
+          src={INTRO_VIDEO_URL}
+          muted
+          playsInline
+          preload="auto"
+          aria-hidden="true"
+        />
         {/* No wordmark here: the loading screen already renders one, at the same
             z-index, and the two drew on top of each other. The loader owns the
             title card; this overlay owns the fade and the one line under it. */}

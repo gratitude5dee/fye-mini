@@ -23,6 +23,7 @@ test('the World Labs operator is fixed-only and keeps secrets server-side', asyn
   const worker = await source('../worker/worlds.ts');
   const start = worker.slice(worker.indexOf('async function startFixedJobs'), worker.indexOf('function validCalibration'));
   assert.match(worker, /FYE_WORLD_OPERATOR_TOKEN/);
+  assert.match(worker, /x-fye-operator-token/);
   assert.match(worker, /WORLD_LABS_API_KEY/);
   assert.match(worker, /marble-1\.1-plus/);
   assert.match(worker, /WORLD_PRIORS/);
