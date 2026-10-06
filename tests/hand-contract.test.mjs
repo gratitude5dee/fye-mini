@@ -165,8 +165,12 @@ test('hand mode is visibly available and the guide follows the armed slot', asyn
 
   // The consent sheet remains opt-in and camera permission is still reached
   // only through Enable hands. The old two-success invitation is gone: users
-  // do not have to discover a hidden prerequisite before finding the control.
-  assert.match(stage, /!coarsePointer && <button[^>]*>Hand mode<\/button>/);
+  // do not have to discover a hidden prerequisite before finding the control,
+  // and the control is no longer withheld from touch pointers — a phone's
+  // browser gets the same offer, and the tracker itself reports when a
+  // webview has no camera to give.
+  assert.match(stage, /<button[^>]*onClick=\{openHands\}[^>]*>Hand mode<\/button>/);
+  assert.doesNotMatch(stage, /!coarsePointer && <button[^>]*>Hand mode/);
   assert.match(stage, /Enable hands/);
   assert.match(stage, /Not now/);
   assert.doesNotMatch(stage, /pointerSuccesses >= 2/);

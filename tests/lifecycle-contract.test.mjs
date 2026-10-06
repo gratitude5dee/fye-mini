@@ -183,8 +183,13 @@ test('three layouts, because the stage a drag crosses is the difficulty', async 
 
   assert.match(css, /@media \(max-width: 679px\)/);
   assert.match(css, /@media \(min-width: 680px\) and \(max-width: 1024px\)/);
-  // A phone never gets the camera, so it must never get the mirror either.
-  assert.match(css, /@media \(max-width: 679px\) \{[\s\S]*\.hand-mirror \{ display: none; \}/);
+  // A phone can carry the camera now, so it carries the mirror too — smaller,
+  // tucked into the top-right gap instead of hidden.
+  assert.match(css, /@media \(max-width: 679px\) \{[\s\S]*\.hand-mirror \{[^}]*width: 116px/);
+  // The movement pad replaces the keyboard hint on touch, pressing the same
+  // virtual keys locomotion already reads.
+  assert.match(css, /\.touch-pad--move/);
+  assert.match(css, /\.pad-key\.is-held/);
   // Nothing may straddle the boundary: 680px must belong to exactly one layout.
   assert.doesNotMatch(css, /@media \(max-width: 680px\)/);
 });

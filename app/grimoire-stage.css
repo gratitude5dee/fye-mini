@@ -105,7 +105,8 @@
 /* Phone. The dock becomes a bottom bar inside the thumb arc, spanning the
    viewport so the far slot is still reachable one-handed, and the sheets take
    the full width because a 360px column beside a 360px viewport is not a
-   panel. The hand mirror is never shown: a phone never gets the camera. */
+   panel. The hand mirror shrinks into the top-right gap: a phone can carry
+   the camera now, and the mirror is the feedback that makes it usable. */
 @media (max-width: 679px) {
   .stage-header { padding: 17px; }
   .wordmark strong { font-size: 28px; }
@@ -132,7 +133,7 @@
   .side-sheet { top: auto; right: 0; bottom: 0; left: 0; width: 100%; max-height: min(78dvh, calc(100dvh - 18px)); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 22px 22px 0 0; transform: none; }
   .world-picker { top: auto; bottom: 0; left: 0; width: 100%; max-height: min(88dvh, calc(100dvh - 12px)); transform: none; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 22px 22px 0 0; padding: 22px 18px; }.world-picker__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workshop { right: 0; }
-  .hand-mirror { display: none; }
+  .hand-mirror { top: 124px; right: 12px; left: auto; width: 116px; border-radius: 11px; }
   .intro__copy h1 { font-size: clamp(43px, 13vw, 74px); }
   .intro__copy span { max-width: 260px; }
   .intro__skip { right: 13px; bottom: 13px; }
@@ -152,6 +153,31 @@
    block of its own. */
 
 @media (pointer: coarse) { .dock__slot, .quiet-button, .ride-button, .intro__skip { min-height: 42px; }.cast-button { min-height: 52px; } }
+
+/* --- The movement pad ------------------------------------------------------
+   Touch-only: a coarse pointer swaps the keyboard hint line for an on-screen
+   controller. A press fills the same `input.keys` a hardware key would, so
+   locomotion never learns which input is holding the key down. `touch-action:
+   none` keeps the press from becoming a scroll or double-tap zoom. */
+.touch-move { position: fixed; z-index: 35; inset: 0; pointer-events: none; }
+.touch-move > * { pointer-events: auto; }
+.touch-pad { position: absolute; display: grid; gap: 9px; }
+.touch-pad--move { left: 14px; bottom: calc(204px + env(safe-area-inset-bottom)); grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 52px); }
+.touch-pad--move .pad-key--up { grid-column: 2; grid-row: 1; }
+.touch-pad--move .pad-key--left { grid-column: 1; grid-row: 2; }
+.touch-pad--move .pad-key--down { grid-column: 2; grid-row: 2; }
+.touch-pad--move .pad-key--right { grid-column: 3; grid-row: 2; }
+.touch-pad--act { right: 14px; bottom: calc(204px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.pad-key { display: grid; width: 52px; height: 52px; place-items: center; border: 1px solid rgb(246 241 232 / .3); border-radius: 15px; padding: 0; color: var(--ink); background: rgb(10 12 15 / .58); box-shadow: 0 10px 30px #0007; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); font: 700 15px/1 var(--font-sans); cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: border-color .12s ease, background .12s ease, color .12s ease; }
+.pad-key--sprint, .pad-key--jump { border-radius: 999px; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+.pad-key--jump { width: 64px; height: 64px; border-color: color-mix(in srgb, var(--accent) 55%, rgb(246 241 232 / .3)); font-size: 10px; }
+.pad-key.is-held { border-color: var(--accent); color: #0e1215; background: var(--accent); box-shadow: 0 0 26px -6px var(--accent); }
+.pad-toggle.is-armed { border-color: var(--accent); color: var(--accent); }
+@media (min-width: 680px) {
+  .touch-pad--move { left: 24px; bottom: 112px; }
+  .touch-pad--act { top: 50%; right: 24px; bottom: auto; transform: translateY(-50%); }
+}
+@media (prefers-reduced-motion: reduce) { .pad-key { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .intro__video { display: none; }.grimoire-stage *, .grimoire-stage *::before, .grimoire-stage *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
 
 /* --- The Rite ----------------------------------------------------------- */
@@ -261,10 +287,10 @@ kbd { display: inline-block; min-width: 15px; border: 1px solid rgb(246 241 232 
    renderer never loads shows its interface rather than a black rectangle. The
    skip button is deliberately exempt: it is the way out of the thing that is
    holding everything else back. */
-.grimoire-stage.is-opening :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .world-drawer, .movement-hint, .help-button) {
+.grimoire-stage.is-opening :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .world-drawer, .movement-hint, .touch-move, .help-button) {
   opacity: 0;
   pointer-events: none;
 }
-.grimoire-stage :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .world-drawer, .movement-hint, .help-button) {
+.grimoire-stage :is(.stage-header, .stage-message, .stage-hud, .ward-readout, .world-drawer, .movement-hint, .touch-move, .help-button) {
   transition: opacity var(--g-slow) ease;
 }
