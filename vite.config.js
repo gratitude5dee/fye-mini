@@ -20,7 +20,14 @@ export default defineConfig(async () => {
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
         config: {
           main: './worker/index.ts',
-          compatibility_flags: ['nodejs_compat']
+          compatibility_flags: ['nodejs_compat'],
+          d1_databases: [{
+            binding: 'WORLD_CATALOG',
+            database_name: 'fye-world-catalog-dev',
+            database_id: 'dbdfdb6b-3193-4f3a-bf07-a8ef2f4476e7',
+            migrations_dir: './migrations'
+          }],
+          triggers: { crons: ['* * * * *'] }
         }
       })
     ]
