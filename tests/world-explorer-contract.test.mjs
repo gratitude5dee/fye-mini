@@ -89,6 +89,15 @@ test('third-person controls coexist with casting, air travel, and opt-in hands',
   assert.match(stage, /touch-move/);
   assert.match(stage, /pad-key/);
   assert.match(stage, /pressKey/);
+  // Slide handover: under capture a pointermove hit-tests the key under the
+  // finger and moves the hold to it; a document sweep drops keys on any lift.
+  assert.match(stage, /elementFromPoint/);
+  assert.match(stage, /onPointerMove/);
+  assert.match(stage, /onPointerEnter/);
+  assert.match(stage, /data-code/);
+  // First visit: the picker waits for the intro to lift — opened early it
+  // sits hit-testable under the transparent intro and eats Skip taps.
+  assert.match(stage, /showChooserOnReady && stageReady && worldsLoaded && !introVisible/);
   assert.match(stage, /movement-hint/);
   assert.match(stage, /world-drawer/);
   assert.match(stage, /WORLD_PREVIEWS\.map/);
