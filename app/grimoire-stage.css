@@ -108,9 +108,12 @@
    panel. The hand mirror shrinks into the top-right gap: a phone can carry
    the camera now, and the mirror is the feedback that makes it usable. */
 @media (max-width: 679px) {
-  .stage-header { padding: 17px; }
+  /* Wrap, never clip: three quiet-buttons plus the wordmark cannot share a
+     390px row — the actions drop to their own line instead of losing the
+     rightmost button off the edge. */
+  .stage-header { padding: 17px; flex-wrap: wrap; gap: 10px 14px; }
   .wordmark strong { font-size: 28px; }
-  .header-actions { gap: 5px; }
+  .header-actions { gap: 5px; margin-left: auto; }
   /* `nowrap` because "Hand mode" wrapped to two lines in a 390px-wide desktop
      window — narrow enough for the phone layout, wide-pointered enough to still
      be offered the camera. */
@@ -162,12 +165,12 @@
 .touch-move { position: fixed; z-index: 35; inset: 0; pointer-events: none; }
 .touch-move > * { pointer-events: auto; }
 .touch-pad { position: absolute; display: grid; gap: 9px; }
-.touch-pad--move { left: 14px; bottom: calc(204px + env(safe-area-inset-bottom)); grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 52px); }
+.touch-pad--move { left: 14px; bottom: calc(232px + env(safe-area-inset-bottom)); grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 52px); }
 .touch-pad--move .pad-key--up { grid-column: 2; grid-row: 1; }
 .touch-pad--move .pad-key--left { grid-column: 1; grid-row: 2; }
 .touch-pad--move .pad-key--down { grid-column: 2; grid-row: 2; }
 .touch-pad--move .pad-key--right { grid-column: 3; grid-row: 2; }
-.touch-pad--act { right: 14px; bottom: calc(204px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.touch-pad--act { right: 14px; bottom: calc(232px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
 .pad-key { display: grid; width: 52px; height: 52px; place-items: center; border: 1px solid rgb(246 241 232 / .3); border-radius: 15px; padding: 0; color: var(--ink); background: rgb(10 12 15 / .58); box-shadow: 0 10px 30px #0007; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); font: 700 15px/1 var(--font-sans); cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: border-color .12s ease, background .12s ease, color .12s ease; }
 .pad-key--sprint, .pad-key--jump { border-radius: 999px; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
 .pad-key--jump { width: 64px; height: 64px; border-color: color-mix(in srgb, var(--accent) 55%, rgb(246 241 232 / .3)); font-size: 10px; }
@@ -211,7 +214,7 @@
 /* --- Help --------------------------------------------------------------- */
 /* Bottom right, out of the thumb arc on a phone and out of the way of the
    stage dock, which owns the bottom centre. */
-.help-button { position: fixed; z-index: 40; top: 82px; right: 20px; width: 38px; height: 38px; border: 1px solid rgb(246 241 232 / .26); border-radius: 50%; color: var(--ink); background: rgb(10 12 15 / .68); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font: 700 15px/1 var(--font-sans); cursor: pointer; }
+.help-button { position: fixed; z-index: 40; top: 82px; right: 20px; width: 42px; height: 42px; border: 1px solid rgb(246 241 232 / .26); border-radius: 50%; color: var(--ink); background: rgb(10 12 15 / .68); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font: 700 15px/1 var(--font-sans); cursor: pointer; }
 .help-button:hover { border-color: var(--accent); color: var(--accent); }
 .help-sheet h3 { margin: 18px 0 6px; color: var(--ink); font: 600 15px/1.2 var(--font-display); }
 .help-sheet h3:first-of-type { margin-top: 12px; }

@@ -190,6 +190,13 @@ test('three layouts, because the stage a drag crosses is the difficulty', async 
   // virtual keys locomotion already reads.
   assert.match(css, /\.touch-pad--move/);
   assert.match(css, /\.pad-key\.is-held/);
+  // A phone's header wraps rather than clipping the rightmost action, and the
+  // pads sit above the cast bar's reach.
+  assert.match(css, /@media \(max-width: 679px\) \{[\s\S]*\.stage-header \{[^}]*flex-wrap: wrap/);
+  assert.match(css, /\.header-actions \{[^}]*margin-left: auto/);
+  assert.match(css, /\.touch-pad--move \{[^}]*bottom: calc\(232px/);
+  // The coarse-pointer target floor covers the help button too.
+  assert.match(css, /\.help-button \{[^}]*width: 42px/);
   // Nothing may straddle the boundary: 680px must belong to exactly one layout.
   assert.doesNotMatch(css, /@media \(max-width: 680px\)/);
 });

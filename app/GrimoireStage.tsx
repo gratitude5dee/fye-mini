@@ -443,11 +443,18 @@ export function GrimoireStage() {
     restoredWorldRef.current = true;
     setSelectedWorld(remembered.slug);
     emit(TO_ENGINE.SELECT_WORLD, { world: remembered, silent: true });
-    if (showChooserOnReady) {
+  }, [selectedWorld, stageReady, worlds, worldsLoaded]);
+
+  useEffect(() => {
+    // The deferred first-visit chooser lives apart from the restore effect
+    // above, which returns early once it has run. Never while the intro still
+    // plays: the picker is hit-testable under the transparent intro, where it
+    // eats Skip taps and can silently select a world.
+    if (showChooserOnReady && stageReady && worldsLoaded && !introVisible) {
       setWorldPickerOpen(true);
       setShowChooserOnReady(false);
     }
-  }, [selectedWorld, showChooserOnReady, stageReady, worlds, worldsLoaded]);
+  }, [introVisible, showChooserOnReady, stageReady, worldsLoaded]);
 
   const closeHelp = useCallback(() => setHelpOpen(false), []);
   const closeHands = useCallback(() => setHandsOpen(false), []);
@@ -561,35 +568,66 @@ export function GrimoireStage() {
   };
 
   /* --- The movement pad ---------------------------------------------------
-     No pointer capture: a finger sliding between directions should hand the
-     key over as it crosses each button's edge, which capture would prevent.
-     `pointerleave` is therefore a real release path, and the blur/visibility
-     sweep below is the backstop for every cancel the browser forgets. */
-  const padPress = (code: string) => (event: PointerEvent<HTMLElement>) => {
-    event.preventDefault();
+     A finger sliding between directions should hand the key over as it
+     crosses each button's edge. Implicit touch capture pins every later
+     event to the pressed button, so the handover is done by hand: on each
+     captured pointermove, elementFromPoint names the key actually under the
+     finger and the hold moves to it. Where capture is absent, pointerenter
+     arms the key a pressed contact crosses and pointerleave releases the one
+     it left. The document up/cancel sweep covers a lift that lands off-pad,
+     and blur/visibility stays the last backstop. */
+  const pressHeldPointer = (code: string, pointerId: number) => {
     let held = heldPointersRef.current.get(code);
     if (!held) {
       held = new Set();
       heldPointersRef.current.set(code, held);
     }
-    if (held.has(event.pointerId)) return;
-    held.add(event.pointerId);
-    event.currentTarget.classList.add('is-held');
+    if (held.has(pointerId)) return;
+    held.add(pointerId);
+    document.querySelector(`.pad-key[data-code="${code}"]`)?.classList.add('is-held');
     stageInput()?.pressKey?.(code);
   };
 
-  const padRelease = (code: string) => (event: PointerEvent<HTMLElement>) => {
+  const dropHeldPointer = (code: string, pointerId: number) => {
     const held = heldPointersRef.current.get(code);
-    if (!held?.delete(event.pointerId)) return;
-    if (held.size === 0) {
-      heldPointersRef.current.delete(code);
-      event.currentTarget.classList.remove('is-held');
-      stageInput()?.releaseKey?.(code);
+    if (!held?.delete(pointerId) || held.size !== 0) return;
+    heldPointersRef.current.delete(code);
+    document.querySelector(`.pad-key[data-code="${code}"]`)?.classList.remove('is-held');
+    stageInput()?.releaseKey?.(code);
+  };
+
+  const padPress = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    pressHeldPointer(code, event.pointerId);
+  };
+
+  // A finger already in contact crossing a key's edge presses it — the same
+  // path as pointerdown, gated on the contact bit so a mouse hover cannot.
+  const padEnter = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    if ((event.buttons & 1) === 1) pressHeldPointer(code, event.pointerId);
+  };
+
+  // Under capture the moves keep arriving here even as the finger crosses
+  // edges; hit-testing the pointer's real position is what hands keys over.
+  const padMove = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    if (!heldPointersRef.current.get(code)?.has(event.pointerId)) return;
+    const over = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.pad-key');
+    const next = over?.getAttribute('data-code');
+    if (next && next !== code) {
+      dropHeldPointer(code, event.pointerId);
+      pressHeldPointer(next, event.pointerId);
     }
   };
 
+  const padRelease = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    dropHeldPointer(code, event.pointerId);
+  };
+
   const padHandlers = (code: string) => ({
+    'data-code': code,
     onPointerDown: padPress(code),
+    onPointerEnter: padEnter(code),
+    onPointerMove: padMove(code),
     onPointerUp: padRelease(code),
     onPointerCancel: padRelease(code),
     onPointerLeave: padRelease(code),
@@ -613,9 +651,20 @@ export function GrimoireStage() {
     // A missed cancel leaves a key held forever: the app switching away, the
     // browser chrome opening, a call arriving. Clear on every signal that
     // means the touches are gone, and once more when this unmounts.
+    // Uncaptured pointers end their up/cancel on whatever element sits under
+    // the finger — often off-pad, where no key handler runs. Any lift must
+    // drop every key that pointer still holds, wherever it lands.
+    const sweepPointer = (event: Event) => {
+      const { pointerId } = event as unknown as { pointerId: number };
+      heldPointersRef.current.forEach((_held, code) => dropHeldPointer(code, pointerId));
+    };
+    window.addEventListener('pointerup', sweepPointer, true);
+    window.addEventListener('pointercancel', sweepPointer, true);
     window.addEventListener('blur', releasePad);
     document.addEventListener('visibilitychange', releasePad);
     return () => {
+      window.removeEventListener('pointerup', sweepPointer, true);
+      window.removeEventListener('pointercancel', sweepPointer, true);
       window.removeEventListener('blur', releasePad);
       document.removeEventListener('visibilitychange', releasePad);
       releasePad();
