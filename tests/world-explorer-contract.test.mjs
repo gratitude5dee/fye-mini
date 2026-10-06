@@ -82,7 +82,13 @@ test('third-person controls coexist with casting, air travel, and opt-in hands',
   assert.match(app, /TO_ENGINE\.HOME/);
   assert.match(stage, /Hand mode/);
   assert.match(stage, /Enable hands/);
-  assert.match(stage, /Mobile never requests your camera/);
+  // Touch gets the same camera offer as desktop; on a coarse pointer the
+  // keyboard hint line yields to the on-screen movement pad, which presses
+  // the same `input.keys` the hardware fills.
+  assert.doesNotMatch(stage, /Mobile never requests your camera/);
+  assert.match(stage, /touch-move/);
+  assert.match(stage, /pad-key/);
+  assert.match(stage, /pressKey/);
   assert.match(stage, /movement-hint/);
   assert.match(stage, /world-drawer/);
   assert.match(stage, /WORLD_PREVIEWS\.map/);

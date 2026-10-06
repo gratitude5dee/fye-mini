@@ -148,6 +148,23 @@ export class InputManager extends EventEmitter {
     this.keys.delete(event.code);
   };
 
+  /**
+   * Virtual keys — the on-screen touch pad. A press lands in the same `keys`
+   * Set the hardware keyboard fills, so locomotion, sprint, and jump read one
+   * source of truth and never learn which input is holding the key down.
+   */
+  pressKey(code) {
+    this.keys.add(code);
+  }
+
+  releaseKey(code) {
+    this.keys.delete(code);
+  }
+
+  releaseAllKeys() {
+    this.keys.clear();
+  }
+
   _onBlur = () => this.keys.clear();
 
   dispose() {

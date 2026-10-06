@@ -42,8 +42,22 @@ const KEY_ROWS: Array<[string, string]> = [
   ['Right-drag', 'Orbit. Scroll to zoom.']
 ];
 
+// The same notes, written for a hand instead of a keyboard: the pad toggle in
+// the header brings the same intents the WASD row describes.
+const TOUCH_ROWS: Array<[string, string]> = [
+  ['Move pad', 'Arrows walk the caster relative to the camera.'],
+  ['Run / Jump', 'Hold Run while moving to sprint. Tap Jump to leap.'],
+  ['Controls', 'Header toggle that shows or hides the pad.'],
+  ['Drag', 'Draw a path on the stage.'],
+  ['One-finger slide', 'Orbit. Pinch to zoom.'],
+  ['Element slot', 'Tap a sigil to choose an element.'],
+  ['Ride a path', 'Arms the ride for your next stroke.']
+];
+
 export function HelpSheet({ onClose, open }: Props) {
   const ref = useDialog<HTMLElement>(open, onClose);
+  const coarse = open && typeof window !== 'undefined' && Boolean(window.matchMedia?.('(pointer: coarse)').matches);
+  const controlRows = coarse ? TOUCH_ROWS : KEY_ROWS;
   if (!open) return null;
 
   return (
@@ -73,10 +87,10 @@ export function HelpSheet({ onClose, open }: Props) {
 
       <h3>Casting with your hands</h3>
       <p className="sheet-copy">
-        Desktop only, and never required. Everything below works with a pointer except the lift, which is the
-        reason hands are here at all.
+        Camera required, never required. Wherever the browser has a camera to grant, everything below works;
+        where it does not, only the lift is missing — the reason hands are here at all.
       </p>
-      <p className="sheet-copy">The desktop <strong>Hand mode</strong> button is always available. It explains the
+      <p className="sheet-copy">The <strong>Hand mode</strong> button is always available. It explains the
         local-only camera use before the browser asks, and <strong>Not now</strong> leaves pointer casting unchanged.</p>
       <ul className="help-notes">
         <li><strong>Wake it.</strong> Hold an open palm until the ring fills. Nothing casts before that.</li>
@@ -107,10 +121,10 @@ export function HelpSheet({ onClose, open }: Props) {
         and no preset can reach the rules of the Rite.
       </p>
 
-      <h3>Keys</h3>
+      <h3>Controls</h3>
       <dl className="help-rows help-rows--keys">
-        {KEY_ROWS.map(([key, note]) => (
-          <div key={key}><dt><kbd>{key}</kbd></dt><dd>{note}</dd></div>
+        {controlRows.map(([key, note]) => (
+          <div key={key}><dt>{coarse ? key : <kbd>{key}</kbd>}</dt><dd>{note}</dd></div>
         ))}
       </dl>
     </section>

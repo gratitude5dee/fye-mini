@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type MouseEvent, type PointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { HOUSE_SEED_SPELLS } from '../src/config/house-spells';
 import { TO_ENGINE, TO_UI } from '../src/state/events.js';
 import { isPersistent, read as readPreferences, write as persistPreferences } from '../src/state/preferences.js';
@@ -153,6 +153,10 @@ function emit(name: string, detail?: unknown) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
 
+/** The engine's shared input object, reached without a prop chain. */
+type StageInput = { pressKey?(code: string): void; releaseKey?(code: string): void; releaseAllKeys?(): void };
+const stageInput = () => (window as unknown as { app?: { input?: StageInput } }).app?.input;
+
 export function GrimoireStage() {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const introVideoRef = useRef<HTMLVideoElement>(null);
@@ -188,10 +192,14 @@ export function GrimoireStage() {
   const [worldStatus, setWorldStatus] = useState('Ritual Stage is ready.');
   const [selectedWorld, setSelectedWorld] = useState('ritual-stage');
   const [showChooserOnReady, setShowChooserOnReady] = useState(false);
-  // A phone never gets the camera — `enableHands` refuses on a coarse pointer.
-  // Offering the button anyway is an invitation the product declines, so the
-  // same query that refuses it also decides whether it is there to press.
+  // Touch changes the chrome, not the offer: a coarse pointer swaps the
+  // keyboard hints for the on-screen movement pad, while Hand mode stays
+  // available on any device whose browser has a camera to grant.
   const [coarsePointer, setCoarsePointer] = useState(false);
+  const [padOpen, setPadOpen] = useState(true);
+  // Pointer ids per virtual key — a second finger on a held button must not
+  // release it early, and a finger sliding off must let it go.
+  const heldPointersRef = useRef(new Map<string, Set<number>>());
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [handsGranted, setHandsGranted] = useState(false);
   const [calm, setCalm] = useState(false);
@@ -533,15 +541,12 @@ export function GrimoireStage() {
   };
 
   const enableHands = () => {
-    if (window.matchMedia?.('(pointer: coarse)').matches) {
-      setInputState('unavailable');
-      setInputStatus('Touch casting is ready. Mobile never requests your camera.');
-      return;
-    }
     if (!stageReady) {
       setInputStatus('The stage is still waking. Try again in a moment.');
       return;
     }
+    // The tracker reports its own outcome: a device or webview without camera
+    // access settles into `unavailable`/`fallback` with pointer casting kept.
     setInputState('requesting');
     setInputStatus('Requesting camera permission…');
     emit(TO_ENGINE.ATTUNE);
@@ -554,6 +559,72 @@ export function GrimoireStage() {
     setInputState('idle');
     setInputStatus('Pointer casting is ready.');
   };
+
+  /* --- The movement pad ---------------------------------------------------
+     No pointer capture: a finger sliding between directions should hand the
+     key over as it crosses each button's edge, which capture would prevent.
+     `pointerleave` is therefore a real release path, and the blur/visibility
+     sweep below is the backstop for every cancel the browser forgets. */
+  const padPress = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    let held = heldPointersRef.current.get(code);
+    if (!held) {
+      held = new Set();
+      heldPointersRef.current.set(code, held);
+    }
+    if (held.has(event.pointerId)) return;
+    held.add(event.pointerId);
+    event.currentTarget.classList.add('is-held');
+    stageInput()?.pressKey?.(code);
+  };
+
+  const padRelease = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    const held = heldPointersRef.current.get(code);
+    if (!held?.delete(event.pointerId)) return;
+    if (held.size === 0) {
+      heldPointersRef.current.delete(code);
+      event.currentTarget.classList.remove('is-held');
+      stageInput()?.releaseKey?.(code);
+    }
+  };
+
+  const padHandlers = (code: string) => ({
+    onPointerDown: padPress(code),
+    onPointerUp: padRelease(code),
+    onPointerCancel: padRelease(code),
+    onPointerLeave: padRelease(code),
+    onContextMenu: (event: MouseEvent<HTMLElement>) => event.preventDefault()
+  });
+
+  // A sheet owns the bottom of the screen while it is open — the pad hides
+  // underneath it. So does the player's hold: every virtual key lets go the
+  // moment the pad leaves the stage, not the moment the button unmounts.
+  const sheetOpen = handsOpen || workshopOpen || worldPickerOpen || helpOpen;
+
+  const releasePad = useCallback(() => {
+    if (heldPointersRef.current.size === 0) return;
+    heldPointersRef.current.clear();
+    document.querySelectorAll('.pad-key.is-held').forEach((key) => key.classList.remove('is-held'));
+    stageInput()?.releaseAllKeys?.();
+  }, []);
+
+  useEffect(() => {
+    if (!coarsePointer) return;
+    // A missed cancel leaves a key held forever: the app switching away, the
+    // browser chrome opening, a call arriving. Clear on every signal that
+    // means the touches are gone, and once more when this unmounts.
+    window.addEventListener('blur', releasePad);
+    document.addEventListener('visibilitychange', releasePad);
+    return () => {
+      window.removeEventListener('blur', releasePad);
+      document.removeEventListener('visibilitychange', releasePad);
+      releasePad();
+    };
+  }, [coarsePointer, releasePad]);
+
+  useEffect(() => {
+    if (!padOpen || sheetOpen) releasePad();
+  }, [padOpen, sheetOpen, releasePad]);
 
   return (
     <main
@@ -575,7 +646,8 @@ export function GrimoireStage() {
         <header className="stage-header">
           <button className="wordmark wordmark--home" onClick={returnHome} aria-label="Return to FYE home and world selection"><span>Elemental explorer</span><strong>FYE</strong></button>
           <div className="header-actions">
-            {!coarsePointer && <button className="quiet-button" onClick={openHands} aria-expanded={handsOpen}>Hand mode</button>}
+            {coarsePointer && <button className={`quiet-button pad-toggle ${padOpen ? 'is-armed' : ''}`} onClick={() => setPadOpen((open) => !open)} aria-expanded={padOpen}>Controls</button>}
+            <button className="quiet-button" onClick={openHands} aria-expanded={handsOpen}>Hand mode</button>
             <button className="quiet-button" onClick={() => { setHandsOpen(false); setHelpOpen(false); setWorldPickerOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>
           </div>
         </header>
@@ -610,11 +682,26 @@ export function GrimoireStage() {
           </button>
         </section>
 
-        <section className="movement-hint" aria-label="Movement controls">
-          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span>
-          <span><kbd>⇧</kbd> sprint</span>
-          <span><kbd>Space</kbd> jump</span>
-        </section>
+        {coarsePointer ? (
+          padOpen && !sheetOpen && <section className="touch-move" aria-label="Movement controls">
+            <div className="touch-pad touch-pad--move" role="group" aria-label="Move the caster">
+              <button className="pad-key pad-key--up" aria-label="Move forward" {...padHandlers('KeyW')}>▲</button>
+              <button className="pad-key pad-key--left" aria-label="Move left" {...padHandlers('KeyA')}>◀</button>
+              <button className="pad-key pad-key--down" aria-label="Move back" {...padHandlers('KeyS')}>▼</button>
+              <button className="pad-key pad-key--right" aria-label="Move right" {...padHandlers('KeyD')}>▶</button>
+            </div>
+            <div className="touch-pad touch-pad--act" role="group" aria-label="Sprint and jump">
+              <button className="pad-key pad-key--sprint" aria-label="Hold to sprint" {...padHandlers('ShiftLeft')}>Run</button>
+              <button className="pad-key pad-key--jump" aria-label="Jump" {...padHandlers('Space')}>Jump</button>
+            </div>
+          </section>
+        ) : (
+          <section className="movement-hint" aria-label="Movement controls">
+            <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span>
+            <span><kbd>⇧</kbd> sprint</span>
+            <span><kbd>Space</kbd> jump</span>
+          </section>
+        )}
 
         <section className="stage-hud" aria-label="Casting controls">
           <div className={`dock ${stageReady ? '' : 'is-waking'}`} data-dock role="group" aria-label="Choose an element">
@@ -716,7 +803,7 @@ export function GrimoireStage() {
 
       {handsOpen && <section className="side-sheet" role="dialog" aria-modal="true" aria-labelledby="hands-title" ref={handsRef} tabIndex={-1}>
         <button className="sheet-close" onClick={closeHands} aria-label="Close hand input panel">×</button>
-        <p className="eyebrow">Camera-first desktop input</p><h2 id="hands-title">Cast with your hands.</h2>
+        <p className="eyebrow">Camera hand tracking</p><h2 id="hands-title">Cast with your hands.</h2>
         <p className="sheet-copy">FYE uses the position of one hand. The live mirror and landmarks stay in this browser; no video is recorded, sent, or stored. Declining leaves pointer casting unchanged.</p>
         <div className={`input-health input-health--${inputState}`}><i /><span>{inputStatus}</span></div>
         <p className="gesture-guide__title">Guide for {currentElement.label}</p>

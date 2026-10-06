@@ -33,7 +33,11 @@ test('hand tracking remains direct-click, local, mirrored, and fallback-safe', a
   assert.match(hand, /Camera permission or hand tracking was unavailable/);
   assert.match(stage, /emit\(TO_ENGINE\.ATTUNE\)/);
   assert.match(events, /ATTUNE: 'grimoire:attune'/);
-  assert.match(stage, /Mobile never requests your camera/);
+  // The camera offer is no longer gated on pointer type: a phone gets Hand
+  // mode, and a device whose browser has no camera hears the tracker's own
+  // fallback message instead of a refusal copy.
+  assert.doesNotMatch(stage, /Mobile never requests your camera/);
+  assert.doesNotMatch(stage, /'\(pointer: coarse\)'[^;]*unavailable/);
   assert.match(stage, /Guide for \{currentElement\.label\}/);
   assert.match(stage, /Open palm/);
 });
