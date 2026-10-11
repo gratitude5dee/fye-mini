@@ -40,10 +40,13 @@ export class CasterPerformance {
     this.intensity = 1;
 
     character.model?.traverse((node) => {
-      if (!JOINTS.includes(node.name)) return;
-      this.joints.set(node.name, node);
-      this.rest.set(node.name, node.quaternion.clone());
-      this.live.set(node.name, node.quaternion.clone());
+      // FBXLoader sanitises "mixamorig:Hips" to "mixamorigHips"; GLB exports
+      // keep the colon. Normalise to the colon form JOINTS is written in.
+      const name = node.name?.replace(/^mixamorig:?/, 'mixamorig:');
+      if (!JOINTS.includes(name)) return;
+      this.joints.set(name, node);
+      this.rest.set(name, node.quaternion.clone());
+      this.live.set(name, node.quaternion.clone());
     });
   }
 
