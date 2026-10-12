@@ -24,6 +24,7 @@ import { CharacterController } from '../animation/CharacterController.js';
 import { WalkController } from '../animation/WalkController.js';
 import { CasterPerformance } from '../animation/CasterPerformance.js';
 import { LocomotionController } from '../animation/LocomotionController.js';
+import { MotionDirector } from '../animation/MotionDirector.js';
 import { WorldManager } from '../world/WorldManager.js';
 import { HUD, LoadingScreen } from '../ui/HUD.js';
 import { Editor } from '../ui/Editor.js';
@@ -583,6 +584,7 @@ export class App {
     });
     this.caster = new CasterPerformance(this.character);
     this.locomotion = new LocomotionController(this.character, this.camera, this.input, this.worlds);
+    this.motion = new MotionDirector(this.character, this.locomotion, this.caster);
     this.locomotion.setSpawn({ x: 0, y: 0, z: 0, yaw: 0 });
     // The default camera sits on the rig's +Z side, so facing +Z keeps the
     // caster's performance readable instead of presenting their back.
@@ -640,6 +642,7 @@ export class App {
     this.locomotion?.update(dt, {
       locked: this.worldLoading || this.paused || this.walk?.active || this.pathDrawer.active
     });
+    this.motion?.update(dt);
     this.abilities.update(dt);
     this.character.update(dt);
     this.walk?.update(dt);

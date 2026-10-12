@@ -17,22 +17,29 @@ import { disposeObject } from '../utils/dispose.js';
 import { SittingPose } from './SittingPose.js';
 
 const CHARACTER_URL = '/models/Standing Idle.fbx';
+/**
+ * fal.ai (Meshy auto-rig + animation library) repackage of the same mesh with
+ * a full motion set — idle/walk/run/sprint/jump/runjump/fall/cast/sit — built
+ * offline by `scripts/motion-pack.mjs`. Preferred when present.
+ */
+const MOTION_URL = '/models/caster-motion.glb';
 /** Hand-authored albedo atlas replacing the FBX's unresolvable texture refs. */
 const CHARACTER_TEXTURE_URL = '/angtexture.png';
-/** Mixamo exports in centimetres. */
+/** Mixamo exports in centimetres; the GLB motion pack is authored in metres. */
 const FBX_SCALE = 0.01;
+const GLB_SCALE = 1;
 /** Rigs vary; normalise to a believable human height so the world scale holds. */
 const TARGET_HEIGHT = 1.78;
 
 /**
- * Loads the rigged FBX, normalises it for the scene and drives its animation.
+ * Loads the rigged model, normalises it for the scene and drives its animation.
  *
- * The bundled asset contributes its idle clip. Travel and casting are layered
- * procedurally over that same rig, so the caster can run, jump, and perform
- * spells without pretending an unlicensed or incompatible animation clip is
- * part of the source asset.
+ * The motion-pack GLB ships the same mesh auto-rigged by Meshy onto a
+ * Mixamo-convention skeleton, carrying eleven named clips. The FBX remains as
+ * a fallback: it contributes only its idle clip, and travel/casting then fall
+ * back on the procedural layers.
  *
- * On top of the clip sits a second, procedural layer: `SittingPose` bakes a
+ * On top of the clips sits a second, procedural layer: `SittingPose` bakes a
  * cross-legged meditation pose straight onto the skeleton, and `settings.
  * character.pose` cross-fades the two. Because that layer runs *after* the
  * mixer each frame it needs no clip of its own.
@@ -68,11 +75,14 @@ export class CharacterController {
    * @param {import('../loaders/AssetLoader.js').AssetLoader} assets
    */
   async load(assets) {
-    const [fbx, albedo] = await Promise.all([
-      assets.loadFBX(CHARACTER_URL),
+    // The motion pack is preferred but optional: a missing file still boots
+    // the FBX, so the stage never strands on an absent asset.
+    const [glb, albedo] = await Promise.all([
+      assets.loadGLB(MOTION_URL).catch(() => null),
       assets.loadTexture(CHARACTER_TEXTURE_URL)
     ]);
-    // The FBX resolves before its textures do; material prep inspects them.
+    const fbx = glb ? null : await assets.loadFBX(CHARACTER_URL);
+    // The model resolves before its textures do; material prep inspects them.
     await assets.settled();
 
     // A small pixel-art atlas: keep the texels hard under magnification, but
@@ -89,40 +99,41 @@ export class CharacterController {
     albedo.needsUpdate = true;
     this.albedo = albedo;
 
-    fbx.scale.setScalar(FBX_SCALE);
-    fbx.updateMatrixWorld(true);
+    const model = glb?.scene ?? fbx;
+    const baseScale = glb ? GLB_SCALE : FBX_SCALE;
+    model.scale.setScalar(baseScale);
+    model.updateMatrixWorld(true);
 
-    const box = new Box3().setFromObject(fbx);
+    const box = new Box3().setFromObject(model);
     const size = new Vector3();
     const center = new Vector3();
     box.getSize(size);
 
     // Normalise the rig's height, then drop it onto y = 0 and centre it.
-    fbx.scale.setScalar(FBX_SCALE * (TARGET_HEIGHT / Math.max(0.001, size.y)));
-    fbx.updateMatrixWorld(true);
-    box.setFromObject(fbx);
+    model.scale.setScalar(baseScale * (TARGET_HEIGHT / Math.max(0.001, size.y)));
+    model.updateMatrixWorld(true);
+    box.setFromObject(model);
     box.getSize(size);
     box.getCenter(center);
     this.height = size.y;
-    fbx.position.x -= center.x;
-    fbx.position.z -= center.z;
-    fbx.position.y -= box.min.y;
+    model.position.x -= center.x;
+    model.position.z -= center.z;
+    model.position.y -= box.min.y;
 
-    this._prepareMaterials(fbx);
+    this._prepareMaterials(model);
 
-    this.tilt.add(fbx);
-    this.model = fbx;
+    this.tilt.add(model);
+    this.model = model;
     this.headPosition.set(0, size.y * 0.86, 0);
 
     // Bake the seated pose while the rig is still untouched by the mixer.
-    this.sitting = new SittingPose(fbx);
+    this.sitting = new SittingPose(model);
     if (this.sitting.valid) this.forwardAxis.copy(this.sitting.forward);
 
-    // The idle clip ships inside the same file.
-    this.mixer = new AnimationMixer(fbx);
-    const clips = fbx.animations ?? [];
+    this.mixer = new AnimationMixer(model);
+    const clips = glb?.animations ?? fbx?.animations ?? [];
     if (clips.length === 0) {
-      console.warn('[CharacterController] no animation clips found in the FBX');
+      console.warn(`[CharacterController] no animation clips found in ${glb ? MOTION_URL : CHARACTER_URL}`);
     } else {
       clips.forEach((clip, index) => {
         const name = clip.name && clip.name !== 'mixamo.com' ? clip.name : index === 0 ? 'idle' : `clip_${index}`;
