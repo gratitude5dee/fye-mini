@@ -251,13 +251,16 @@ export function GrimoireStage() {
     setCoarsePointer(Boolean(window.matchMedia?.('(pointer: coarse)').matches));
     setPrefersReducedMotion(Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches));
     const preferences = readPreferences();
-    setIntroVisible(!preferences.introSeen);
+    // Every visit opens on the full ceremony. Returning visitors still get a
+    // brisk pass — `returning` in src/main.js shortens the engine beats — but
+    // the title, film and chooser are never silently skipped again.
+    setIntroVisible(true);
     setElement(preferences.element as ElementId);
     setDialValues(preferences.dials);
     setCalm(preferences.calm);
     setStorageAvailable(isPersistent());
     setSelectedWorld(preferences.lastWorld ?? 'ritual-stage');
-    setShowChooserOnReady(!preferences.introSeen);
+    setShowChooserOnReady(true);
     setHandsGranted(Boolean(preferences.onboarding?.handsGranted));
   }, []);
 
