@@ -27,7 +27,7 @@ const SPEED = {
  * Where a one-shot starts, in clip seconds — skips wind-up frames that would
  * otherwise play *after* the character is already airborne or mid-gesture.
  */
-const START_AT = { jump: .4, runjump: .6, cast: 0 };
+const START_AT = { jump: .4, runjump: .6, cast: 0, sit_enter: 0, sit_exit: 0, celebrate: 0 };
 
 const FADE_LOOP = .24;
 const FADE_ONCE = .16;
@@ -43,30 +43,86 @@ export class MotionDirector {
     this.locomotion = locomotion;
     this.caster = caster;
     this._playing = null;
+    // Seated sequence state: 'enter' plays once, then 'sit' loops; the exit
+    // edge gets its own one-shot timer so a stand-up reads deliberately.
+    this._sitPhase = null;
+    this._sitT = 0;
+    this._exitT = 0;
+    this._celebrateT = 0;
+  }
+
+  _clipLen(name) {
+    const action = this.character.actions?.get(name);
+    return action ? action.getClip().duration : 0;
+  }
+
+  /** Play the rite-complete flourish once, if the pack carries it. */
+  celebrate() {
+    // Victory_Cheer runs ~9s — cap the flourish so it can't out-stay the win.
+    if (this.has('celebrate')) this._celebrateT = Math.min(6, this._clipLen('celebrate') * .95);
+  }
+
+  _movePick(s) {
+    if (s.sprinting) return { name: 'sprint' };
+    return { name: s.speed > 2.4 ? 'run' : 'walk' };
   }
 
   has(name) {
     return this.character.actions?.has(name);
   }
 
-  _pick() {
+  _pick(dt) {
     const s = this.locomotion?.state;
     if (!s) return { name: 'idle' };
 
-    // The seated pose is baked procedurally over whatever clip runs — the
-    // mixer just needs a calm base underneath it.
-    if (this.character.isSitting) return { name: 'idle' };
+    // The rite-complete flourish rides above everything until it plays out.
+    if (this._celebrateT > 0) {
+      this._celebrateT -= dt;
+      return { name: 'celebrate', once: true };
+    }
+
+    const sitting = this.character.isSitting;
+    if (!sitting && this._sitPhase) {
+      this._sitPhase = null;
+      this._sitT = 0;
+      if (this.has('sit_exit')) this._exitT = Math.min(1.4, this._clipLen('sit_exit') * .5);
+    }
+    if (this._exitT > 0) {
+      this._exitT -= dt;
+      return { name: 'sit_exit', once: true };
+    }
+
+    // The seated pose is still baked procedurally on top; the authored
+    // enter/loop clips carry the transition underneath (and become the pose
+    // itself on rigs where the procedural layer is off).
+    if (sitting) {
+      if (!this._sitPhase) {
+        this._sitPhase = this.has('sit_enter') ? 'enter' : 'sit';
+        this._sitT = 0;
+      }
+      if (this._sitPhase === 'enter') {
+        this._sitT += dt;
+        // Walk_to_Sit spends its tail already seated — hand off to the loop
+        // once the transition part has played, not when the whole clip ends.
+        if (this._sitT >= Math.min(2.8, this._clipLen('sit_enter') * .5)) this._sitPhase = 'sit';
+        else return { name: 'sit_enter', once: true };
+      }
+      return { name: this.has('sit') ? 'sit' : 'idle' };
+    }
 
     if (!s.grounded) {
       if (s.jumpPhase === 'fall' && this.has('fall')) return { name: 'fall' };
-      if (s.jumpPhase === 'landing') return { name: 'idle' };
+      if (s.jumpPhase === 'landing') {
+        // Keep the stride clip through the ground-contact beat while still
+        // travelling; only a stopped landing drops to idle.
+        return s.moving && s.speed > .5 ? this._movePick(s) : { name: 'idle' };
+      }
       return { name: s.speed > 1.4 ? 'runjump' : 'jump', once: true };
     }
 
-    if (s.moving) {
-      if (s.sprinting) return { name: 'sprint' };
-      return { name: s.speed > 2.4 ? 'run' : 'walk' };
-    }
+    // Speed easing means a released key still reads as walk/run for the
+    // deceleration tail instead of snapping straight to idle.
+    if (s.moving || s.speed > .45) return this._movePick(s);
 
     // A full-body cast only reads while planted; running casts stay on the
     // procedural gesture layer so the stride keeps driving the legs.
@@ -80,7 +136,7 @@ export class MotionDirector {
 
   update(dt) {
     if (dt <= 0) return; // paused — freezes whatever is mid-fade
-    const want = this._pick();
+    const want = this._pick(dt);
     if (want.name === this._playing) return;
 
     const name = this.has(want.name) ? want.name : FALLBACK;

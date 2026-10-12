@@ -92,16 +92,17 @@ const BONE_RENAME = {
  */
 const CLIPS = [
   { file: 'clip_0.glb', name: 'idle',      source: 'Idle (action 0)' },
-  { file: 'walk.glb',   name: 'walk',      source: 'walking_man (basic set)' },
+  { file: 'walk.glb',   name: 'walk',      source: 'walking (basic set)' },
   { file: 'run.glb',    name: 'run',       source: 'running (basic set)' },
-  { file: 'clip_9.glb', name: 'sprint',    source: 'Lean_Forward_Sprint (509)' },
-  { file: 'clip_2.glb', name: 'jump',      source: '360_Power_Spin_Jump (397)' },
-  { file: 'clip_3.glb', name: 'runjump',   source: 'Run_and_Jump (463)' },
-  { file: 'clip_4.glb', name: 'fall',      source: 'Fall4 (505)' },
-  { file: 'clip_5.glb', name: 'cast',      source: 'mage_soell_cast_3 (132)' },
-  { file: 'clip_8.glb', name: 'sit_enter', source: 'Walk_to_Sit (60)' },
-  { file: 'clip_6.glb', name: 'sit',       source: 'Chair_Sit_Idle_F (32)' },
-  { file: 'clip_7.glb', name: 'sit_exit',  source: 'Sit_to_Stand_Transition_F (52)' }
+  { file: 'clip_8.glb', name: 'sprint',    source: 'Lean_Forward_Sprint (509)' },
+  { file: 'clip_1.glb', name: 'jump',      source: '360_Power_Spin_Jump (397)' },
+  { file: 'clip_2.glb', name: 'runjump',   source: 'Run_and_Jump (463)' },
+  { file: 'clip_3.glb', name: 'fall',      source: 'Fall4 (505)' },
+  { file: 'clip_4.glb', name: 'cast',      source: 'mage_soell_cast_3 (132)' },
+  { file: 'clip_7.glb', name: 'sit_enter', source: 'Walk_to_Sit (60)' },
+  { file: 'clip_5.glb', name: 'sit',       source: 'Chair_Sit_Idle_F (32)' },
+  { file: 'clip_6.glb', name: 'sit_exit',  source: 'Sit_to_Stand_Transition_F (52)' },
+  { file: 'clip_9.glb', name: 'celebrate', source: 'Victory_Cheer (59)' }
 ];
 
 const motionDir = process.argv[2] ?? join(process.env.HOME, 'fye-motion', 'b3');

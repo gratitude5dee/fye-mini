@@ -29,7 +29,7 @@ function makeController() {
 test('WASD movement is camera-relative and sprint increases travel speed', () => {
   const { input, character, controller } = makeController();
   input.keys.add('KeyW');
-  controller.update(.1);
+  for (let frame = 0; frame < 10; frame++) controller.update(.1);
   const walkingDistance = -character.position.z;
   assert.ok(walkingDistance > .4);
   assert.equal(controller.state.moving, true);
@@ -37,7 +37,7 @@ test('WASD movement is camera-relative and sprint increases travel speed', () =>
 
   controller.resetToSpawn();
   input.keys.add('ShiftLeft');
-  controller.update(.1);
+  for (let frame = 0; frame < 10; frame++) controller.update(.1);
   assert.ok(-character.position.z > walkingDistance);
   assert.equal(controller.state.sprinting, true);
 });
@@ -54,6 +54,21 @@ test('a grounded jump rises, lands on the collider floor, and reports its phase'
   for (let frame = 0; frame < 120; frame++) controller.update(1 / 60);
   assert.equal(character.position.y, 0);
   assert.equal(controller.state.grounded, true);
+});
+
+test('ground speed ramps toward the target instead of snapping', () => {
+  const { input, controller } = makeController();
+  input.keys.add('KeyW');
+  controller.update(1 / 60);
+  const early = controller.state.speed;
+  assert.ok(early > 0 && early < 4.2, 'first frame should be mid-ramp');
+
+  for (let frame = 0; frame < 60; frame++) controller.update(1 / 60);
+  assert.equal(controller.state.speed, 4.2);
+
+  input.keys.delete('KeyW');
+  controller.update(1 / 60);
+  assert.ok(controller.state.speed < 4.2 && controller.state.speed > 0, 'release eases down');
 });
 
 test('modal and loading lockout leave the caster still', () => {

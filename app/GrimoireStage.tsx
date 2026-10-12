@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type MouseEvent, type PointerEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { HOUSE_SEED_SPELLS } from '../src/config/house-spells';
 import { TO_ENGINE, TO_UI } from '../src/state/events.js';
 import { isPersistent, read as readPreferences, write as persistPreferences } from '../src/state/preferences.js';
@@ -836,16 +836,42 @@ export function GrimoireStage() {
         <div className="world-picker__grid">
           {catalogCards.map((world) => {
             const ready = world.kind === 'ritual' || worlds.some((entry) => entry.slug === world.slug);
-            const image = world.thumbnailUrl ?? world.imagePath;
+            const image = world.thumbnailUrl ?? world.imagePath
+              ?? (world.slug === 'ritual-stage' ? '/media/previews/ritual-stage.png' : null);
+            // Generated ambient loops live at /media/previews/<slug>.mp4.
+            // Motion is opt-in: reduced-motion and calm players always see
+            // the still, and ready cards only play while hovered/focused.
+            const preview = !prefersReducedMotion && !calm;
+            const cardVideo = (host: HTMLButtonElement | null) =>
+              host?.querySelector<HTMLVideoElement>('.world-card__preview') ?? null;
+            const playPreview = (event: FocusEvent<HTMLButtonElement> | MouseEvent<HTMLButtonElement>) => {
+              if (ready) void cardVideo(event.currentTarget)?.play().catch(() => {});
+            };
+            const stopPreview = (event: FocusEvent<HTMLButtonElement> | MouseEvent<HTMLButtonElement>) => {
+              const video = cardVideo(event.currentTarget);
+              if (video && ready) { video.pause(); video.currentTime = 0; }
+            };
             return <button
               key={world.slug}
               className={`world-card ${selectedWorld === world.slug ? 'is-selected' : ''}`}
               onClick={() => ready && selectWorld(world)}
               disabled={!ready || !stageReady}
+              onMouseEnter={playPreview} onMouseLeave={stopPreview}
+              onFocus={playPreview} onBlur={stopPreview}
               aria-pressed={selectedWorld === world.slug}
               title={ready ? `Enter ${world.title}` : `${world.title} is being calibrated for safe exploration.`}
             >
-              {image ? <img src={image} alt="" /> : <span className="world-card__local" aria-hidden="true">✦</span>}
+              {preview ? (
+                <video
+                  className="world-card__preview"
+                  src={`/media/previews/${world.slug}.mp4`}
+                  poster={image ?? undefined}
+                  muted loop playsInline
+                  preload={ready ? 'none' : 'metadata'}
+                  autoPlay={!ready}
+                  aria-hidden="true"
+                />
+              ) : image ? <img src={image} alt="" /> : <span className="world-card__local" aria-hidden="true">✦</span>}
               <span><small>{ready ? (world.kind === 'ritual' ? 'Local fallback' : 'Ready to explore') : 'Preparing'}</small><strong>{world.title}</strong><em>{world.summary}</em></span>
             </button>;
           })}

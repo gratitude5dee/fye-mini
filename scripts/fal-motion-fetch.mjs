@@ -32,7 +32,6 @@ const DEST = join(process.env.HOME, 'fye-motion', OUT_DIR);
 /** Meshy animation-library action ids → semantic name (see motion-pack CLIPS). */
 const ACTIONS = [
   { id: 0,   name: 'idle' },
-  { id: 16,  name: 'runfast (spare)' },
   { id: 397, name: 'jump (360_Power_Spin_Jump)' },
   { id: 463, name: 'runjump (Run_and_Jump)' },
   { id: 505, name: 'fall (Fall4)' },
@@ -40,7 +39,8 @@ const ACTIONS = [
   { id: 32,  name: 'sit (Chair_Sit_Idle_F)' },
   { id: 52,  name: 'sit_exit (Sit_to_Stand_Transition_F)' },
   { id: 60,  name: 'sit_enter (Walk_to_Sit)' },
-  { id: 509, name: 'sprint (Lean_Forward_Sprint)' }
+  { id: 509, name: 'sprint (Lean_Forward_Sprint)' },
+  { id: 59,  name: 'celebrate (Victory_Cheer)' }
 ];
 
 const fal = async (url, { method = 'GET', body } = {}) => {

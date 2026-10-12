@@ -34,6 +34,9 @@ export class LocomotionController {
     this.spawnYaw = 0;
     this.airTime = 0;
     this.landingTime = 0;
+    // Smoothed ground speed — eases toward the target so the walk band
+    // between 0 and sprint is actually traversed.
+    this.speed = 0;
   }
 
   setSpawn(spawn = {}) {
@@ -57,6 +60,7 @@ export class LocomotionController {
     this.state.moving = false;
     this.state.sprinting = false;
     this.state.speed = 0;
+    this.speed = 0;
     this.velocityY = 0;
     this.jumpHeld = this.input.keys.has('Space');
     this.airTime = 0;
@@ -75,11 +79,18 @@ export class LocomotionController {
     const side = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
     const moving = forward !== 0 || side !== 0;
     const sprinting = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
-    const speed = sprinting ? 7.1 : 4.2;
+    const target = moving ? (sprinting ? 7.1 : 4.2) : 0;
+
+    // Ramp speed toward the target (~0.25s to walk pace). Acceleration and
+    // deceleration share one rate so releasing a key eases through walk on
+    // the way to idle rather than snapping to zero.
+    const accel = 18;
+    if (this.speed < target) this.speed = Math.min(target, this.speed + accel * dt);
+    else if (this.speed > target) this.speed = Math.max(target, this.speed - accel * dt);
 
     this.state.moving = moving;
     this.state.sprinting = sprinting;
-    this.state.speed = moving ? speed : 0;
+    this.state.speed = this.speed;
 
     this.camera.getWorldDirection(_forward).setY(0);
     if (_forward.lengthSq() < 1e-5) _forward.set(0, 0, -1);
@@ -91,7 +102,7 @@ export class LocomotionController {
       const yaw = Math.atan2(_wish.x, _wish.z);
       this.character.setFacing(MathUtils.damp(this.character.facing, yaw, 12, dt));
 
-      _next.copy(this.character.position).addScaledVector(_wish, speed * dt);
+      _next.copy(this.character.position).addScaledVector(_wish, this.speed * dt);
       if (this.worlds.canTraverse(this.character.position, _next) && this.worlds.groundAt(_next, _ground)) {
         const rise = _ground.y - this.character.position.y;
         if (rise <= 0.62 || !this.grounded) {
