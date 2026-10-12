@@ -68,6 +68,22 @@ test('only documented client network calls can leave src/ or app/', async () => 
   assert.deepEqual(offenders, [], `network API used outside the documented MediaPipe exception:\n${offenders.join('\n')}`);
 });
 
+/**
+ * Generated media is a build-time pipeline, never a runtime call: fal stays
+ * in scripts/ so the shipped bundle can never phone the generation API.
+ */
+test('no generation-API surface ships in runtime code', async () => {
+  const offenders = [];
+  for (const root of ROOTS) {
+    const base = new URL(root, import.meta.url).pathname;
+    for await (const path of walk(base)) {
+      const source = await readFile(path, 'utf8');
+      if (/queue\.fal\.run|rest\.fal\.ai|fal\.ai\/models/.test(source)) offenders.push(projectPath(path));
+    }
+  }
+  assert.deepEqual(offenders, [], `generation API referenced from shipped code:\n${offenders.join('\n')}`);
+});
+
 test('the MediaPipe CDN exceptions are still present and documented', async () => {
   const hand = await readFile(new URL('../src/input/HandInput.js', import.meta.url), 'utf8');
   for (const { pattern } of ALLOWED.filter((rule) => rule.file === 'src/input/HandInput.js')) assert.match(hand, pattern);

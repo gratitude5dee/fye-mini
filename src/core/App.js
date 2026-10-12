@@ -34,6 +34,7 @@ import { Rite } from '../game/Rite.js';
 import { IntroDirector } from '../intro/IntroDirector.js';
 import { SigilCloud } from '../intro/SigilCloud.js';
 import { TO_ENGINE, TO_UI } from '../state/events.js';
+import { get as riteState, subscribe as onRite } from '../state/riteStore.js';
 import { QualityLadder } from './QualityLadder.js';
 import { CalmMode } from './CalmMode.js';
 
@@ -585,6 +586,11 @@ export class App {
     this.caster = new CasterPerformance(this.character);
     this.locomotion = new LocomotionController(this.character, this.camera, this.input, this.worlds);
     this.motion = new MotionDirector(this.character, this.locomotion, this.caster);
+    // Ward completion lands a celebration flourish — a fully dark ward doesn't cheer.
+    onRite(() => {
+      const rite = riteState();
+      if (rite.phase === 'close' && rite.ward.some(Boolean)) this.motion?.celebrate();
+    });
     this.locomotion.setSpawn({ x: 0, y: 0, z: 0, yaw: 0 });
     // The default camera sits on the rig's +Z side, so facing +Z keeps the
     // caster's performance readable instead of presenting their back.
