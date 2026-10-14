@@ -68,6 +68,18 @@ export class LocomotionController {
     this._syncState();
   }
 
+  hasMovementInput() {
+    const keys = this.input.keys;
+    const keyboardMoving = ['KeyW', 'KeyA', 'KeyS', 'KeyD'].some((key) => keys.has(key));
+    if (keyboardMoving) {
+      const forward = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
+      const side = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+      return forward !== 0 || side !== 0;
+    }
+    const axis = this.input.axis ?? { x: 0, y: 0 };
+    return Math.hypot(axis.x, axis.y) > 0.15;
+  }
+
   update(dt, { locked = false } = {}) {
     if (locked || dt <= 0) {
       this.stop();

@@ -76,7 +76,8 @@ test('third-person controls coexist with casting, air travel, and opt-in hands',
   assert.match(locomotion, /groundAt/);
   assert.match(locomotion, /canTraverse/);
   assert.match(app, /this\.walk\?\.active/);
-  assert.match(app, /this\.pathDrawer\.active/);
+  assert.match(app, /const movementInputActive = this\.locomotion\?\.hasMovementInput\(\)/);
+  assert.match(app, /this\.pathDrawer\.active && !movementInputActive/);
   assert.match(app, /new LocomotionController/);
   assert.match(app, /new WorldManager/);
   assert.match(app, /TO_ENGINE\.HOME/);
