@@ -75,11 +75,22 @@ export class LocomotionController {
     }
 
     const keys = this.input.keys;
-    const forward = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
-    const side = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
-    const moving = forward !== 0 || side !== 0;
+    const keyboardMoving = ['KeyW', 'KeyA', 'KeyS', 'KeyD'].some((key) => keys.has(key));
+    const axis = this.input.axis ?? { x: 0, y: 0 };
+    const axisMagnitude = Math.hypot(axis.x, axis.y);
+    const analogMoving = !keyboardMoving && axisMagnitude > 0.15;
+    const forward = keyboardMoving
+      ? (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0)
+      : analogMoving ? axis.y : 0;
+    const side = keyboardMoving
+      ? (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0)
+      : analogMoving ? axis.x : 0;
+    const moving = keyboardMoving ? forward !== 0 || side !== 0 : analogMoving;
     const sprinting = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
-    const target = moving ? (sprinting ? 7.1 : 4.2) : 0;
+    const target = !moving ? 0
+      : sprinting ? 7.1
+        : analogMoving ? Math.max(1.2, 4.2 * Math.min(1, (axisMagnitude - 0.15) / 0.75))
+          : 4.2;
 
     // Ramp speed toward the target (~0.25s to walk pace). Acceleration and
     // deceleration share one rate so releasing a key eases through walk on

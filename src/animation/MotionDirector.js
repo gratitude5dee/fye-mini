@@ -20,6 +20,7 @@ const FALLBACK = 'idle';
  */
 const SPEED = {
   idle: 1, walk: 1.05, run: 1.2, sprint: 1.1,
+  walk_lower: 1.05, run_lower: 1.2, sprint_lower: 1.1, cast_upper: 1,
   jump: 1.15, runjump: 1.15, fall: 1, cast: 1
 };
 
@@ -49,6 +50,7 @@ export class MotionDirector {
     this._sitT = 0;
     this._exitT = 0;
     this._celebrateT = 0;
+    this._upperPlaying = null;
   }
 
   _clipLen(name) {
@@ -124,8 +126,8 @@ export class MotionDirector {
     // deceleration tail instead of snapping straight to idle.
     if (s.moving || s.speed > .45) return this._movePick(s);
 
-    // A full-body cast only reads while planted; running casts stay on the
-    // procedural gesture layer so the stride keeps driving the legs.
+    // A planted cast stays full-body; moving casts add an upper-body clip over
+    // the split lower-body stride in `update()`.
     const gesture = this.caster?.gesture;
     if (gesture === 'gather' || gesture === 'aim' || gesture === 'release') {
       return { name: 'cast', once: true };
@@ -137,9 +139,17 @@ export class MotionDirector {
   update(dt) {
     if (dt <= 0) return; // paused — freezes whatever is mid-fade
     const want = this._pick(dt);
-    if (want.name === this._playing) return;
+    const state = this.locomotion?.state;
+    const gesture = this.caster?.gesture;
+    const casting = gesture === 'gather' || gesture === 'aim' || gesture === 'release';
+    const lowerName = `${want.name}_lower`;
+    const layered = !!state?.moving && casting && this.has('cast_upper')
+      && ['walk', 'run', 'sprint'].includes(want.name) && this.has(lowerName);
+    const baseName = layered ? lowerName : want.name;
+    this._updateUpper(layered ? 'cast_upper' : null);
+    if (baseName === this._playing) return;
 
-    const name = this.has(want.name) ? want.name : FALLBACK;
+    const name = this.has(baseName) ? baseName : FALLBACK;
     const action = this.character.actions.get(name);
     if (!action) return;
 
@@ -149,6 +159,25 @@ export class MotionDirector {
     action.setEffectiveTimeScale(SPEED[name] ?? 1);
     if (want.once) action.time = Math.min(START_AT[name] ?? 0, action.getClip().duration * .4);
 
-    this._playing = want.name;
+    this._playing = baseName;
+  }
+
+  _updateUpper(name) {
+    if (name === this._upperPlaying) return;
+    if (this._upperPlaying) this.character.actions.get(this._upperPlaying)?.fadeOut(0.2);
+    this._upperPlaying = null;
+    if (!name) return;
+    const action = this.character.actions.get(name);
+    if (!action) return;
+    action.reset();
+    action.enabled = true;
+    action.setLoop(LoopOnce, 1);
+    action.clampWhenFinished = true;
+    action.setEffectiveTimeScale(1);
+    action.setEffectiveWeight(1);
+    action.time = START_AT[name] ?? 0;
+    action.fadeIn(0.15);
+    action.play();
+    this._upperPlaying = name;
   }
 }

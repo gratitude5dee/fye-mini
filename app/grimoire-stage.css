@@ -157,30 +157,24 @@
 
 @media (pointer: coarse) { .dock__slot, .quiet-button, .ride-button, .intro__skip { min-height: 42px; }.cast-button { min-height: 52px; } }
 
-/* --- The movement pad ------------------------------------------------------
-   Touch-only: a coarse pointer swaps the keyboard hint line for an on-screen
-   controller. A press fills the same `input.keys` a hardware key would, so
-   locomotion never learns which input is holding the key down. `touch-action:
-   none` keeps the press from becoming a scroll or double-tap zoom. */
+/* --- The movement pad ------------------------------------------------------ */
 .touch-move { position: fixed; z-index: 35; inset: 0; pointer-events: none; }
 .touch-move > * { pointer-events: auto; }
-.touch-pad { position: absolute; display: grid; gap: 9px; }
-.touch-pad--move { left: 14px; bottom: calc(232px + env(safe-area-inset-bottom)); grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(2, 52px); }
-.touch-pad--move .pad-key--up { grid-column: 2; grid-row: 1; }
-.touch-pad--move .pad-key--left { grid-column: 1; grid-row: 2; }
-.touch-pad--move .pad-key--down { grid-column: 2; grid-row: 2; }
-.touch-pad--move .pad-key--right { grid-column: 3; grid-row: 2; }
-.touch-pad--act { right: 14px; bottom: calc(232px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.joystick { position: absolute; left: 14px; bottom: calc(232px + env(safe-area-inset-bottom)); width: 176px; height: 176px; touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.joystick__base { position: absolute; width: 112px; height: 112px; border: 1px solid rgb(246 241 232 / .3); border-radius: 50%; background: rgb(10 12 15 / .58); box-shadow: 0 10px 30px #0007; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); transform: translate(-50%, -50%); pointer-events: none; }
+.joystick__knob { position: absolute; top: 50%; left: 50%; width: 48px; height: 48px; border: 1px solid rgb(246 241 232 / .42); border-radius: 50%; background: rgb(246 241 232 / .28); box-shadow: 0 6px 18px #0008; transition: background .15s ease, border-color .15s ease, transform .18s cubic-bezier(.2, 1.3, .4, 1); }
+.joystick.is-active .joystick__knob { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 24px -5px var(--accent); transition: none; }
+.touch-pad--act { position: absolute; right: 14px; bottom: calc(232px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
 .pad-key { display: grid; width: 52px; height: 52px; place-items: center; border: 1px solid rgb(246 241 232 / .3); border-radius: 15px; padding: 0; color: var(--ink); background: rgb(10 12 15 / .58); box-shadow: 0 10px 30px #0007; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); font: 700 15px/1 var(--font-sans); cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: border-color .12s ease, background .12s ease, color .12s ease; }
 .pad-key--sprint, .pad-key--jump { border-radius: 999px; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
 .pad-key--jump { width: 64px; height: 64px; border-color: color-mix(in srgb, var(--accent) 55%, rgb(246 241 232 / .3)); font-size: 10px; }
 .pad-key.is-held { border-color: var(--accent); color: #0e1215; background: var(--accent); box-shadow: 0 0 26px -6px var(--accent); }
 .pad-toggle.is-armed { border-color: var(--accent); color: var(--accent); }
 @media (min-width: 680px) {
-  .touch-pad--move { left: 24px; bottom: 112px; }
+  .joystick { left: 24px; bottom: 112px; }
   .touch-pad--act { top: 50%; right: 24px; bottom: auto; transform: translateY(-50%); }
 }
-@media (prefers-reduced-motion: reduce) { .pad-key { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .pad-key, .joystick__knob { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .intro__video { display: none; }.grimoire-stage *, .grimoire-stage *::before, .grimoire-stage *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; } }
 
 /* --- The Rite ----------------------------------------------------------- */
@@ -196,6 +190,45 @@
 
 @media (max-width: 679px) { .ward-readout { top: 78px; } }
 @media (prefers-reduced-motion: reduce) { .ward-stones li { transition: none; } }
+
+.intro__endcard { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; pointer-events: none; transition: opacity .6s ease; }
+.intro__endcard.is-visible { opacity: 1; }
+.intro__endcard.is-static { transition: none; }
+
+.hand-mirror { pointer-events: auto; touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none; }
+.hand-mirror.is-snapping { transition: left .22s ease-out, top .22s ease-out; }
+
+.hands-notch { position: fixed; z-index: 40; right: 0; bottom: calc(232px + 170px + env(safe-area-inset-bottom)); display: flex; min-width: 72px; min-height: 42px; align-items: center; justify-content: center; gap: 7px; border: 1px solid rgb(246 241 232 / .28); border-right: 0; border-radius: 13px 0 0 13px; padding: 0 11px; color: var(--ink); background: rgb(10 12 15 / .72); box-shadow: 0 10px 30px #0008; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); font: 700 9px/1 var(--font-sans); letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
+.hands-notch i { width: 7px; height: 7px; border-radius: 50%; background: #b9c0c0; box-shadow: 0 0 9px currentColor; }
+.hands-notch--ready i, .hands-notch--tracking i { color: #a8f0dc; background: #a8f0dc; }
+.hands-notch--fallback i, .hands-notch--unavailable i { color: #ffb65d; background: #ffb65d; }
+.hands-notch--requesting i { color: #bfe8df; background: #bfe8df; }
+.hands-sheet { animation: hands-sheet-in-mobile .36s cubic-bezier(.2, 1.3, .4, 1) backwards; }
+.hands-sheet.is-dragging { transition: none !important; }
+.hands-sheet.is-springing { transition: transform .32s cubic-bezier(.2, 1.3, .4, 1); }
+.hands-sheet--docking { transition: transform .2s ease-in; transform: translateY(110%); }
+.sheet-drag-handle { touch-action: none; -webkit-user-select: none; user-select: none; cursor: grab; }
+.sheet-grabber { display: block; width: 36px; height: 5px; margin: -10px auto 12px; border-radius: 999px; background: rgb(246 241 232 / .56); }
+.rite-vignette { position: fixed; z-index: 36; top: 50%; right: 18px; width: min(280px, calc(100vw - 36px)); overflow: hidden; transform: translateY(-50%); border: 1px solid rgb(246 241 232 / .25); border-radius: 15px; background: #090c0e; box-shadow: 0 18px 50px #000a; pointer-events: none; }
+.rite-vignette img, .rite-vignette video { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.rite-vignette button { position: absolute; z-index: 1; top: 7px; right: 7px; display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid rgb(246 241 232 / .4); border-radius: 50%; color: white; background: rgb(0 0 0 / .58); font: 400 20px/1 var(--font-sans); pointer-events: auto; cursor: pointer; }
+@media (max-width: 679px) {
+  .rite-vignette { top: 36%; }
+}
+
+@keyframes hands-sheet-in-mobile { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@media (min-width: 680px) {
+  .hands-notch { top: 50%; right: 0; bottom: auto; transform: translateY(-50%); }
+  .hands-sheet { animation-name: hands-sheet-in-desktop; animation-fill-mode: backwards; }
+  .hands-sheet--docking { transform: translate(110%, -50%); }
+}
+@keyframes hands-sheet-in-desktop { from { transform: translate(24px, -50%); } to { transform: translate(0, -50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .hand-mirror.is-snapping { transition: none; }
+  .hands-sheet, .hands-sheet--docking { animation: none; transition: none; }
+  .hands-sheet--docking { transform: translateY(110%); }
+  .intro__endcard { transition: none; }
+}
 
 /* --- What the tracker can see ------------------------------------------- */
 /* A mirror, not a manual: the row you are performing lights, and the meters

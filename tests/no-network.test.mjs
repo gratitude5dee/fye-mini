@@ -90,16 +90,21 @@ test('the MediaPipe CDN exceptions are still present and documented', async () =
 });
 
 /**
- * Storage is allowed in exactly two places, for different reasons.
+ * Storage is allowed only where its owner is explicit.
  *
  * `preferences.js` owns everything the player is promised will be remembered.
  * `PresetManager` backs the lil-gui editor behind the G key — a developer tool
  * with its own named snapshots, not player state. Anything else writing to
- * storage is ad-hoc, and ad-hoc is what this test exists to stop.
+ * storage is ad-hoc, and ad-hoc is what this test exists to stop. HandInput
+ * stores only the camera mirror's drag position.
  */
-const STORAGE_OWNERS = new Set(['src/state/preferences.js', 'src/ui/PresetManager.js']);
+const STORAGE_OWNERS = new Set([
+  'src/state/preferences.js',
+  'src/ui/PresetManager.js',
+  'src/input/HandInput.js'
+]);
 
-test('only the two designated modules touch storage', async () => {
+test('only designated modules touch storage', async () => {
   const offenders = [];
   for (const root of ROOTS) {
     const base = new URL(root, import.meta.url).pathname;
@@ -110,5 +115,5 @@ test('only the two designated modules touch storage', async () => {
       if (/\blocalStorage\b|\bsessionStorage\b/.test(source)) offenders.push(relative);
     }
   }
-  assert.deepEqual(offenders, [], `storage touched outside src/state/preferences.js:\n${offenders.join('\n')}`);
+  assert.deepEqual(offenders, [], `storage touched outside its designated owner:\n${offenders.join('\n')}`);
 });

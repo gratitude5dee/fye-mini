@@ -5,6 +5,7 @@ import { HOUSE_SEED_SPELLS } from '../src/config/house-spells';
 import { TO_ENGINE, TO_UI } from '../src/state/events.js';
 import { isPersistent, read as readPreferences, write as persistPreferences } from '../src/state/preferences.js';
 import { RITUAL_WORLD, WORLD_PRIORS } from '../src/world/world-seeds.js';
+import { shouldDock } from '../src/input/drag.js';
 import { useDialog } from './useDialog';
 import { HelpSheet } from './HelpSheet';
 import './grimoire-stage.css';
@@ -154,12 +155,21 @@ function emit(name: string, detail?: unknown) {
 }
 
 /** The engine's shared input object, reached without a prop chain. */
-type StageInput = { pressKey?(code: string): void; releaseKey?(code: string): void; releaseAllKeys?(): void };
+type StageInput = {
+  pressKey?(code: string): void;
+  releaseKey?(code: string): void;
+  releaseAllKeys?(): void;
+  setAxis?(x: number, y: number): void;
+  clearAxis?(): void;
+};
 const stageInput = () => (window as unknown as { app?: { input?: StageInput } }).app?.input;
 
 export function GrimoireStage() {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const introVideoRef = useRef<HTMLVideoElement>(null);
+  const handsDragRef = useRef<{ pointerId: number; startY: number; startedAt: number; height: number } | null>(null);
+  const handsDockTimerRef = useRef<number | null>(null);
+  const riteDismissTimerRef = useRef<number | null>(null);
   const trackerActiveRef = useRef(false);
   const restoredWorldRef = useRef(false);
   const homeChooserRef = useRef(false);
@@ -168,6 +178,8 @@ export function GrimoireStage() {
   const [element, setElement] = useState<ElementId>('air');
   const [workshopOpen, setWorkshopOpen] = useState(false);
   const [handsOpen, setHandsOpen] = useState(false);
+  const [handsDocked, setHandsDocked] = useState(false);
+  const [handsDocking, setHandsDocking] = useState(false);
   const [inputState, setInputState] = useState<InputState>('idle');
   const [inputStatus, setInputStatus] = useState('Enable your camera only when you are ready.');
   const [rideArmed, setRideArmed] = useState(false);
@@ -175,6 +187,9 @@ export function GrimoireStage() {
   const [dialValues, setDialValues] = useState<Record<string, number>>({});
   const [storageAvailable, setStorageAvailable] = useState(true);
   const [rite, setRite] = useState<RiteState>(IDLE_RITE);
+  const prevRitePhaseRef = useRef<RiteState['phase']>(rite.phase);
+  const [riteVignetteVisible, setRiteVignetteVisible] = useState(false);
+  const [introEndcardVisible, setIntroEndcardVisible] = useState(false);
   const [introBeat, setIntroBeat] = useState('dark');
   /**
    * Whether the stage chrome is held back for the opening.
@@ -200,6 +215,11 @@ export function GrimoireStage() {
   // Pointer ids per virtual key — a second finger on a held button must not
   // release it early, and a finger sliding off must let it go.
   const heldPointersRef = useRef(new Map<string, Set<number>>());
+  const joystickPointerRef = useRef<number | null>(null);
+  const joystickOriginRef = useRef({ x: 88, y: 88 });
+  const joystickKnobRef = useRef<HTMLDivElement>(null);
+  const [joystickOrigin, setJoystickOrigin] = useState({ x: 88, y: 88 });
+  const [joystickActive, setJoystickActive] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [handsGranted, setHandsGranted] = useState(false);
   const [calm, setCalm] = useState(false);
@@ -267,15 +287,45 @@ export function GrimoireStage() {
   useEffect(() => {
     const video = introVideoRef.current;
     if (!video) return;
+    const revealEndcard = () => setIntroEndcardVisible(true);
+    const checkEndcard = () => {
+      if (video.duration && video.currentTime >= video.duration - 0.6) revealEndcard();
+    };
+    video.addEventListener('timeupdate', checkEndcard);
+    video.addEventListener('ended', revealEndcard);
     // The generated film is enhancement, never a load gate. It begins when
     // the real stage can be handed to the player, remains silent for reliable
     // autoplay, and gives reduced-motion visitors the authored static opening.
     if (introVisible && stageReady && !prefersReducedMotion) {
       void video.play().catch(() => undefined);
-      return;
-    }
-    video.pause();
+    } else video.pause();
+    return () => {
+      video.removeEventListener('timeupdate', checkEndcard);
+      video.removeEventListener('ended', revealEndcard);
+    };
   }, [introVisible, prefersReducedMotion, stageReady]);
+
+  useEffect(() => {
+    const enteringClose = prevRitePhaseRef.current !== 'close' && rite.phase === 'close';
+    prevRitePhaseRef.current = rite.phase;
+    if (enteringClose && rite.ward.some(Boolean)) {
+      if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
+      setRiteVignetteVisible(true);
+      riteDismissTimerRef.current = window.setTimeout(() => {
+        setRiteVignetteVisible(false);
+        riteDismissTimerRef.current = null;
+      }, 5000);
+    }
+    if (rite.phase !== 'close') {
+      setRiteVignetteVisible(false);
+      if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
+      riteDismissTimerRef.current = null;
+    }
+  }, [rite]);
+
+  useEffect(() => () => {
+    if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -460,11 +510,19 @@ export function GrimoireStage() {
   }, [introVisible, showChooserOnReady, stageReady, worldsLoaded]);
 
   const closeHelp = useCallback(() => setHelpOpen(false), []);
-  const closeHands = useCallback(() => setHandsOpen(false), []);
+  const closeHands = useCallback(() => {
+    setHandsOpen(false);
+    setHandsDocked(false);
+    setHandsDocking(false);
+    if (handsDockTimerRef.current !== null) window.clearTimeout(handsDockTimerRef.current);
+  }, []);
   const closeWorkshop = useCallback(() => setWorkshopOpen(false), []);
   const closeWorldPicker = useCallback(() => setWorldPickerOpen(false), []);
 
   const openHands = () => {
+    if (handsDockTimerRef.current !== null) window.clearTimeout(handsDockTimerRef.current);
+    setHandsDocked(false);
+    setHandsDocking(false);
     setWorkshopOpen(false);
     setHelpOpen(false);
     setWorldPickerOpen(false);
@@ -473,12 +531,14 @@ export function GrimoireStage() {
 
   const declineHands = () => {
     setHandsOpen(false);
+    setHandsDocked(false);
     setInputStatus('Pointer casting stays exactly as it is.');
   };
 
   const dismissIntro = useCallback(() => {
     // Skip only shortens what is already running; the director lands in the
     // same state either way, and dismisses this overlay when it gets there.
+    setIntroEndcardVisible(true);
     emit(TO_ENGINE.SKIP_INTRO);
     persistPreferences({ introSeen: true });
   }, []);
@@ -626,6 +686,118 @@ export function GrimoireStage() {
     dropHeldPointer(code, event.pointerId);
   };
 
+  const beginHandsDrag = (event: PointerEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest('button')) return;
+    const sheet = handsRef.current;
+    if (!sheet || handsDocking) return;
+    event.preventDefault();
+    handsDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startedAt: performance.now(),
+      height: sheet.getBoundingClientRect().height
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    sheet.classList.remove('is-springing');
+    sheet.classList.add('is-dragging');
+  };
+
+  const moveHandsDrag = (event: PointerEvent<HTMLElement>) => {
+    const drag = handsDragRef.current;
+    const sheet = handsRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !sheet) return;
+    const dy = event.clientY - drag.startY;
+    const offset = dy >= 0 ? dy : Math.max(-12, dy * 0.2);
+    const mobile = window.matchMedia('(max-width: 679px)').matches;
+    sheet.style.transform = mobile
+      ? `translateY(${offset}px)`
+      : `translateY(calc(-50% + ${offset}px))`;
+  };
+
+  const endHandsDrag = (event: PointerEvent<HTMLElement>) => {
+    const drag = handsDragRef.current;
+    const sheet = handsRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !sheet) return;
+    handsDragRef.current = null;
+    const dy = event.clientY - drag.startY;
+    const velocity = Math.max(0, dy) / Math.max(1, performance.now() - drag.startedAt);
+    sheet.classList.remove('is-dragging');
+    if (shouldDock({ dy, height: drag.height, velocity })) {
+      if (prefersReducedMotion) {
+        setHandsOpen(false);
+        setHandsDocked(true);
+        setHandsDocking(false);
+        return;
+      }
+      const mobile = window.matchMedia('(max-width: 679px)').matches;
+      sheet.style.transform = mobile ? 'translateY(110%)' : 'translate(110%, -50%)';
+      setHandsDocking(true);
+      handsDockTimerRef.current = window.setTimeout(() => {
+        setHandsOpen(false);
+        setHandsDocked(true);
+        setHandsDocking(false);
+        handsDockTimerRef.current = null;
+      }, 200);
+      return;
+    }
+    sheet.classList.add('is-springing');
+    sheet.style.transform = '';
+    window.setTimeout(() => sheet.classList.remove('is-springing'), 360);
+  };
+
+  const moveJoystick = (event: PointerEvent<HTMLDivElement>) => {
+    if (joystickPointerRef.current !== event.pointerId) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const origin = joystickOriginRef.current;
+    let dx = event.clientX - rect.left - origin.x;
+    let dy = event.clientY - rect.top - origin.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance > 46) {
+      dx *= 46 / distance;
+      dy *= 46 / distance;
+    }
+    if (joystickKnobRef.current) {
+      joystickKnobRef.current.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px)`;
+    }
+    stageInput()?.setAxis?.(dx / 46, -dy / 46);
+  };
+
+  const resetJoystickKnob = () => {
+    window.requestAnimationFrame(() => {
+      if (joystickKnobRef.current) {
+        joystickKnobRef.current.style.transform = 'translate(-50%, -50%) translate(0px, 0px)';
+      }
+    });
+  };
+
+  const releaseJoystick = (event?: PointerEvent<HTMLDivElement>) => {
+    if (event && joystickPointerRef.current !== event.pointerId) return;
+    joystickPointerRef.current = null;
+    joystickOriginRef.current = { x: 88, y: 88 };
+    setJoystickOrigin({ x: 88, y: 88 });
+    setJoystickActive(false);
+    resetJoystickKnob();
+    stageInput()?.clearAxis?.();
+  };
+
+  const joystickDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const origin = {
+      x: Math.min(120, Math.max(56, event.clientX - rect.left)),
+      y: Math.min(120, Math.max(56, event.clientY - rect.top))
+    };
+    joystickPointerRef.current = event.pointerId;
+    joystickOriginRef.current = origin;
+    setJoystickOrigin(origin);
+    if (joystickKnobRef.current) {
+      joystickKnobRef.current.style.transform = 'translate(-50%, -50%) translate(0px, 0px)';
+    }
+    setJoystickActive(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
   const padHandlers = (code: string) => ({
     'data-code': code,
     onPointerDown: padPress(code),
@@ -643,10 +815,15 @@ export function GrimoireStage() {
   const sheetOpen = handsOpen || workshopOpen || worldPickerOpen || helpOpen;
 
   const releasePad = useCallback(() => {
-    if (heldPointersRef.current.size === 0) return;
     heldPointersRef.current.clear();
     document.querySelectorAll('.pad-key.is-held').forEach((key) => key.classList.remove('is-held'));
     stageInput()?.releaseAllKeys?.();
+    stageInput()?.clearAxis?.();
+    joystickPointerRef.current = null;
+    joystickOriginRef.current = { x: 88, y: 88 };
+    setJoystickOrigin({ x: 88, y: 88 });
+    setJoystickActive(false);
+    resetJoystickKnob();
   }, []);
 
   useEffect(() => {
@@ -722,6 +899,29 @@ export function GrimoireStage() {
           </span>}
         </section>}
 
+        {riteVignetteVisible && (
+          <section className="rite-vignette" aria-live="polite" aria-label={`${currentElement.label} ward vignette`}>
+            {prefersReducedMotion || calm
+              ? <img src={`/media/rite/ward-${currentElement.id}.jpg`} alt="" />
+              : <video
+                src={`/media/rite/ward-${currentElement.id}.mp4`}
+                muted
+                playsInline
+                autoPlay
+                loop
+                aria-hidden="true"
+              />}
+            <button
+              onClick={() => {
+                setRiteVignetteVisible(false);
+                if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
+                riteDismissTimerRef.current = null;
+              }}
+              aria-label="Dismiss ward vignette"
+            >×</button>
+          </section>
+        )}
+
         <section className="world-drawer" aria-label="World selection">
           <button
             className="world-drawer__open"
@@ -736,11 +936,23 @@ export function GrimoireStage() {
 
         {coarsePointer ? (
           padOpen && !sheetOpen && <section className="touch-move" aria-label="Movement controls">
-            <div className="touch-pad touch-pad--move" role="group" aria-label="Move the caster">
-              <button className="pad-key pad-key--up" aria-label="Move forward" {...padHandlers('KeyW')}>▲</button>
-              <button className="pad-key pad-key--left" aria-label="Move left" {...padHandlers('KeyA')}>◀</button>
-              <button className="pad-key pad-key--down" aria-label="Move back" {...padHandlers('KeyS')}>▼</button>
-              <button className="pad-key pad-key--right" aria-label="Move right" {...padHandlers('KeyD')}>▶</button>
+            <div
+              className={`joystick ${joystickActive ? 'is-active' : ''}`}
+              role="group"
+              aria-label="Move the caster"
+              onPointerDown={joystickDown}
+              onPointerMove={moveJoystick}
+              onPointerUp={releaseJoystick}
+              onPointerCancel={releaseJoystick}
+              onLostPointerCapture={releaseJoystick}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <div className="joystick__base" style={{ left: joystickOrigin.x, top: joystickOrigin.y }}>
+                <div
+                  ref={joystickKnobRef}
+                  className="joystick__knob"
+                />
+              </div>
             </div>
             <div className="touch-pad touch-pad--act" role="group" aria-label="Sprint and jump">
               <button className="pad-key pad-key--sprint" aria-label="Hold to sprint" {...padHandlers('ShiftLeft')}>Run</button>
@@ -754,6 +966,12 @@ export function GrimoireStage() {
             <span><kbd>Space</kbd> jump</span>
           </section>
         )}
+
+        {handsDocked && !handsOpen && !sheetOpen && <button
+          className={`hands-notch hands-notch--${inputState}`}
+          onClick={openHands}
+          aria-label="Show hand tracking panel"
+        ><i aria-hidden="true" />Hands</button>}
 
         <section className="stage-hud" aria-label="Casting controls">
           <div className={`dock ${stageReady ? '' : 'is-waking'}`} data-dock role="group" aria-label="Choose an element">
@@ -809,6 +1027,12 @@ export function GrimoireStage() {
           muted
           playsInline
           preload="auto"
+          aria-hidden="true"
+        />
+        <img
+          className={`intro__endcard ${introEndcardVisible ? 'is-visible' : ''} ${prefersReducedMotion || calm ? 'is-static' : ''}`}
+          src={`/media/intro/endcard-${currentElement.id}.jpg`}
+          alt=""
           aria-hidden="true"
         />
         <div className="intro__copy">
@@ -879,9 +1103,26 @@ export function GrimoireStage() {
         <p className="world-picker__note">Ready worlds use 500k splats on capable desktops and a 100k fallback on constrained devices. Destinations marked “Preparing” are not enterable yet; Ritual Stage remains available at the end of the list.</p>
       </section>}
 
-      {handsOpen && <section className="side-sheet" role="dialog" aria-modal="true" aria-labelledby="hands-title" ref={handsRef} tabIndex={-1}>
+      {handsOpen && <section
+        className={`side-sheet hands-sheet ${handsDocking ? 'hands-sheet--docking' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="hands-title"
+        ref={handsRef}
+        tabIndex={-1}
+      >
         <button className="sheet-close" onClick={closeHands} aria-label="Close hand input panel">×</button>
-        <p className="eyebrow">Camera hand tracking</p><h2 id="hands-title">Cast with your hands.</h2>
+        <div
+          className="sheet-drag-handle"
+          onPointerDown={beginHandsDrag}
+          onPointerMove={moveHandsDrag}
+          onPointerUp={endHandsDrag}
+          onPointerCancel={endHandsDrag}
+        >
+          <span className="sheet-grabber" aria-hidden="true" />
+          <p className="eyebrow">Camera hand tracking</p>
+          <h2 id="hands-title">Cast with your hands.</h2>
+        </div>
         <p className="sheet-copy">FYE uses the position of one hand. The live mirror and landmarks stay in this browser; no video is recorded, sent, or stored. Declining leaves pointer casting unchanged.</p>
         <div className={`input-health input-health--${inputState}`}><i /><span>{inputStatus}</span></div>
         <p className="gesture-guide__title">Guide for {currentElement.label}</p>

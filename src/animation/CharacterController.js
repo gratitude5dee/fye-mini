@@ -1,4 +1,5 @@
 import {
+  AnimationClip,
   AnimationMixer,
   Box3,
   Group,
@@ -30,6 +31,20 @@ const FBX_SCALE = 0.01;
 const GLB_SCALE = 1;
 /** Rigs vary; normalise to a believable human height so the world scale holds. */
 const TARGET_HEIGHT = 1.78;
+
+const UPPER_TRACK = /^mixamorig(?::)?(?:Spine2|Neck|Head(?:Top_End|Front_End)?|(?:Left|Right)(?:Shoulder|Arm|ForeArm|Hand(?:Thumb|Index|Middle|Ring|Pinky)?(?:[1-4])?))\./i;
+
+export function splitClip(clip, isUpper) {
+  const upperTracks = [];
+  const lowerTracks = [];
+  for (const track of clip.tracks) (isUpper(track.name, track) ? upperTracks : lowerTracks).push(track);
+  return {
+    upper: new AnimationClip(`${clip.name}_upper`, clip.duration, upperTracks, clip.blendMode),
+    lower: new AnimationClip(`${clip.name}_lower`, clip.duration, lowerTracks, clip.blendMode)
+  };
+}
+
+const isUpperTrack = (name) => UPPER_TRACK.test(name);
 
 /**
  * Loads the rigged model, normalises it for the scene and drives its animation.
@@ -142,6 +157,24 @@ export class CharacterController {
         action.clampWhenFinished = false;
         this.actions.set(name, action);
       });
+      if (glb && this.actions.has('cast')) {
+        const castClip = this.actions.get('cast').getClip();
+        const { upper } = splitClip(castClip, isUpperTrack);
+        const castUpper = this.mixer.clipAction(upper);
+        castUpper.setLoop(LoopRepeat, Infinity);
+        castUpper.clampWhenFinished = false;
+        this.actions.set('cast_upper', castUpper);
+      }
+      for (const name of ['walk', 'run', 'sprint']) {
+        if (!glb) continue;
+        const action = this.actions.get(name);
+        if (!action) continue;
+        const { lower } = splitClip(action.getClip(), isUpperTrack);
+        const lowerAction = this.mixer.clipAction(lower);
+        lowerAction.setLoop(LoopRepeat, Infinity);
+        lowerAction.clampWhenFinished = false;
+        this.actions.set(`${name}_lower`, lowerAction);
+      }
       this.play([...this.actions.keys()][0], 0);
     }
 

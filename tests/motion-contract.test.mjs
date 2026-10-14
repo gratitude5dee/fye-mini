@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
-import { Bone, Object3D } from 'three';
+import { AnimationClip, Bone, Object3D, QuaternionKeyframeTrack, VectorKeyframeTrack } from 'three';
 
 import { CasterPerformance } from '../src/animation/CasterPerformance.js';
+import { splitClip } from '../src/animation/CharacterController.js';
 import { MotionDirector } from '../src/animation/MotionDirector.js';
 
 const text = (path) => readFile(new URL(path, import.meta.url), 'utf8');
@@ -55,6 +56,58 @@ test('a stripped asset still answers every pick with the idle action', () => {
   const director = new MotionDirector(character, locomotion, { gesture: 'idle' });
   director.update(1 / 60);
   assert.deepEqual(plays, ['idle']); // 'runjump' absent → idle fallback
+});
+
+test('GLB clips split normalized Mixamo upper tracks from the lower body', () => {
+  const clip = new AnimationClip('run', 1, [
+    new VectorKeyframeTrack('mixamorigHips.position', [0, 1], [0, 0, 0, 0, 0, 1]),
+    new QuaternionKeyframeTrack('mixamorigSpine2.quaternion', [0, 1], [0, 0, 0, 1, 0, 0.1, 0, 0.99]),
+    new QuaternionKeyframeTrack('mixamorigLeftForeArm.quaternion', [0, 1], [0, 0, 0, 1, 0, 0.1, 0, 0.99]),
+    new QuaternionKeyframeTrack('mixamorigLeftUpLeg.quaternion', [0, 1], [0, 0, 0, 1, 0, 0.1, 0, 0.99])
+  ]);
+  const { upper, lower } = splitClip(clip, (name) =>
+    /^mixamorig(?::)?(?:Spine2|Neck|Head(?:Top_End|Front_End)?|(?:Left|Right)(?:Shoulder|Arm|ForeArm|Hand(?:Thumb|Index|Middle|Ring|Pinky)?(?:[1-4])?))\./i.test(name)
+  );
+  assert.deepEqual(upper.tracks.map((track) => track.name), [
+    'mixamorigSpine2.quaternion', 'mixamorigLeftForeArm.quaternion'
+  ]);
+  assert.deepEqual(lower.tracks.map((track) => track.name), [
+    'mixamorigHips.position', 'mixamorigLeftUpLeg.quaternion'
+  ]);
+});
+
+test('moving casts layer cast_upper over a lower stride, while planted casts stay full-body', () => {
+  const makeAction = () => ({
+    time: 0,
+    setLoop() {},
+    setEffectiveTimeScale() {},
+    setEffectiveWeight() {},
+    getClip: () => ({ duration: 2 }),
+    reset() {},
+    fadeIn() {},
+    fadeOut() {},
+    play() {}
+  });
+  const actions = new Map(['idle', 'walk', 'run', 'run_lower', 'cast', 'cast_upper'].map((name) => [name, makeAction()]));
+  const played = [];
+  const character = {
+    actions,
+    isSitting: false,
+    play(name) { played.push(name); }
+  };
+  const locomotion = { state: { moving: true, sprinting: false, speed: 3, grounded: true } };
+  const director = new MotionDirector(character, locomotion, { gesture: 'gather' });
+  director.update(1 / 60);
+  assert.equal(director._playing, 'run_lower');
+  assert.equal(director._upperPlaying, 'cast_upper');
+  assert.deepEqual(played, ['run_lower']);
+
+  const planted = new MotionDirector(character, {
+    state: { moving: false, sprinting: false, speed: 0, grounded: true }
+  }, { gesture: 'gather' });
+  planted.update(1 / 60);
+  assert.equal(planted._playing, 'cast');
+  assert.equal(planted._upperPlaying, null);
 });
 
 test('the performance layer finds joints under either mixamorig spelling', () => {

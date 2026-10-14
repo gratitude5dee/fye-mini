@@ -16,6 +16,7 @@ export class InputManager extends EventEmitter {
     this.isDrawing = false;
     this.lastPointerType = 'mouse';
     this.keys = new Set();
+    this.axis = { x: 0, y: 0 };
     this.enabled = true;
 
     /**
@@ -163,9 +164,25 @@ export class InputManager extends EventEmitter {
 
   releaseAllKeys() {
     this.keys.clear();
+    this.clearAxis();
   }
 
-  _onBlur = () => this.keys.clear();
+  setAxis(x, y) {
+    const magnitude = Math.hypot(x, y);
+    const scale = magnitude > 1 ? 1 / magnitude : 1;
+    this.axis.x = x * scale;
+    this.axis.y = y * scale;
+  }
+
+  clearAxis() {
+    this.axis.x = 0;
+    this.axis.y = 0;
+  }
+
+  _onBlur = () => {
+    this.keys.clear();
+    this.clearAxis();
+  };
 
   dispose() {
     this.dom.removeEventListener('pointerdown', this._onPointerDown);
