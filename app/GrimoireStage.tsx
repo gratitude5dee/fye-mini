@@ -1,13 +1,86 @@
 'use client';
 
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { type CSSProperties, type FocusEvent, type MouseEvent, type PointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { HOUSE_SEED_SPELLS } from '../src/config/house-spells';
+import { TO_ENGINE, TO_UI } from '../src/state/events.js';
+import { isPersistent, read as readPreferences, write as persistPreferences } from '../src/state/preferences.js';
+import { RITUAL_WORLD, WORLD_PRIORS } from '../src/world/world-seeds.js';
+import { flickVelocity, shouldDock } from '../src/input/drag.js';
+import { useDialog } from './useDialog';
+import { HelpSheet } from './HelpSheet';
 import './grimoire-stage.css';
 
 type ElementId = 'fire' | 'water' | 'earth' | 'air';
 type InputState = 'idle' | 'requesting' | 'ready' | 'tracking' | 'fallback' | 'unavailable';
-type Dial = { label: string; path: string; min: number; max: number; step: number; value: number };
+type RitePhase = 'free' | 'open' | 'present' | 'draw' | 'resolve' | 'close';
+type RiteState = {
+  phase: RitePhase;
+  lineIndex: number;
+  lineCount: number;
+  attemptsLeft: number;
+  ward: boolean[];
+  elements: string[];
+  persistent: boolean;
+};
 
+const IDLE_RITE: RiteState = {
+  phase: 'free', lineIndex: 0, lineCount: 0, attemptsLeft: 0, ward: [], elements: [], persistent: true
+};
+type Dial = { label: string; path: string; min: number; max: number; step: number; value: number };
+type WorldCatalogEntry = {
+  id?: string;
+  slug: string;
+  title: string;
+  summary: string;
+  imagePath?: string | null;
+  thumbnailUrl?: string | null;
+  splat100kUrl?: string;
+  splat500kUrl?: string;
+  colliderUrl?: string;
+  metricScaleFactor?: number;
+  groundPlaneOffset?: number;
+  colliderTransform?: Record<string, number>;
+  spawn?: { x?: number; y?: number; z?: number; yaw?: number };
+  ritualAnchor?: { x?: number; y?: number; z?: number; radius?: number };
+  kind?: 'ritual';
+};
+
+const LOCAL_WORLD = RITUAL_WORLD as WorldCatalogEntry;
+const WORLD_PREVIEWS = WORLD_PRIORS.map((world) => world as WorldCatalogEntry);
+const INTRO_VIDEO_URL = '/intro/elemental-arrival.mp4';
+
+/**
+ * What the tracker publishes through `INPUT_STATUS`.
+ *
+ * One channel carries two kinds of payload: a health message with a state, and
+ * the throttled continuous read. Every field is optional because either kind
+ * may arrive, and a missing field must never blank a good value.
+ */
+type HandDetail = {
+  message?: string;
+  state?: InputState;
+  engaged?: boolean;
+  wake?: number;
+  pose?: ElementId | null;
+  hold?: number;
+  pinch?: number;
+  lift?: number;
+  spread?: number;
+  dock?: string | null;
+  dockHold?: number;
+  tracking?: 'seeking' | 'found' | 'lost';
+};
+
+type GestureLive = 'wake' | 'pinch' | 'lift' | 'pose' | 'lost';
+type GestureRow = { mark: string; name: string; does: string; live: GestureLive };
+
+/**
+ * The one place an element's name and colour are written.
+ *
+ * There were three, and they disagreed — this list, `ELEMENT_META` in the
+ * engine's settings, and the accent map inside `HandInput` — on both the hex
+ * values and the words. Anything that needs either reads it from here.
+ */
 const ELEMENTS: Array<{ id: ElementId; label: string; sigil: string; color: string }> = [
   { id: 'fire', label: 'Fire', sigil: '✦', color: '#ff6a3c' },
   { id: 'water', label: 'Water', sigil: '◒', color: '#3fb8c9' },
@@ -15,13 +88,41 @@ const ELEMENTS: Array<{ id: ElementId; label: string; sigil: string; color: stri
   { id: 'air', label: 'Wind', sigil: '⌁', color: '#bfe8df' }
 ];
 
-const INTRO_ART = '/intro/elemental-montage.png';
-const INTRO_PANELS = [
-  { id: 'fire', title: 'Fire' },
-  { id: 'water', title: 'Water' },
-  { id: 'earth', title: 'Stone' },
-  { id: 'air', title: 'Wind' }
-] as const;
+/**
+ * The guide is deliberately a slot companion, not a fixed legend. The one
+ * gesture that changes with the selected element is always named in the same
+ * place and lights only when the tracker sees that exact pose.
+ */
+const GESTURE_GUIDES: Record<ElementId, GestureRow[]> = {
+  fire: [
+    { mark: '○', name: 'Open palm', does: 'hold to attune', live: 'wake' },
+    { mark: '↗', name: 'Pinch', does: 'draw a fire line', live: 'pinch' },
+    { mark: '↑', name: 'Raise', does: 'take fire over a hazard', live: 'lift' },
+    { mark: '✦', name: 'Horns', does: 'hold Fire in hand', live: 'pose' },
+    { mark: '↓', name: 'Lower', does: 'rest and re-attune', live: 'lost' }
+  ],
+  water: [
+    { mark: '○', name: 'Open palm', does: 'hold to attune', live: 'wake' },
+    { mark: '↗', name: 'Pinch', does: 'draw a water line', live: 'pinch' },
+    { mark: '↑', name: 'Raise', does: 'take water over a hazard', live: 'lift' },
+    { mark: '◒', name: 'Two fingers', does: 'hold Water in hand', live: 'pose' },
+    { mark: '↓', name: 'Lower', does: 'rest and re-attune', live: 'lost' }
+  ],
+  earth: [
+    { mark: '○', name: 'Open palm', does: 'hold to attune', live: 'wake' },
+    { mark: '↗', name: 'Pinch', does: 'draw a stone line', live: 'pinch' },
+    { mark: '↑', name: 'Raise', does: 'take stone over a hazard', live: 'lift' },
+    { mark: '◆', name: 'Fist', does: 'hold Stone in hand', live: 'pose' },
+    { mark: '↓', name: 'Lower', does: 'rest and re-attune', live: 'lost' }
+  ],
+  air: [
+    { mark: '○', name: 'Open palm', does: 'hold to attune', live: 'wake' },
+    { mark: '↗', name: 'Pinch', does: 'draw a wind line', live: 'pinch' },
+    { mark: '↑', name: 'Raise', does: 'take wind over a hazard', live: 'lift' },
+    { mark: '⌁', name: 'Open hand', does: 'hold Wind in hand', live: 'pose' },
+    { mark: '↓', name: 'Lower', does: 'rest and re-attune', live: 'lost' }
+  ]
+};
 
 const DIALS: Record<ElementId, Dial[]> = {
   fire: [
@@ -46,49 +147,209 @@ const DIALS: Record<ElementId, Dial[]> = {
   ]
 };
 
-const PREFERENCE_KEY = 'living-grimoire.local-preferences.v2';
+/** Display name for an element id, so a raw lowercase key never reaches the page. */
+const labelOf = (id: string) => ELEMENTS.find((entry) => entry.id === id)?.label ?? id;
 
 function emit(name: string, detail?: unknown) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
 
-function readPreferences() {
-  try {
-    return JSON.parse(localStorage.getItem(PREFERENCE_KEY) ?? '{}') as { introSeen?: boolean; element?: ElementId; dials?: Record<string, number> };
-  } catch {
-    return {};
-  }
-}
-
-function persistPreferences(next: Record<string, unknown>) {
-  try {
-    localStorage.setItem(PREFERENCE_KEY, JSON.stringify({ ...readPreferences(), ...next }));
-  } catch {
-    // Browser preference storage is optional; casting always remains usable.
-  }
-}
+/** The engine's shared input object, reached without a prop chain. */
+type StageInput = {
+  pressKey?(code: string): void;
+  releaseKey?(code: string): void;
+  releaseAllKeys?(): void;
+  setAxis?(x: number, y: number): void;
+  clearAxis?(): void;
+};
+const stageInput = () => (window as unknown as { app?: { input?: StageInput } }).app?.input;
+const MAX_HANDS_DRAG_SAMPLES = 6;
 
 export function GrimoireStage() {
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const introVideoRef = useRef<HTMLVideoElement>(null);
+  const handsDragRef = useRef<{
+    pointerId: number;
+    startY: number;
+    height: number;
+    samples: Array<{ y: number; t: number }>;
+  } | null>(null);
+  const handsDockTimerRef = useRef<number | null>(null);
+  const riteDismissTimerRef = useRef<number | null>(null);
+  const trackerActiveRef = useRef(false);
+  const restoredWorldRef = useRef(false);
+  const homeChooserRef = useRef(false);
   const [introVisible, setIntroVisible] = useState(true);
   const [stageReady, setStageReady] = useState(false);
   const [element, setElement] = useState<ElementId>('air');
   const [workshopOpen, setWorkshopOpen] = useState(false);
   const [handsOpen, setHandsOpen] = useState(false);
+  const [handsDocked, setHandsDocked] = useState(false);
+  const [handsDocking, setHandsDocking] = useState(false);
   const [inputState, setInputState] = useState<InputState>('idle');
   const [inputStatus, setInputStatus] = useState('Enable your camera only when you are ready.');
   const [rideArmed, setRideArmed] = useState(false);
   const [lastCast, setLastCast] = useState('Draw a path, pinch to cast, or use the cast key.');
   const [dialValues, setDialValues] = useState<Record<string, number>>({});
+  const [storageAvailable, setStorageAvailable] = useState(true);
+  const [rite, setRite] = useState<RiteState>(IDLE_RITE);
+  const prevRitePhaseRef = useRef<RiteState['phase']>(rite.phase);
+  const [riteVignetteVisible, setRiteVignetteVisible] = useState(false);
+  const [introEndcardVisible, setIntroEndcardVisible] = useState(false);
+  const [introBeat, setIntroBeat] = useState('dark');
+  /**
+   * Whether the stage chrome is held back for the opening.
+   *
+   * Starts `false` and is only ever raised by hearing from the director, so a
+   * page whose renderer never loads shows its interface rather than a black
+   * rectangle. It is lowered again the moment the opening finishes.
+   */
+  const [openingHolds, setOpeningHolds] = useState(false);
+  const [hand, setHand] = useState({ engaged: false, wake: 0, pose: null as ElementId | null, hold: 0, pinch: 0, lift: 0, spread: 0, dock: null as string | null, dockHold: 0, tracking: 'lost' as 'seeking' | 'found' | 'lost' });
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [worldPickerOpen, setWorldPickerOpen] = useState(false);
+  const [worlds, setWorlds] = useState<WorldCatalogEntry[]>([LOCAL_WORLD]);
+  const [worldsLoaded, setWorldsLoaded] = useState(false);
+  const [worldStatus, setWorldStatus] = useState('Ritual Stage is ready.');
+  const [selectedWorld, setSelectedWorld] = useState('ritual-stage');
+  const [showChooserOnReady, setShowChooserOnReady] = useState(false);
+  // Touch changes the chrome, not the offer: a coarse pointer swaps the
+  // keyboard hints for the on-screen movement pad, while Hand mode stays
+  // available on any device whose browser has a camera to grant.
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  const [padOpen, setPadOpen] = useState(true);
+  // Pointer ids per virtual key — a second finger on a held button must not
+  // release it early, and a finger sliding off must let it go.
+  const heldPointersRef = useRef(new Map<string, Set<number>>());
+  const joystickPointerRef = useRef<number | null>(null);
+  const joystickOriginRef = useRef({ x: 88, y: 88 });
+  const joystickKnobRef = useRef<HTMLDivElement>(null);
+  const [joystickOrigin, setJoystickOrigin] = useState({ x: 88, y: 88 });
+  const [joystickActive, setJoystickActive] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [handsGranted, setHandsGranted] = useState(false);
+  const [calm, setCalm] = useState(false);
+  // What the quality ladder settled on, said once and only in the Workshop.
+  // Never a toast: a stage that interrupts you to announce it is coping badly
+  // is worse company than one that just copes.
+  const [quality, setQuality] = useState<{ tier: string; cadence: number } | null>(null);
 
   const currentElement = ELEMENTS.find((entry) => entry.id === element) ?? ELEMENTS[3];
+  const activeWorld = worlds.find((world) => world.slug === selectedWorld) ?? LOCAL_WORLD;
+  // Keep the destination sequence stable whether the catalog is still
+  // preparing, partially ready, or fully published. The local fallback is
+  // intentionally last: it is a dependable way back, not the first place we
+  // ask a new explorer to choose.
+  const catalogCards = [
+    ...WORLD_PREVIEWS.map((preview) => worlds.find((world) => world.slug === preview.slug) ?? preview),
+    LOCAL_WORLD
+  ];
+  const gestureGuide = GESTURE_GUIDES[element];
+
+  const guideRowIsLive = (row: GestureRow) => {
+    if (row.live === 'wake') return !hand.engaged && hand.wake > 0;
+    if (row.live === 'pinch') return hand.pinch > 0;
+    if (row.live === 'lift') return hand.lift > 0.4;
+    if (row.live === 'pose') return hand.pose === element;
+    return hand.tracking === 'lost' && inputState === 'tracking';
+  };
+
+  /**
+   * What the world is saying, if it is saying anything.
+   *
+   * Derived from the Rite's state rather than held alongside it, so the words
+   * on screen can never disagree with the stones on the ground.
+   */
+  const riteMessage = (() => {
+    if (rite.phase === 'free') return null;
+    if (rite.phase === 'close') {
+      const dark = rite.ward.filter((lit) => !lit).length;
+      if (dark === 0) return 'The Ward is whole.';
+      return `${dark === 1 ? 'One stone' : `${dark} stones`} stayed dark. The Rite still ends.`;
+    }
+    const wants = rite.elements.map((id) => labelOf(id)).join(' or ');
+    return wants ? `Reach the stones. ${wants} answers here.` : 'Reach the stones.';
+  })();
   const activeDials = DIALS[element];
 
   useEffect(() => {
+    // Read after mount, never during render: the server has no `matchMedia`.
+    setCoarsePointer(Boolean(window.matchMedia?.('(pointer: coarse)').matches));
+    setPrefersReducedMotion(Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches));
     const preferences = readPreferences();
-    setIntroVisible(!preferences.introSeen);
-    if (preferences.element) setElement(preferences.element);
-    if (preferences.dials) setDialValues(preferences.dials);
+    // Every visit opens on the full ceremony. Returning visitors still get a
+    // brisk pass — `returning` in src/main.js shortens the engine beats — but
+    // the title, film and chooser are never silently skipped again.
+    setIntroVisible(true);
+    setElement(preferences.element as ElementId);
+    setDialValues(preferences.dials);
+    setCalm(preferences.calm);
+    setStorageAvailable(isPersistent());
+    setSelectedWorld(preferences.lastWorld ?? 'ritual-stage');
+    setShowChooserOnReady(true);
+    setHandsGranted(Boolean(preferences.onboarding?.handsGranted));
+  }, []);
+
+  useEffect(() => {
+    const video = introVideoRef.current;
+    if (!video) return;
+    const revealEndcard = () => setIntroEndcardVisible(true);
+    const checkEndcard = () => {
+      if (video.duration && video.currentTime >= video.duration - 0.6) revealEndcard();
+    };
+    video.addEventListener('timeupdate', checkEndcard);
+    video.addEventListener('ended', revealEndcard);
+    // The generated film is enhancement, never a load gate. It begins when
+    // the real stage can be handed to the player, remains silent for reliable
+    // autoplay, and gives reduced-motion visitors the authored static opening.
+    if (introVisible && stageReady && !prefersReducedMotion) {
+      void video.play().catch(() => undefined);
+    } else video.pause();
+    return () => {
+      video.removeEventListener('timeupdate', checkEndcard);
+      video.removeEventListener('ended', revealEndcard);
+    };
+  }, [introVisible, prefersReducedMotion, stageReady]);
+
+  useEffect(() => {
+    const enteringClose = prevRitePhaseRef.current !== 'close' && rite.phase === 'close';
+    prevRitePhaseRef.current = rite.phase;
+    if (enteringClose && rite.ward.some(Boolean)) {
+      if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
+      setRiteVignetteVisible(true);
+      riteDismissTimerRef.current = window.setTimeout(() => {
+        setRiteVignetteVisible(false);
+        riteDismissTimerRef.current = null;
+      }, 5000);
+    }
+    if (rite.phase !== 'close') {
+      setRiteVignetteVisible(false);
+      if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
+      riteDismissTimerRef.current = null;
+    }
+  }, [rite]);
+
+  useEffect(() => () => {
+    if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    // This is public catalog metadata only.  Player choices do not create a
+    // World Labs job, and camera/landmark data never participates in this call.
+    void fetch('/api/worlds')
+      .then(async (response) => response.ok ? response.json() : Promise.reject(new Error(`Catalog ${response.status}`)))
+      .then((payload: { worlds?: WorldCatalogEntry[] }) => {
+        if (!alive) return;
+        const ready = Array.isArray(payload.worlds) ? payload.worlds : [];
+        setWorlds([...ready, LOCAL_WORLD]);
+        setWorldStatus(ready.length ? 'Choose a prepared world.' : 'Ritual Stage is ready while new worlds are prepared.');
+      })
+      .catch(() => {
+        if (alive) setWorldStatus('World catalog is unavailable. Ritual Stage is ready.');
+      })
+      .finally(() => { if (alive) setWorldsLoaded(true); });
+    return () => { alive = false; };
   }, []);
 
   useEffect(() => {
@@ -101,10 +362,28 @@ export function GrimoireStage() {
   useEffect(() => {
     const ready = () => setStageReady(true);
     const inputStatusListener = (event: Event) => {
-      const detail = (event as CustomEvent<{ message?: string; state?: InputState }>).detail;
-      setInputStatus(detail?.message ?? 'Hand input is ready.');
-      setInputState(detail?.state ?? 'tracking');
-      if (detail?.state === 'ready' || detail?.state === 'tracking') setHandsOpen(true);
+      const detail = (event as CustomEvent<HandDetail>).detail;
+      // The tracker publishes two kinds of detail through this one channel: a
+      // health message, and the throttled continuous state. Only the former
+      // carries a message, so an absent one must not blank the status line.
+      if (detail?.message) setInputStatus(detail.message);
+      if (detail?.state) {
+        setInputState(detail.state);
+        trackerActiveRef.current = detail.state === 'requesting' || detail.state === 'ready' || detail.state === 'tracking';
+        if (detail.state === 'ready' || detail.state === 'tracking') {
+          setHandsGranted(true);
+          persistPreferences({ onboarding: { handsGranted: true } });
+        }
+      }
+      if (typeof detail?.wake === 'number') {
+        setHand({
+          engaged: Boolean(detail.engaged), wake: detail.wake,
+          pose: detail.pose ?? null, hold: detail.hold ?? 0, pinch: detail.pinch ?? 0,
+          lift: detail.lift ?? 0, spread: detail.spread ?? 0,
+          dock: detail.dock ?? null, dockHold: detail.dockHold ?? 0,
+          tracking: detail.tracking ?? 'found'
+        });
+      }
     };
     const rideStatusListener = (event: Event) => setRideArmed(Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active));
     const castListener = (event: Event) => {
@@ -112,15 +391,91 @@ export function GrimoireStage() {
       const label = ELEMENTS.find((entry) => entry.id === castElement)?.label ?? 'Element';
       setLastCast(`${label} released. The caster is recovering.`);
     };
-    window.addEventListener('grimoire:ready', ready);
-    window.addEventListener('grimoire:input-status', inputStatusListener);
-    window.addEventListener('grimoire:ride-status', rideStatusListener);
-    window.addEventListener('grimoire:cast-complete', castListener);
+    window.addEventListener(TO_UI.READY, ready);
+    window.addEventListener(TO_UI.INPUT_STATUS, inputStatusListener);
+    window.addEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
+    const riteListener = (event: Event) => {
+      const detail = (event as CustomEvent<RiteState>).detail;
+      if (!detail) return;
+      setRite(detail);
+    };
+    const selectedListener = (event: Event) => {
+      const chosen = (event as CustomEvent<{ element?: ElementId }>).detail?.element;
+      if (!chosen) return;
+      // Idempotent on the round trip: a click emits SELECT, the engine answers
+      // SELECTED, and setting the state it already holds re-renders nothing and
+      // re-emits nothing, because the replay effect is keyed on the value.
+      setElement((current) => {
+        if (current !== chosen) persistPreferences({ element: chosen });
+        return chosen;
+      });
+    };
+    const qualityListener = (event: Event) => {
+      const detail = (event as CustomEvent<{ tier?: string; cadence?: number }>).detail;
+      if (detail?.tier) setQuality({ tier: detail.tier, cadence: detail.cadence ?? 1 });
+    };
+    const worldStatusListener = (event: Event) => {
+      const detail = (event as CustomEvent<{ state?: string; world?: string; title?: string }>).detail;
+      if (!detail?.state) return;
+      if (detail.state === 'loading') setWorldStatus(`Entering ${detail.title ?? detail.world?.replaceAll('-', ' ') ?? 'world'}…`);
+      if (detail.state === 'ready') setWorldStatus(`${detail.title ?? detail.world?.replaceAll('-', ' ') ?? 'World'} is ready.`);
+      if (detail.state === 'failed') {
+        setSelectedWorld('ritual-stage');
+        persistPreferences({ lastWorld: 'ritual-stage' });
+        setWorldStatus('That world could not load. Ritual Stage is ready.');
+      }
+    };
+    const homeListener = () => {
+      // The engine already returned to the local floor. React owns the part a
+      // player sees: reset the film, close transient sheets, then open the
+      // chooser only after the title resolves.
+      homeChooserRef.current = true;
+      setHandsOpen(false);
+      setWorkshopOpen(false);
+      setHelpOpen(false);
+      setWorldPickerOpen(false);
+      setSelectedWorld('ritual-stage');
+      setWorldStatus('Choose your ground.');
+      persistPreferences({ lastWorld: 'ritual-stage' });
+      const video = introVideoRef.current;
+      if (video) {
+        video.pause();
+        video.currentTime = 0;
+      }
+      setIntroBeat('dark');
+      setOpeningHolds(true);
+      setIntroVisible(true);
+    };
+    window.addEventListener(TO_UI.QUALITY, qualityListener);
+    window.addEventListener(TO_UI.SELECTED, selectedListener);
+    window.addEventListener(TO_UI.CAST_COMPLETE, castListener);
+    window.addEventListener(TO_UI.RITE_STATE, riteListener);
+    window.addEventListener(TO_UI.WORLD_STATUS, worldStatusListener);
+    window.addEventListener(TO_UI.HOME, homeListener);
+    // `H` is bound in the engine's InputManager, so the key and the button have
+    // to end up in the same place rather than two panels that disagree.
+    // Closes the others first, exactly as the buttons do. Without this, `H`
+    // over an open Workshop rendered two `aria-modal` dialogs at once, and the
+    // help sheet's inert walk marked the Workshop — the one sibling the walk
+    // does not skip for itself — unclickable while still on screen.
+    const helpListener = () => {
+      setHandsOpen(false);
+      setWorkshopOpen(false);
+      setWorldPickerOpen(false);
+      setHelpOpen((open) => !open);
+    };
+    window.addEventListener(TO_UI.HELP, helpListener);
     return () => {
-      window.removeEventListener('grimoire:ready', ready);
-      window.removeEventListener('grimoire:input-status', inputStatusListener);
-      window.removeEventListener('grimoire:ride-status', rideStatusListener);
-      window.removeEventListener('grimoire:cast-complete', castListener);
+      window.removeEventListener(TO_UI.READY, ready);
+      window.removeEventListener(TO_UI.INPUT_STATUS, inputStatusListener);
+      window.removeEventListener(TO_UI.RIDE_STATUS, rideStatusListener);
+      window.removeEventListener(TO_UI.QUALITY, qualityListener);
+      window.removeEventListener(TO_UI.SELECTED, selectedListener);
+      window.removeEventListener(TO_UI.CAST_COMPLETE, castListener);
+      window.removeEventListener(TO_UI.RITE_STATE, riteListener);
+      window.removeEventListener(TO_UI.WORLD_STATUS, worldStatusListener);
+      window.removeEventListener(TO_UI.HOME, homeListener);
+      window.removeEventListener(TO_UI.HELP, helpListener);
     };
   }, []);
 
@@ -128,70 +483,398 @@ export function GrimoireStage() {
   // selected element once it reports readiness so the visible HUD and the
   // active Three.js ability can never drift apart.
   useEffect(() => {
-    if (stageReady) emit('grimoire:select', { element });
+    if (stageReady) emit(TO_ENGINE.SELECT, { element });
   }, [element, stageReady]);
 
-  const dismissIntro = () => {
-    persistPreferences({ introSeen: true });
-    setIntroVisible(false);
-  };
+  // Same replay as the element: the preference is read after the renderer has
+  // begun loading, so a player who left calm mode on gets it back rather than
+  // a stage that shakes once before catching up.
+  useEffect(() => {
+    if (stageReady) emit(TO_ENGINE.CALM, { enabled: calm });
+  }, [calm, stageReady]);
+
+  // The API exposes only calibrated worlds. A remembered world that no
+  // longer exists becomes the local Ritual Stage instead of retrying a stale
+  // or no-longer-approved asset URL.
+  useEffect(() => {
+    if (!stageReady || !worldsLoaded || restoredWorldRef.current) return;
+    const remembered = worlds.find((world) => world.slug === selectedWorld) ?? LOCAL_WORLD;
+    restoredWorldRef.current = true;
+    setSelectedWorld(remembered.slug);
+    emit(TO_ENGINE.SELECT_WORLD, { world: remembered, silent: true });
+  }, [selectedWorld, stageReady, worlds, worldsLoaded]);
 
   useEffect(() => {
-    if (!introVisible) return;
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const timer = window.setTimeout(dismissIntro, reduceMotion ? 900 : 7600);
-    return () => window.clearTimeout(timer);
-  }, [introVisible]);
+    // The deferred first-visit chooser lives apart from the restore effect
+    // above, which returns early once it has run. Never while the intro still
+    // plays: the picker is hit-testable under the transparent intro, where it
+    // eats Skip taps and can silently select a world.
+    if (showChooserOnReady && stageReady && worldsLoaded && !introVisible) {
+      setWorldPickerOpen(true);
+      setShowChooserOnReady(false);
+    }
+  }, [introVisible, showChooserOnReady, stageReady, worldsLoaded]);
+
+  const closeHelp = useCallback(() => setHelpOpen(false), []);
+  const closeHands = useCallback(() => {
+    setHandsOpen(false);
+    setHandsDocked(false);
+    setHandsDocking(false);
+    if (handsDockTimerRef.current !== null) window.clearTimeout(handsDockTimerRef.current);
+  }, []);
+  const closeWorkshop = useCallback(() => setWorkshopOpen(false), []);
+  const closeWorldPicker = useCallback(() => setWorldPickerOpen(false), []);
+
+  const openHands = () => {
+    if (handsDockTimerRef.current !== null) window.clearTimeout(handsDockTimerRef.current);
+    setHandsDocked(false);
+    setHandsDocking(false);
+    setWorkshopOpen(false);
+    setHelpOpen(false);
+    setWorldPickerOpen(false);
+    setHandsOpen(true);
+  };
+
+  const declineHands = () => {
+    setHandsOpen(false);
+    setHandsDocked(false);
+    setInputStatus('Pointer casting stays exactly as it is.');
+  };
+
+  const dismissIntro = useCallback(() => {
+    // Skip only shortens what is already running; the director lands in the
+    // same state either way, and dismisses this overlay when it gets there.
+    setIntroEndcardVisible(true);
+    emit(TO_ENGINE.SKIP_INTRO);
+    persistPreferences({ introSeen: true });
+  }, []);
+
+  useEffect(() => {
+    // The opening used to dismiss itself on a fixed 7600ms timer that had no
+    // relationship to the load it was covering. It now follows the director,
+    // which cannot advance until the stage is genuinely playable.
+    const onIntro = (event: Event) => {
+      const detail = (event as CustomEvent<{ beat: string; finished: boolean }>).detail;
+      if (!detail) return;
+      setIntroBeat(detail.beat);
+      setOpeningHolds(!detail.finished);
+      if (detail.finished) {
+        setIntroVisible(false);
+        persistPreferences({ introSeen: true });
+        if (homeChooserRef.current) {
+          homeChooserRef.current = false;
+          setWorldPickerOpen(true);
+        }
+      }
+    };
+    window.addEventListener(TO_UI.INTRO, onIntro);
+    return () => window.removeEventListener(TO_UI.INTRO, onIntro);
+  }, []);
+
+  const introRef = useDialog<HTMLElement>(introVisible, dismissIntro);
+  const handsRef = useDialog<HTMLElement>(handsOpen, closeHands);
+  const workshopRef = useDialog<HTMLElement>(workshopOpen, closeWorkshop);
+  const worldsRef = useDialog<HTMLElement>(worldPickerOpen, closeWorldPicker);
 
   const selectElement = (next: ElementId) => {
     setElement(next);
     persistPreferences({ element: next });
-    emit('grimoire:select', { element: next });
+    emit(TO_ENGINE.SELECT, { element: next });
+  };
+
+  const toggleCalm = (next: boolean) => {
+    setCalm(next);
+    persistPreferences({ calm: next });
+    emit(TO_ENGINE.CALM, { enabled: next });
+  };
+
+  const selectWorld = (world: WorldCatalogEntry) => {
+    if (!stageReady) return;
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    setSelectedWorld(world.slug);
+    persistPreferences({ lastWorld: world.slug });
+    setWorldStatus(`Entering ${world.title}…`);
+    setWorldPickerOpen(false);
+    emit(TO_ENGINE.SELECT_WORLD, { world });
+  };
+
+  const returnHome = () => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    emit(TO_ENGINE.HOME);
   };
 
   const adjustDial = (dial: Dial, value: number) => {
     const next = { ...dialValues, [dial.path]: value };
     setDialValues(next);
     persistPreferences({ dials: next });
-    emit('grimoire:patch', { patch: { [dial.path]: value } });
+    emit(TO_ENGINE.PATCH, { patch: { [dial.path]: value } });
   };
 
   const choosePreset = (preset: typeof HOUSE_SEED_SPELLS[number]) => {
     selectElement(preset.element as ElementId);
-    emit('grimoire:patch', { patch: preset.settingsPatch });
+    emit(TO_ENGINE.PATCH, { patch: preset.settingsPatch });
     setLastCast(`${preset.name} is prepared locally. Draw to release it.`);
   };
 
   const enableHands = () => {
-    if (window.matchMedia?.('(pointer: coarse)').matches) {
-      setInputState('unavailable');
-      setInputStatus('Touch casting is ready. Mobile never requests your camera.');
-      return;
-    }
     if (!stageReady) {
       setInputStatus('The stage is still waking. Try again in a moment.');
       return;
     }
+    // The tracker reports its own outcome: a device or webview without camera
+    // access settles into `unavailable`/`fallback` with pointer casting kept.
     setInputState('requesting');
     setInputStatus('Requesting camera permission…');
-    emit('grimoire:attune');
+    emit(TO_ENGINE.ATTUNE);
   };
 
   const stopHands = () => {
-    emit('grimoire:stop-hands');
+    emit(TO_ENGINE.STOP_HANDS);
+    trackerActiveRef.current = false;
     setHandsOpen(false);
     setInputState('idle');
     setInputStatus('Pointer casting is ready.');
   };
 
+  /* --- The movement pad ---------------------------------------------------
+     A finger sliding between directions should hand the key over as it
+     crosses each button's edge. Implicit touch capture pins every later
+     event to the pressed button, so the handover is done by hand: on each
+     captured pointermove, elementFromPoint names the key actually under the
+     finger and the hold moves to it. Where capture is absent, pointerenter
+     arms the key a pressed contact crosses and pointerleave releases the one
+     it left. The document up/cancel sweep covers a lift that lands off-pad,
+     and blur/visibility stays the last backstop. */
+  const pressHeldPointer = (code: string, pointerId: number) => {
+    let held = heldPointersRef.current.get(code);
+    if (!held) {
+      held = new Set();
+      heldPointersRef.current.set(code, held);
+    }
+    if (held.has(pointerId)) return;
+    held.add(pointerId);
+    document.querySelector(`.pad-key[data-code="${code}"]`)?.classList.add('is-held');
+    stageInput()?.pressKey?.(code);
+  };
+
+  const dropHeldPointer = (code: string, pointerId: number) => {
+    const held = heldPointersRef.current.get(code);
+    if (!held?.delete(pointerId) || held.size !== 0) return;
+    heldPointersRef.current.delete(code);
+    document.querySelector(`.pad-key[data-code="${code}"]`)?.classList.remove('is-held');
+    stageInput()?.releaseKey?.(code);
+  };
+
+  const padPress = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    pressHeldPointer(code, event.pointerId);
+  };
+
+  // A finger already in contact crossing a key's edge presses it — the same
+  // path as pointerdown, gated on the contact bit so a mouse hover cannot.
+  const padEnter = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    if ((event.buttons & 1) === 1) pressHeldPointer(code, event.pointerId);
+  };
+
+  // Under capture the moves keep arriving here even as the finger crosses
+  // edges; hit-testing the pointer's real position is what hands keys over.
+  const padMove = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    if (!heldPointersRef.current.get(code)?.has(event.pointerId)) return;
+    const over = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('.pad-key');
+    const next = over?.getAttribute('data-code');
+    if (next && next !== code) {
+      dropHeldPointer(code, event.pointerId);
+      pressHeldPointer(next, event.pointerId);
+    }
+  };
+
+  const padRelease = (code: string) => (event: PointerEvent<HTMLElement>) => {
+    dropHeldPointer(code, event.pointerId);
+  };
+
+  const beginHandsDrag = (event: PointerEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest('button')) return;
+    const sheet = handsRef.current;
+    if (!sheet || handsDocking) return;
+    event.preventDefault();
+    const now = performance.now();
+    handsDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      height: sheet.getBoundingClientRect().height,
+      samples: [{ y: event.clientY, t: now }]
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    sheet.classList.remove('is-springing');
+    sheet.classList.add('is-dragging');
+  };
+
+  const moveHandsDrag = (event: PointerEvent<HTMLElement>) => {
+    const drag = handsDragRef.current;
+    const sheet = handsRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !sheet) return;
+    drag.samples.push({ y: event.clientY, t: performance.now() });
+    if (drag.samples.length > MAX_HANDS_DRAG_SAMPLES) drag.samples.shift();
+    const dy = event.clientY - drag.startY;
+    const offset = dy >= 0 ? dy : Math.max(-12, dy * 0.2);
+    const mobile = window.matchMedia('(max-width: 679px)').matches;
+    sheet.style.transform = mobile
+      ? `translateY(${offset}px)`
+      : `translateY(calc(-50% + ${offset}px))`;
+  };
+
+  const endHandsDrag = (event: PointerEvent<HTMLElement>) => {
+    const drag = handsDragRef.current;
+    const sheet = handsRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !sheet) return;
+    handsDragRef.current = null;
+    const dy = event.clientY - drag.startY;
+    const velocity = Math.max(0, flickVelocity(drag.samples, performance.now()));
+    sheet.classList.remove('is-dragging');
+    if (shouldDock({ dy, height: drag.height, velocity })) {
+      if (prefersReducedMotion) {
+        setHandsOpen(false);
+        setHandsDocked(true);
+        setHandsDocking(false);
+        return;
+      }
+      const mobile = window.matchMedia('(max-width: 679px)').matches;
+      sheet.style.transform = mobile ? 'translateY(110%)' : 'translate(110%, -50%)';
+      setHandsDocking(true);
+      handsDockTimerRef.current = window.setTimeout(() => {
+        setHandsOpen(false);
+        setHandsDocked(true);
+        setHandsDocking(false);
+        handsDockTimerRef.current = null;
+      }, 200);
+      return;
+    }
+    sheet.classList.add('is-springing');
+    sheet.style.transform = '';
+    window.setTimeout(() => sheet.classList.remove('is-springing'), 360);
+  };
+
+  const moveJoystick = (event: PointerEvent<HTMLDivElement>) => {
+    if (joystickPointerRef.current !== event.pointerId) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const origin = joystickOriginRef.current;
+    let dx = event.clientX - rect.left - origin.x;
+    let dy = event.clientY - rect.top - origin.y;
+    const distance = Math.hypot(dx, dy);
+    if (distance > 46) {
+      dx *= 46 / distance;
+      dy *= 46 / distance;
+    }
+    if (joystickKnobRef.current) {
+      joystickKnobRef.current.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px)`;
+    }
+    stageInput()?.setAxis?.(dx / 46, -dy / 46);
+  };
+
+  const resetJoystickKnob = () => {
+    window.requestAnimationFrame(() => {
+      if (joystickKnobRef.current) {
+        joystickKnobRef.current.style.transform = 'translate(-50%, -50%) translate(0px, 0px)';
+      }
+    });
+  };
+
+  const releaseJoystick = (event?: PointerEvent<HTMLDivElement>) => {
+    if (event && joystickPointerRef.current !== event.pointerId) return;
+    joystickPointerRef.current = null;
+    joystickOriginRef.current = { x: 88, y: 88 };
+    setJoystickOrigin({ x: 88, y: 88 });
+    setJoystickActive(false);
+    resetJoystickKnob();
+    stageInput()?.clearAxis?.();
+  };
+
+  const joystickDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const origin = {
+      x: Math.min(120, Math.max(56, event.clientX - rect.left)),
+      y: Math.min(120, Math.max(56, event.clientY - rect.top))
+    };
+    joystickPointerRef.current = event.pointerId;
+    joystickOriginRef.current = origin;
+    setJoystickOrigin(origin);
+    if (joystickKnobRef.current) {
+      joystickKnobRef.current.style.transform = 'translate(-50%, -50%) translate(0px, 0px)';
+    }
+    setJoystickActive(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const padHandlers = (code: string) => ({
+    'data-code': code,
+    onPointerDown: padPress(code),
+    onPointerEnter: padEnter(code),
+    onPointerMove: padMove(code),
+    onPointerUp: padRelease(code),
+    onPointerCancel: padRelease(code),
+    onPointerLeave: padRelease(code),
+    onContextMenu: (event: MouseEvent<HTMLElement>) => event.preventDefault()
+  });
+
+  // A sheet owns the bottom of the screen while it is open — the pad hides
+  // underneath it. So does the player's hold: every virtual key lets go the
+  // moment the pad leaves the stage, not the moment the button unmounts.
+  const sheetOpen = handsOpen || workshopOpen || worldPickerOpen || helpOpen;
+
+  const releasePad = useCallback(() => {
+    heldPointersRef.current.clear();
+    document.querySelectorAll('.pad-key.is-held').forEach((key) => key.classList.remove('is-held'));
+    stageInput()?.releaseAllKeys?.();
+    stageInput()?.clearAxis?.();
+    joystickPointerRef.current = null;
+    joystickOriginRef.current = { x: 88, y: 88 };
+    setJoystickOrigin({ x: 88, y: 88 });
+    setJoystickActive(false);
+    resetJoystickKnob();
+  }, []);
+
+  useEffect(() => {
+    if (!coarsePointer) return;
+    // A missed cancel leaves a key held forever: the app switching away, the
+    // browser chrome opening, a call arriving. Clear on every signal that
+    // means the touches are gone, and once more when this unmounts.
+    // Uncaptured pointers end their up/cancel on whatever element sits under
+    // the finger — often off-pad, where no key handler runs. Any lift must
+    // drop every key that pointer still holds, wherever it lands.
+    const sweepPointer = (event: Event) => {
+      const { pointerId } = event as unknown as { pointerId: number };
+      heldPointersRef.current.forEach((_held, code) => dropHeldPointer(code, pointerId));
+    };
+    window.addEventListener('pointerup', sweepPointer, true);
+    window.addEventListener('pointercancel', sweepPointer, true);
+    window.addEventListener('blur', releasePad);
+    document.addEventListener('visibilitychange', releasePad);
+    return () => {
+      window.removeEventListener('pointerup', sweepPointer, true);
+      window.removeEventListener('pointercancel', sweepPointer, true);
+      window.removeEventListener('blur', releasePad);
+      document.removeEventListener('visibilitychange', releasePad);
+      releasePad();
+    };
+  }, [coarsePointer, releasePad]);
+
+  useEffect(() => {
+    if (!padOpen || sheetOpen) releasePad();
+  }, [padOpen, sheetOpen, releasePad]);
+
   return (
-    <main className="grimoire-stage" style={{ '--accent': currentElement.color } as CSSProperties}>
+    <main
+      className={`grimoire-stage ${openingHolds ? 'is-opening' : ''}`}
+      style={{ '--accent': currentElement.color } as CSSProperties}
+    >
       <div className="grimoire-stage__surface" ref={surfaceRef}>
         <canvas id="viewport" aria-label="Elemental casting stage with an animated caster" />
         <div id="loader" className="loader" aria-live="polite">
           <div className="loader__inner">
             <div className="loader__sigil"><span className="sigil sigil--fire" /><span className="sigil sigil--water" /><span className="sigil sigil--earth" /><span className="sigil sigil--air" /></div>
-            <h1 className="loader__title">The Living Grimoire</h1>
+            <h1 className="loader__title">FYE</h1>
             <div className="loader__bar"><i id="loader-fill" /></div>
             <p className="loader__status" id="loader-status">Preparing the caster…</p>
           </div>
@@ -199,49 +882,294 @@ export function GrimoireStage() {
         <div id="hud" className="hud" aria-live="polite" />
 
         <header className="stage-header">
-          <div className="wordmark"><span>Local elemental stage</span><strong>Living Grimoire</strong></div>
+          <button className="wordmark wordmark--home" onClick={returnHome} aria-label="Return to FYE home and world selection"><span>Elemental explorer</span><strong>FYE</strong></button>
           <div className="header-actions">
-            <button className="quiet-button" onClick={() => setHandsOpen(true)} aria-expanded={handsOpen}>Hand mode</button>
-            <button className="quiet-button" onClick={() => setWorkshopOpen(true)} aria-expanded={workshopOpen}>Workshop</button>
+            {coarsePointer && <button className={`quiet-button pad-toggle ${padOpen ? 'is-armed' : ''}`} onClick={() => setPadOpen((open) => !open)} aria-expanded={padOpen}>Controls</button>}
+            <button className="quiet-button" onClick={openHands} aria-expanded={handsOpen}>Hand mode</button>
+            <button className="quiet-button" onClick={() => { setHandsOpen(false); setHelpOpen(false); setWorldPickerOpen(false); setWorkshopOpen(true); }} aria-expanded={workshopOpen}>Workshop</button>
           </div>
         </header>
 
-        <section className="stage-message" aria-live="polite"><span className="stage-message__dot" />{lastCast}</section>
+        <section className="stage-message" aria-live="polite">
+          <span className="stage-message__dot" />
+          {riteMessage ?? lastCast}
+        </section>
+
+        {rite.phase !== 'free' && <section className="ward-readout" aria-label="The Ward">
+          <ol className="ward-stones">
+            {rite.ward.map((lit, index) => <li
+              key={index}
+              className={`${lit ? 'is-lit' : ''} ${index === rite.lineIndex && rite.phase !== 'close' ? 'is-current' : ''}`}
+              aria-label={`Line ${index + 1}: ${lit ? 'answered' : 'dark'}`}
+            />)}
+          </ol>
+          {rite.phase !== 'close' && <span className="ward-attempts">
+            {rite.attemptsLeft} {rite.attemptsLeft === 1 ? 'try' : 'tries'}
+          </span>}
+        </section>}
+
+        {riteVignetteVisible && (
+          <section className="rite-vignette" aria-live="polite" aria-label={`${currentElement.label} ward vignette`}>
+            {prefersReducedMotion || calm
+              ? <img src={`/media/rite/ward-${currentElement.id}.jpg`} alt="" />
+              : <video
+                src={`/media/rite/ward-${currentElement.id}.mp4`}
+                muted
+                playsInline
+                autoPlay
+                loop
+                aria-hidden="true"
+              />}
+            <button
+              onClick={() => {
+                setRiteVignetteVisible(false);
+                if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
+                riteDismissTimerRef.current = null;
+              }}
+              aria-label="Dismiss ward vignette"
+            >×</button>
+          </section>
+        )}
+
+        <section className="world-drawer" aria-label="World selection">
+          <button
+            className="world-drawer__open"
+            onClick={() => { setHandsOpen(false); setWorkshopOpen(false); setHelpOpen(false); setWorldPickerOpen(true); }}
+            aria-expanded={worldPickerOpen}
+          >
+            <span className="world-drawer__eyebrow">Worlds</span>
+            <strong>{activeWorld.title}</strong>
+            <small>{worldStatus}</small>
+          </button>
+        </section>
+
+        {coarsePointer ? (
+          padOpen && !sheetOpen && <section className="touch-move" aria-label="Movement controls">
+            <div
+              className={`joystick ${joystickActive ? 'is-active' : ''}`}
+              role="group"
+              aria-label="Move the caster"
+              onPointerDown={joystickDown}
+              onPointerMove={moveJoystick}
+              onPointerUp={releaseJoystick}
+              onPointerCancel={releaseJoystick}
+              onLostPointerCapture={releaseJoystick}
+              onContextMenu={(event) => event.preventDefault()}
+            >
+              <div className="joystick__base" style={{ left: joystickOrigin.x, top: joystickOrigin.y }}>
+                <div
+                  ref={joystickKnobRef}
+                  className="joystick__knob"
+                />
+              </div>
+            </div>
+            <div className="touch-pad touch-pad--act" role="group" aria-label="Sprint and jump">
+              <button className="pad-key pad-key--sprint" aria-label="Hold to sprint" {...padHandlers('ShiftLeft')}>Run</button>
+              <button className="pad-key pad-key--jump" aria-label="Jump" {...padHandlers('Space')}>Jump</button>
+            </div>
+          </section>
+        ) : (
+          <section className="movement-hint" aria-label="Movement controls">
+            <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move</span>
+            <span><kbd>⇧</kbd> sprint</span>
+            <span><kbd>Space</kbd> jump</span>
+          </section>
+        )}
+
+        {handsDocked && !handsOpen && !sheetOpen && <button
+          className={`hands-notch hands-notch--${inputState}`}
+          onClick={openHands}
+          aria-label="Show hand tracking panel"
+        ><i aria-hidden="true" />Hands</button>}
 
         <section className="stage-hud" aria-label="Casting controls">
-          <div className="element-selector" role="group" aria-label="Choose an element">
-            {ELEMENTS.map((entry) => <button key={entry.id} data-element={entry.id} className={entry.id === element ? 'is-active' : ''} aria-pressed={entry.id === element} onClick={() => selectElement(entry.id)}>
-              <i>{entry.sigil}</i><span>{entry.label}</span>
-            </button>)}
+          <div className={`dock ${stageReady ? '' : 'is-waking'}`} data-dock role="group" aria-label="Choose an element">
+            {ELEMENTS.map((entry, index) => {
+              const active = entry.id === element;
+              // The Rite names which elements answer the line in front of you.
+              // Outside a Rite nothing is offered, so nothing is marked — the
+              // slot must not imply a preference the game is not expressing.
+              const offered = rite.phase !== 'free' && rite.phase !== 'close'
+                && rite.elements.includes(entry.id);
+              const dwell = hand.dock === entry.id ? hand.dockHold : 0;
+              return <button
+                key={entry.id}
+                /* Stays on the button, not on a wrapper: `HandInput._trackDock`
+                   finds a slot with `closest('[data-element]')`, and moving the
+                   attribute up one level breaks hand selection in silence. */
+                data-element={entry.id}
+                className={`dock__slot ${active ? 'is-active' : ''} ${offered ? 'is-offered' : ''} ${dwell > 0 ? 'is-dwelling' : ''}`}
+                style={{ '--dwell': dwell, '--slot': entry.color } as CSSProperties}
+                aria-pressed={active}
+                aria-describedby={offered ? 'dock-offered' : undefined}
+                onClick={() => selectElement(entry.id)}
+              >
+                <i aria-hidden="true">{entry.sigil}</i>
+                <span>{entry.label}</span>
+                <kbd aria-hidden="true">{index + 1}</kbd>
+                <u aria-hidden="true" />
+              </button>;
+            })}
+            <p id="dock-offered" hidden>Answers the line in front of you.</p>
           </div>
-          <button className="cast-button" disabled={!stageReady} onClick={() => emit('grimoire:cast')}><span>{stageReady ? 'Cast' : 'Waking'}</span><b>{currentElement.label}</b></button>
-          <button className={`ride-button ${rideArmed ? 'is-armed' : ''}`} onClick={() => emit('grimoire:ride')} aria-pressed={rideArmed}>{rideArmed ? 'Draw air ride' : 'Ride a path'}</button>
+          <button className="cast-button" disabled={!stageReady} onClick={() => emit(TO_ENGINE.CAST)}><span>{stageReady ? 'Cast' : 'Waking'}</span><b>{currentElement.label}</b></button>
+          <button
+            className={`ride-button ${rite.phase !== 'free' ? 'is-armed' : ''}`}
+            onClick={() => emit(TO_ENGINE.RITE, { action: rite.phase === 'free' ? 'begin' : 'aside' })}
+          >{rite.phase === 'free' ? 'Begin a Rite' : 'Set the Rite aside'}</button>
+          <button className={`ride-button ${rideArmed ? 'is-armed' : ''}`} onClick={() => emit(TO_ENGINE.RIDE)} aria-pressed={rideArmed}>{rideArmed ? 'Draw air ride' : 'Ride a path'}</button>
         </section>
       </div>
 
-      {introVisible && <section className="intro" role="dialog" aria-modal="true" aria-label="Elemental introduction">
-        <img className="intro__art" src={INTRO_ART} alt="" />
-        <div className="intro__panels" aria-hidden="true">
-          {INTRO_PANELS.map((panel, index) => <figure key={panel.id} className={`intro__panel intro__panel--${panel.id}`} style={{ '--panel-index': index } as CSSProperties}><figcaption>{panel.title}</figcaption></figure>)}
+      {introVisible && <section
+        className={`intro intro--${introBeat}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="FYE is opening"
+        ref={introRef}
+        tabIndex={-1}
+      >
+        <video
+          ref={introVideoRef}
+          className="intro__video"
+          src={INTRO_VIDEO_URL}
+          muted
+          playsInline
+          preload="auto"
+          aria-hidden="true"
+        />
+        <img
+          className={`intro__endcard ${introEndcardVisible ? 'is-visible' : ''} ${prefersReducedMotion || calm ? 'is-static' : ''}`}
+          src={`/media/intro/endcard-${currentElement.id}.jpg`}
+          alt=""
+          aria-hidden="true"
+        />
+        <div className="intro__copy">
+          <h1 className="intro__title">FYE</h1>
+          <span>Your camera stays on this device. Selected worlds stream when you enter them.</span>
         </div>
-        <div className="intro__copy"><p>Four forces. One hand.</p><h1>Become the motion.</h1><span>Camera frames and landmarks stay in this browser.</span></div>
         <button className="intro__skip" onClick={dismissIntro}>Skip intro</button>
       </section>}
 
-      {handsOpen && <section className="side-sheet" role="dialog" aria-modal="true" aria-labelledby="hands-title">
-        <button className="sheet-close" onClick={() => setHandsOpen(false)} aria-label="Close hand input panel">×</button>
-        <p className="eyebrow">Camera-first desktop input</p><h2 id="hands-title">Cast with your hands.</h2>
-        <p className="sheet-copy">Enable the camera with the button below. The live mirror and landmarks are processed in this browser only; no video, frames, or landmarks are saved.</p>
-        <div className={`input-health input-health--${inputState}`}><i /><span>{inputStatus}</span></div>
-        <ol className="gesture-guide"><li><b>1</b><span><strong>Calibrate</strong> Hold an open palm until the ring fills.</span></li><li><b>2</b><span><strong>Choose</strong> Fist = stone · two fingers = water · horns = fire · open hand = wind.</span></li><li><b>3</b><span><strong>Release</strong> Pinch thumb to index, draw, then open.</span></li></ol>
-        <div className="sheet-actions"><button className="cast-button" onClick={enableHands}>{inputState === 'ready' || inputState === 'tracking' ? 'Calibrate pose' : 'Enable hands'}</button>{(inputState === 'ready' || inputState === 'tracking' || inputState === 'requesting') && <button className="quiet-button" onClick={stopHands}>Use pointer instead</button>}</div>
+      <button
+        className="help-button"
+        onClick={() => { setHandsOpen(false); setWorkshopOpen(false); setHelpOpen(true); }}
+        aria-expanded={helpOpen}
+        aria-label="How this works"
+        title="How this works"
+      >?</button>
+
+      <HelpSheet open={helpOpen} onClose={closeHelp} />
+
+      {worldPickerOpen && <section className="world-picker" role="dialog" aria-modal="true" aria-labelledby="world-picker-title" ref={worldsRef} tabIndex={-1}>
+        <button className="sheet-close" onClick={closeWorldPicker} aria-label="Close world selection">×</button>
+        <p className="eyebrow">Prepared worlds</p>
+        <h2 id="world-picker-title">Choose your ground.</h2>
+        <p className="sheet-copy">Each ready destination streams approved public world assets. FYE never sends camera frames or hand landmarks with your selection.</p>
+        <div className="world-picker__grid">
+          {catalogCards.map((world) => {
+            const ready = world.kind === 'ritual' || worlds.some((entry) => entry.slug === world.slug);
+            const image = world.thumbnailUrl ?? world.imagePath
+              ?? (world.slug === 'ritual-stage' ? '/media/previews/ritual-stage.png' : null);
+            // Generated ambient loops live at /media/previews/<slug>.mp4.
+            // Motion is opt-in: reduced-motion and calm players always see
+            // the still, and ready cards only play while hovered/focused.
+            const preview = !prefersReducedMotion && !calm;
+            const cardVideo = (host: HTMLButtonElement | null) =>
+              host?.querySelector<HTMLVideoElement>('.world-card__preview') ?? null;
+            const playPreview = (event: FocusEvent<HTMLButtonElement> | MouseEvent<HTMLButtonElement>) => {
+              if (ready) void cardVideo(event.currentTarget)?.play().catch(() => {});
+            };
+            const stopPreview = (event: FocusEvent<HTMLButtonElement> | MouseEvent<HTMLButtonElement>) => {
+              const video = cardVideo(event.currentTarget);
+              if (video && ready) { video.pause(); video.currentTime = 0; }
+            };
+            return <button
+              key={world.slug}
+              className={`world-card ${selectedWorld === world.slug ? 'is-selected' : ''}`}
+              onClick={() => ready && selectWorld(world)}
+              disabled={!ready || !stageReady}
+              onMouseEnter={playPreview} onMouseLeave={stopPreview}
+              onFocus={playPreview} onBlur={stopPreview}
+              aria-pressed={selectedWorld === world.slug}
+              title={ready ? `Enter ${world.title}` : `${world.title} is being calibrated for safe exploration.`}
+            >
+              {preview ? (
+                <video
+                  className="world-card__preview"
+                  src={`/media/previews/${world.slug}.mp4`}
+                  poster={image ?? undefined}
+                  muted loop playsInline
+                  preload={ready ? 'none' : 'metadata'}
+                  autoPlay={!ready}
+                  aria-hidden="true"
+                />
+              ) : image ? <img src={image} alt="" /> : <span className="world-card__local" aria-hidden="true">✦</span>}
+              <span><small>{ready ? (world.kind === 'ritual' ? 'Local fallback' : 'Ready to explore') : 'Preparing'}</small><strong>{world.title}</strong><em>{world.summary}</em></span>
+            </button>;
+          })}
+        </div>
+        <p className="world-picker__note">Ready worlds use 500k splats on capable desktops and a 100k fallback on constrained devices. Destinations marked “Preparing” are not enterable yet; Ritual Stage remains available at the end of the list.</p>
       </section>}
 
-      {workshopOpen && <section className="side-sheet workshop" role="dialog" aria-modal="true" aria-labelledby="workshop-title">
-        <button className="sheet-close" onClick={() => setWorkshopOpen(false)} aria-label="Close local workshop">×</button>
+      {handsOpen && <section
+        className={`side-sheet hands-sheet ${handsDocking ? 'hands-sheet--docking' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="hands-title"
+        ref={handsRef}
+        tabIndex={-1}
+      >
+        <button className="sheet-close" onClick={closeHands} aria-label="Close hand input panel">×</button>
+        <div
+          className="sheet-drag-handle"
+          onPointerDown={beginHandsDrag}
+          onPointerMove={moveHandsDrag}
+          onPointerUp={endHandsDrag}
+          onPointerCancel={endHandsDrag}
+        >
+          <span className="sheet-grabber" aria-hidden="true" />
+          <p className="eyebrow">Camera hand tracking</p>
+          <h2 id="hands-title">Cast with your hands.</h2>
+        </div>
+        <p className="sheet-copy">FYE uses the position of one hand. The live mirror and landmarks stay in this browser; no video is recorded, sent, or stored. Declining leaves pointer casting unchanged.</p>
+        <div className={`input-health input-health--${inputState}`}><i /><span>{inputStatus}</span></div>
+        <p className="gesture-guide__title">Guide for {currentElement.label}</p>
+        <ol className="gesture-guide" aria-live="polite">
+          {gestureGuide.map((row) => <li key={row.name} className={guideRowIsLive(row) ? 'is-live' : (row.live === 'wake' && hand.engaged ? 'is-done' : '')}>
+            <b aria-hidden="true">{row.mark}</b><span><strong>{row.name}</strong> {row.does}</span>
+          </li>)}
+        </ol>
+        {(inputState === 'ready' || inputState === 'tracking') && <div className="hand-meters" aria-hidden="true">
+          <label><span>Wake</span><i style={{ '--v': hand.wake } as CSSProperties} /></label>
+          <label><span>Lift</span><i style={{ '--v': Math.min(1, hand.lift / 2.6) } as CSSProperties} /></label>
+          <label><span>Spread</span><i style={{ '--v': hand.spread } as CSSProperties} /></label>
+        </div>}
+        <div className="sheet-actions">
+          <button className="cast-button" onClick={enableHands}>{inputState === 'ready' || inputState === 'tracking' ? 'Calibrate pose' : 'Enable hands'}</button>
+          {(inputState === 'idle' || inputState === 'fallback' || inputState === 'unavailable') && !handsGranted
+            ? <button className="cast-button cast-button--secondary" onClick={declineHands}>Not now</button>
+            : <button className="quiet-button" onClick={stopHands}>Use pointer instead</button>}
+        </div>
+      </section>}
+
+      {workshopOpen && <section className="side-sheet workshop" role="dialog" aria-modal="true" aria-labelledby="workshop-title" ref={workshopRef} tabIndex={-1}>
+        <button className="sheet-close" onClick={closeWorkshop} aria-label="Close local workshop">×</button>
         <p className="eyebrow">Local workshop</p><h2 id="workshop-title">Shape the next cast.</h2>
         <p className="sheet-copy">These presets and dials only change this browser’s live stage. Nothing is uploaded or bound to an account.</p>
-        <div className="preset-grid" aria-label="Local spell presets">{HOUSE_SEED_SPELLS.slice(0, 8).map((preset) => <button key={preset.slug} onClick={() => choosePreset(preset)} data-element={preset.element}><small>{preset.element}</small><strong>{preset.name}</strong></button>)}</div>
+        {!storageAvailable && <p className="sheet-copy">This browser is not keeping site data, so your element and dials will not be here next time. Casting is unaffected.</p>}
+        <div className="stage-settings">
+          <label className="switch">
+            <input type="checkbox" checked={calm} onChange={(event) => toggleCalm(event.target.checked)} />
+            <span><strong>Calm mode</strong>No shake, no flash, no drifting camera, the glow well down. Separate from your system’s reduced-motion setting, so you can have either or both.</span>
+          </label>
+          {quality && quality.tier !== 'high' && <p className="stage-settings__note">
+            {quality.tier === 'balanced'
+              ? 'Running in balanced mode for a steady frame rate.'
+              : 'Running in conservative mode for a steady frame rate.'}
+          </p>}
+        </div>
+        <div className="preset-grid" aria-label="Local spell presets">{HOUSE_SEED_SPELLS.map((preset) => <button key={preset.slug} onClick={() => choosePreset(preset)} data-element={preset.element}><small>{labelOf(preset.element)}</small><strong>{preset.name}</strong></button>)}</div>
         <fieldset className="local-dials"><legend>{currentElement.label} dials</legend>{activeDials.map((dial) => {
           const value = dialValues[dial.path] ?? dial.value;
           return <label key={dial.path}><span>{dial.label}</span><output>{value.toFixed(dial.step >= 1 ? 0 : 1)}</output><input type="range" min={dial.min} max={dial.max} step={dial.step} value={value} onChange={(event) => adjustDial(dial, Number(event.target.value))} /></label>;

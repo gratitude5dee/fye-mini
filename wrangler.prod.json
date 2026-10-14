@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fye-prod",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "dist/server/index.js",
+  "assets": { "directory": "dist/client" },
+  "d1_databases": [
+    {
+      "binding": "WORLD_CATALOG",
+      "database_name": "fye-world-catalog-prod",
+      "database_id": "f5d4b2e9-8017-41ef-b82e-def6fe34cdd0",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

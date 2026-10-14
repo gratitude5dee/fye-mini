@@ -1,0 +1,177 @@
+import { MathUtils, Vector3 } from 'three';
+
+const _forward = new Vector3();
+const _right = new Vector3();
+const _wish = new Vector3();
+const _next = new Vector3();
+const _ground = new Vector3();
+const _up = new Vector3(0, 1, 0);
+
+/**
+ * Grounded third-person movement.  The character remains an ordinary Three
+ * object: this class owns only placement, velocity, and the small state that
+ * the procedural performance layer needs to read as a walk or run.
+ */
+export class LocomotionController {
+  constructor(character, camera, input, worlds) {
+    this.character = character;
+    this.camera = camera;
+    this.input = input;
+    this.worlds = worlds;
+    this.velocityY = 0;
+    this.grounded = true;
+    this.jumpHeld = false;
+    this.state = {
+      moving: false,
+      sprinting: false,
+      speed: 0,
+      grounded: true,
+      verticalVelocity: 0,
+      jumpPhase: 'grounded',
+      jumpTime: 0
+    };
+    this.spawn = new Vector3(0, 0, 0);
+    this.spawnYaw = 0;
+    this.airTime = 0;
+    this.landingTime = 0;
+    // Smoothed ground speed — eases toward the target so the walk band
+    // between 0 and sprint is actually traversed.
+    this.speed = 0;
+  }
+
+  setSpawn(spawn = {}) {
+    this.spawn.set(Number(spawn.x) || 0, Number(spawn.y) || 0, Number(spawn.z) || 0);
+    this.spawnYaw = Number(spawn.yaw) || 0;
+    this.resetToSpawn();
+  }
+
+  resetToSpawn() {
+    this.character.position.copy(this.spawn);
+    this.character.setFacing(this.spawnYaw);
+    this.character.setLean(0);
+    this.velocityY = 0;
+    this.grounded = true;
+    this.airTime = 0;
+    this.landingTime = 0;
+    this._syncState();
+  }
+
+  stop() {
+    this.state.moving = false;
+    this.state.sprinting = false;
+    this.state.speed = 0;
+    this.speed = 0;
+    this.velocityY = 0;
+    this.jumpHeld = this.input.keys.has('Space');
+    this.airTime = 0;
+    this.landingTime = 0;
+    this._syncState();
+  }
+
+  hasMovementInput() {
+    const keys = this.input.keys;
+    const keyboardMoving = ['KeyW', 'KeyA', 'KeyS', 'KeyD'].some((key) => keys.has(key));
+    if (keyboardMoving) {
+      const forward = (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0);
+      const side = (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0);
+      return forward !== 0 || side !== 0;
+    }
+    const axis = this.input.axis ?? { x: 0, y: 0 };
+    return Math.hypot(axis.x, axis.y) > 0.15;
+  }
+
+  update(dt, { locked = false } = {}) {
+    if (locked || dt <= 0) {
+      this.stop();
+      return;
+    }
+
+    const keys = this.input.keys;
+    const keyboardMoving = ['KeyW', 'KeyA', 'KeyS', 'KeyD'].some((key) => keys.has(key));
+    const axis = this.input.axis ?? { x: 0, y: 0 };
+    const axisMagnitude = Math.hypot(axis.x, axis.y);
+    const analogMoving = !keyboardMoving && axisMagnitude > 0.15;
+    const forward = keyboardMoving
+      ? (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0)
+      : analogMoving ? axis.y : 0;
+    const side = keyboardMoving
+      ? (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0)
+      : analogMoving ? axis.x : 0;
+    const moving = keyboardMoving ? forward !== 0 || side !== 0 : analogMoving;
+    const sprinting = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight'));
+    const target = !moving ? 0
+      : sprinting ? 7.1
+        : analogMoving ? Math.max(1.2, 4.2 * Math.min(1, (axisMagnitude - 0.15) / 0.75))
+          : 4.2;
+
+    // Ramp speed toward the target (~0.25s to walk pace). Acceleration and
+    // deceleration share one rate so releasing a key eases through walk on
+    // the way to idle rather than snapping to zero.
+    const accel = 18;
+    if (this.speed < target) this.speed = Math.min(target, this.speed + accel * dt);
+    else if (this.speed > target) this.speed = Math.max(target, this.speed - accel * dt);
+
+    this.state.moving = moving;
+    this.state.sprinting = sprinting;
+    this.state.speed = this.speed;
+
+    this.camera.getWorldDirection(_forward).setY(0);
+    if (_forward.lengthSq() < 1e-5) _forward.set(0, 0, -1);
+    _forward.normalize();
+    _right.crossVectors(_forward, _up).normalize();
+    _wish.copy(_forward).multiplyScalar(forward).addScaledVector(_right, side);
+    if (_wish.lengthSq() > 0) {
+      _wish.normalize();
+      const yaw = Math.atan2(_wish.x, _wish.z);
+      this.character.setFacing(MathUtils.damp(this.character.facing, yaw, 12, dt));
+
+      _next.copy(this.character.position).addScaledVector(_wish, this.speed * dt);
+      if (this.worlds.canTraverse(this.character.position, _next) && this.worlds.groundAt(_next, _ground)) {
+        const rise = _ground.y - this.character.position.y;
+        if (rise <= 0.62 || !this.grounded) {
+          this.character.position.x = _next.x;
+          this.character.position.z = _next.z;
+          if (this.grounded) this.character.position.y = _ground.y;
+        }
+      }
+    }
+
+    const wantsJump = keys.has('Space');
+    if (wantsJump && !this.jumpHeld && this.grounded) {
+      this.velocityY = 6.1;
+      this.grounded = false;
+      this.airTime = 0;
+      this.landingTime = 0;
+    }
+    this.jumpHeld = wantsJump;
+
+    if (!this.grounded) {
+      this.airTime += dt;
+      this.velocityY -= 17.5 * dt;
+      this.character.position.y += this.velocityY * dt;
+      if (this.worlds.groundAt(this.character.position, _ground) && this.character.position.y <= _ground.y) {
+        this.character.position.y = _ground.y;
+        this.velocityY = 0;
+        this.grounded = true;
+        this.landingTime = 0.16;
+      } else if (this.character.position.y < this.spawn.y - 8) {
+        this.resetToSpawn();
+      }
+    } else if (this.worlds.groundAt(this.character.position, _ground)) {
+      this.character.position.y = _ground.y;
+    }
+    if (this.landingTime > 0) this.landingTime = Math.max(0, this.landingTime - dt);
+    this._syncState();
+  }
+
+  _syncState() {
+    this.state.grounded = this.grounded;
+    this.state.verticalVelocity = this.velocityY;
+    this.state.jumpTime = this.airTime;
+    if (this.landingTime > 0) this.state.jumpPhase = 'landing';
+    else if (this.grounded) this.state.jumpPhase = 'grounded';
+    else if (this.velocityY > 1.15) this.state.jumpPhase = 'rise';
+    else if (this.velocityY < -1.15) this.state.jumpPhase = 'fall';
+    else this.state.jumpPhase = 'apex';
+  }
+}

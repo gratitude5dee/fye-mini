@@ -62,9 +62,15 @@ export class AbilityManager {
 
   /**
    * Cast the currently selected element along `curve`.
+   *
+   * @param {THREE.Curve} curve
+   * @param {string} [element]
+   * @param {{lift?: ((u: number) => number)|null}} [options] per-cast altitude
+   *   on top of the element's own — what a raised hand supplies and a pointer,
+   *   pinned to the ground plane, cannot.
    * @returns {import('./Ability.js').Ability|null}
    */
-  cast(curve, element = this.selected) {
+  cast(curve, element = this.selected, { lift = null } = {}) {
     if (!ABILITY_TYPES[element]) return null;
 
     // Retire the oldest cast rather than letting the scene grow without bound.
@@ -75,6 +81,10 @@ export class AbilityManager {
     }
 
     const ability = this.pools.get(element).acquire();
+    // Applied before `spawn`, which samples the trajectory immediately for the
+    // head, the trailing window and the light. Setting it afterwards would
+    // leave the first frame of the cast on the ground and then jump.
+    ability.setLift(lift);
     ability.spawn(curve);
     this.active.push(ability);
     return ability;

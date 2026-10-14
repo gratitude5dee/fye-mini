@@ -162,7 +162,10 @@ export const settings = {
   camera: {
     distance: 11.5,
     minDistance: 3.5, // scroll-wheel zoom range
-    maxDistance: 30,
+    // Raised from 30: a portrait phone needs a long push back to show a wide
+    // layout, and the ceiling was cutting that short rather than the framing
+    // solve deciding it.
+    maxDistance: 40,
     zoomSpeed: 1.0,
     zoomDamping: 0.002, // fraction of the zoom gap left after 1s
     minPolar: 0.35,
@@ -170,7 +173,24 @@ export const settings = {
     fov: 46,
     targetHeight: 1.35,
     damping: 0.06,
-    autoFrame: 0.35 // how strongly the rig drifts toward active abilities
+    autoFrame: 0.35, // how strongly the rig drifts toward active abilities
+    /**
+     * Metres of ground the player must be able to see across the screen, in
+     * free play, when there is no layout asking for more.
+     *
+     * `fov` is vertical, so visible ground *across* the screen is proportional
+     * to aspect: measured on the real rig at the authored distance, a 1280x720
+     * laptop sees 22.8 m, a 900x1200 tablet 9.62 m and a 390x844 phone 5.93 m.
+     * This floor keeps a phone from framing so tight that the caster has no
+     * room to cast into; a Rite asks for more, per line, through
+     * `CameraRig.requireGroundSpan`.
+     */
+    minGroundSpan: 9.0,
+    /**
+     * Metres of clear ground kept outside whatever the Rite asks to fit, so a
+     * waystone never sits flush against the edge of the screen.
+     */
+    groundSpanMargin: 2.4
   },
 
   /* ------------------------------------------------------------------ */
@@ -216,6 +236,55 @@ export const settings = {
   },
 
   /* ------------------------------------------------------------------ */
+  /* The Rite — game rules                                               */
+  /* ------------------------------------------------------------------ */
+  /**
+   * Deliberately given no entries in `EXACT_SPELL_RANGES`.
+   *
+   * `App._applyFlatPatch` refuses any path without a declared range, so a
+   * cosmetic preset can never reach in here and rewrite the game's balance.
+   * Presentation values that genuinely change how a cast feels live in the
+   * element blocks instead, with ranges, where a preset may touch them.
+   */
+  rite: {
+    /** Lines in a Rite, before the generator scales it. */
+    lines: 3,
+    /** Attempts per line. Best kept; the stone shows which attempt lit it. */
+    attempts: 3,
+    /** Radius of a waystone's accept ring, metres. Drawn, so the player sees it. */
+    waystoneRadius: 1.15,
+    /** Each failed attempt widens it by this factor. The player is never told. */
+    waystoneForgiveness: 1.18,
+    /** Visible radius of a hazard region, metres. */
+    hazardRadius: 1.25,
+    /** A stroke sample above this height clears a hazard instead of clipping it. */
+    hazardClearance: 1.2,
+    /**
+     * How high each element flies, for the purpose of clearing a hazard.
+     *
+     * Deliberately *not* read from `Ability.pathHeight`. Water's altitude
+     * includes a travelling swell driven by `frame.uTime`, so judging against
+     * the live value made the same line solve or fail depending on when it was
+     * cast — the clock decided, not the player. These are static, declared, and
+     * out of reach of any cosmetic preset, because they decide solvability.
+     *
+     * Fire is the only element that crosses on its own. Everything else needs a
+     * raised hand, which is the whole point of the lift axis.
+     */
+    flightFloor: { fire: 1.45, water: 0, earth: 0, air: 0 },
+    /** Ring of the ritual ground the generator places on, metres. */
+    fieldRadius: 7.0,
+    /**
+     * Shortest allowed gap between two waystones, metres.
+     *
+     * Must exceed `2 * waystoneRadius + 2 * hazardRadius` or a hazard can never
+     * sit between a pair without swallowing one of them, and every tier comes
+     * out short of the hazards it asked for.
+     */
+    featureSpacing: 5.2
+  },
+
+  /* ------------------------------------------------------------------ */
   /* Post processing                                                     */
   /* ------------------------------------------------------------------ */
   post: {
@@ -243,6 +312,10 @@ export const settings = {
   fire: {
     speed: 11.5,
     lifetime: 2.6,
+    // How far a cast reaches when it is aimed rather than drawn. Drawn strokes
+    // ignore these; they bound the aim indicator and the generator's layouts.
+    range: 18.0,
+    minRange: 1.2,
     // Flight: fire does not crawl along the drawn path, it flies above it
     flightHeight: 1.0, // cruise altitude above the ground
     flightArc: 0.29, // extra lob in the middle of the path
@@ -354,6 +427,10 @@ export const settings = {
   water: {
     speed: 7.5,
     lifetime: 3.0,
+    // How far a cast reaches when it is aimed rather than drawn. Drawn strokes
+    // ignore these; they bound the aim indicator and the generator's layouts.
+    range: 18.0,
+    minRange: 1.2,
     // Flight — the body surges over the drawn path rather than crawling on it
     height: 1.0, // cruise height above the ground
     surge: 0.2, // amplitude of the vertical undulation
@@ -437,6 +514,10 @@ export const settings = {
   earth: {
     speed: 6.0,
     lifetime: 3.2,
+    // How far a cast reaches when it is aimed rather than drawn. Drawn strokes
+    // ignore these; they bound the aim indicator and the generator's layouts.
+    range: 18.0,
+    minRange: 1.2,
     // The crust laid down along the path, before anything breaks
     crustWidth: 0.5, // metres of ground paved either side of the path
     crustDensity: 1.12, // plates per square metre multiplier
@@ -497,6 +578,10 @@ export const settings = {
   wind: {
     speed: 14.0,
     lifetime: 2.4,
+    // How far a cast reaches when it is aimed rather than drawn. Drawn strokes
+    // ignore these; they bound the aim indicator and the generator's layouts.
+    range: 18.0,
+    minRange: 1.2,
     // Silk sheets — each strip is combed into `filamentCount` hairlines, so it
     // is far wider and fainter than a single-strand ribbon would be. The bundle
     // is carried by sheet width, not by winding the strips tightly, hence the

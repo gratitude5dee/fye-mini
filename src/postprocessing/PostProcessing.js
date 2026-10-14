@@ -88,6 +88,7 @@ export class PostProcessing {
     this.composer.addPass(this.gradePass);
 
     this._clearColor = new Color();
+    this.worldVisualMode = false;
   }
 
   /** Opaque depth for soft particles. */
@@ -105,6 +106,10 @@ export class PostProcessing {
     scene.background = null;
     scene.overrideMaterial = this.depthMaterial;
     camera.layers.set(LAYER.WORLD);
+    // World splats are transparent and must not be flattened into an opaque
+    // depth texture. Their calibrated collider is invisible in the beauty pass
+    // but gives particles and trails a truthful ground intersection here.
+    camera.layers.enable(LAYER.COLLIDER);
 
     gl.setRenderTarget(this.depthTarget);
     gl.setClearColor(0xffffff, 1); // "infinitely far"
@@ -145,15 +150,20 @@ export class PostProcessing {
   /** Push editor values into the passes. Called once per frame. */
   sync(elapsed, flash) {
     const post = settings.post;
+    // Preserve source detail in externally generated splat scenes. The local
+    // stage's bloom and refraction are intentionally theatrical; on a bright
+    // baked world they wash stone, leaves, and distant silhouettes together.
+    const bloomStrength = this.worldVisualMode ? Math.min(post.bloomStrength, .16) : post.bloomStrength;
+    const bloomThreshold = this.worldVisualMode ? Math.max(post.bloomThreshold, 1.1) : post.bloomThreshold;
 
-    this.bloomPass.strength = post.bloomStrength;
+    this.bloomPass.strength = bloomStrength;
     this.bloomPass.radius = post.bloomRadius;
-    this.bloomPass.threshold = post.bloomThreshold;
-    this.bloomPass.enabled = post.enabled && post.bloomStrength > 0.001;
+    this.bloomPass.threshold = bloomThreshold;
+    this.bloomPass.enabled = post.enabled && bloomStrength > 0.001;
 
     const u = this.gradePass.uniforms;
     u.uTime.value = elapsed;
-    u.uAberration.value = post.enabled ? post.chromaticAberration : 0;
+    u.uAberration.value = post.enabled && !this.worldVisualMode ? post.chromaticAberration : 0;
     u.uVignette.value = post.enabled ? post.vignette : 0;
     u.uContrast.value = post.enabled ? post.contrast : 1;
     u.uSaturation.value = post.enabled ? post.saturation : 1;
@@ -164,8 +174,12 @@ export class PostProcessing {
     u.uFlashStrength.value = flash.strength;
     u.uFlashColor.value.copy(flash.color);
 
-    this.distortionPass.uniforms.uScale.value = post.enabled ? 0.045 : 0;
-    this.distortionPass.enabled = post.enabled;
+    this.distortionPass.uniforms.uScale.value = post.enabled && !this.worldVisualMode ? 0.045 : 0;
+    this.distortionPass.enabled = post.enabled && !this.worldVisualMode;
+  }
+
+  setWorldVisualMode(active) {
+    this.worldVisualMode = Boolean(active);
   }
 
   render() {
