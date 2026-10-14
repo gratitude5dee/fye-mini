@@ -71,6 +71,36 @@ test('ground speed ramps toward the target instead of snapping', () => {
   assert.ok(controller.state.speed < 4.2 && controller.state.speed > 0, 'release eases down');
 });
 
+test('the analog axis ramps by deflection and yields to keyboard input', () => {
+  const { input, character, controller } = makeController();
+  input.axis = { x: 0, y: 0.4 };
+  for (let frame = 0; frame < 60; frame++) controller.update(1 / 60);
+  assert.equal(controller.state.moving, true);
+  assert.ok(-character.position.z > 0, 'positive Y moves forward');
+  assert.ok(Math.abs(controller.state.speed - Math.max(1.2, 4.2 * ((0.4 - 0.15) / 0.75))) < 1e-9);
+
+  controller.resetToSpawn();
+  input.axis = { x: 0, y: 1 };
+  for (let frame = 0; frame < 60; frame++) controller.update(1 / 60);
+  assert.equal(controller.state.speed, 4.2);
+
+  input.keys.add('KeyW');
+  input.axis = { x: 1, y: 0 };
+  controller.update(1 / 60);
+  assert.ok(controller.state.speed <= 4.2, 'held keyboard direction overrides the axis');
+
+  input.keys.clear();
+  input.keys.add('ShiftLeft');
+  input.axis = { x: 0, y: 1 };
+  for (let frame = 0; frame < 60; frame++) controller.update(1 / 60);
+  assert.equal(controller.state.speed, 7.1);
+
+  input.keys.clear();
+  input.axis = { x: 0, y: 0.14 };
+  controller.update(1 / 60);
+  assert.equal(controller.state.moving, false);
+});
+
 test('modal and loading lockout leave the caster still', () => {
   const { input, character, controller } = makeController();
   input.keys.add('KeyD');

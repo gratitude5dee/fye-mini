@@ -87,11 +87,17 @@ test('third-person controls coexist with casting, air travel, and opt-in hands',
   // the same `input.keys` the hardware fills.
   assert.doesNotMatch(stage, /Mobile never requests your camera/);
   assert.match(stage, /touch-move/);
+  assert.match(stage, /className=\{`joystick/);
+  assert.match(stage, /setAxis/);
   assert.match(stage, /pad-key/);
   assert.match(stage, /pressKey/);
   // Slide handover: under capture a pointermove hit-tests the key under the
   // finger and moves the hold to it; a document sweep drops keys on any lift.
   assert.match(stage, /elementFromPoint/);
+  assert.match(stage, /hands-notch/);
+  assert.match(stage, /sheet-grabber/);
+  assert.match(stage, /rite-vignette/);
+  assert.match(stage, /intro__endcard/);
   assert.match(stage, /onPointerMove/);
   assert.match(stage, /onPointerEnter/);
   assert.match(stage, /data-code/);

@@ -2,6 +2,7 @@ import { Vector2 } from 'three';
 
 import { TO_UI } from '../state/events.js';
 import { ELEMENTS } from '../config/settings.js';
+import { clampRect, snapToEdge } from './drag.js';
 
 /** Pose name to the engine's element index. `wind` is the engine's word for air. */
 const ELEMENT_INDEX = Object.freeze(
@@ -126,6 +127,9 @@ export class HandInput {
     this._context = null;
     this._filter = null;
     this._delegate = null;
+    this._mirrorDrag = null;
+    this._mirrorPosition = null;
+    this._onMirrorResize = () => this._positionMirror();
     // Starting a camera and compiling the tracker are both asynchronous. Keep
     // one owner for that work so a double-click cannot acquire two streams,
     // and make a pending start cancellable when the visitor skips the ritual.
@@ -226,8 +230,118 @@ export class HandInput {
     this._label = mirror.querySelector('span');
     this._ring = mirror.querySelector('i');
     this._mirror = mirror;
+    mirror.addEventListener('pointerdown', this._onMirrorPointerDown);
+    mirror.addEventListener('pointermove', this._onMirrorPointerMove);
+    mirror.addEventListener('pointerup', this._onMirrorPointerUp);
+    mirror.addEventListener('pointercancel', this._onMirrorPointerUp);
+    mirror.addEventListener('lostpointercapture', this._onMirrorPointerUp);
+    window.addEventListener('resize', this._onMirrorResize);
+    this._positionMirror();
     this._setAccent('air');
   }
+
+  _positionMirror() {
+    if (!this._mirror) return;
+    const rect = this._mirror.getBoundingClientRect();
+    const margin = 8;
+    let position = this._mirrorPosition;
+    if (!position) {
+      let stored = null;
+      try {
+        stored = JSON.parse(localStorage.getItem('fye.handMirror.pos') || 'null');
+      } catch {}
+      if (stored && ['left', 'right'].includes(stored.side) && Number.isFinite(stored.yFrac)) position = stored;
+      else {
+        const snapped = snapToEdge(
+          { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
+          { vw: window.innerWidth, vh: window.innerHeight },
+          margin
+        );
+        const maxY = Math.max(margin, window.innerHeight - rect.height - margin);
+        position = {
+          side: snapped.side,
+          yFrac: maxY > margin ? (snapped.y - margin) / (maxY - margin) : 0
+        };
+      }
+    }
+    const maxY = Math.max(margin, window.innerHeight - rect.height - margin);
+    const y = clampRect(
+      { x: position.side === 'left' ? margin : window.innerWidth - rect.width - margin, y: margin + position.yFrac * Math.max(0, maxY - margin), w: rect.width, h: rect.height },
+      { vw: window.innerWidth, vh: window.innerHeight },
+      margin
+    ).y;
+    const x = position.side === 'left' ? margin : Math.max(margin, window.innerWidth - rect.width - margin);
+    this._mirror.style.left = `${x}px`;
+    this._mirror.style.top = `${y}px`;
+    this._mirror.style.right = 'auto';
+    this._mirror.style.bottom = 'auto';
+    this._mirrorPosition = {
+      side: position.side,
+      yFrac: maxY > margin ? (y - margin) / (maxY - margin) : 0
+    };
+  }
+
+  _onMirrorPointerDown = (event) => {
+    if (event.button !== 0 || !this._mirror) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = this._mirror.getBoundingClientRect();
+    this._mirror.classList.remove('is-snapping');
+    this._mirror.style.cursor = 'grabbing';
+    this._mirrorDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      left: rect.left,
+      top: rect.top,
+      moved: false
+    };
+    this._mirror.setPointerCapture(event.pointerId);
+  };
+
+  _onMirrorPointerMove = (event) => {
+    const drag = this._mirrorDrag;
+    if (!drag || drag.pointerId !== event.pointerId || !this._mirror) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+    drag.moved = true;
+    const rect = this._mirror.getBoundingClientRect();
+    const clamped = clampRect(
+      { x: drag.left + dx, y: drag.top + dy, w: rect.width, h: rect.height },
+      { vw: window.innerWidth, vh: window.innerHeight }
+    );
+    this._mirror.style.left = `${clamped.x}px`;
+    this._mirror.style.top = `${clamped.y}px`;
+    this._mirror.style.right = 'auto';
+    this._mirror.style.bottom = 'auto';
+  };
+
+  _onMirrorPointerUp = (event) => {
+    const drag = this._mirrorDrag;
+    if (!drag || drag.pointerId !== event.pointerId || !this._mirror) return;
+    this._mirrorDrag = null;
+    this._mirror.style.cursor = 'grab';
+    if (!drag.moved) return;
+    const rect = this._mirror.getBoundingClientRect();
+    const snapped = snapToEdge(
+      { x: rect.left, y: rect.top, w: rect.width, h: rect.height },
+      { vw: window.innerWidth, vh: window.innerHeight }
+    );
+    const maxY = Math.max(8, window.innerHeight - rect.height - 8);
+    this._mirrorPosition = {
+      side: snapped.side,
+      yFrac: maxY > 8 ? (snapped.y - 8) / (maxY - 8) : 0
+    };
+    this._mirror.classList.add('is-snapping');
+    this._mirror.style.left = `${snapped.x}px`;
+    this._mirror.style.top = `${snapped.y}px`;
+    try {
+      localStorage.setItem('fye.handMirror.pos', JSON.stringify(this._mirrorPosition));
+    } catch {}
+  };
 
   _setAccent(element) {
     const colors = { fire: '#ff6a3c', water: '#3fb8c9', earth: '#a08a63', air: '#bfe8df', wind: '#bfe8df' };
@@ -703,6 +817,15 @@ export class HandInput {
     this._landmarker = null;
     this._stream?.getTracks().forEach((track) => track.stop());
     this._stream = null;
+    if (this._mirror) {
+      this._mirror.removeEventListener('pointerdown', this._onMirrorPointerDown);
+      this._mirror.removeEventListener('pointermove', this._onMirrorPointerMove);
+      this._mirror.removeEventListener('pointerup', this._onMirrorPointerUp);
+      this._mirror.removeEventListener('pointercancel', this._onMirrorPointerUp);
+      this._mirror.removeEventListener('lostpointercapture', this._onMirrorPointerUp);
+    }
+    window.removeEventListener('resize', this._onMirrorResize);
+    this._mirrorDrag = null;
     this._mirror?.remove();
     // Hot reloads and interrupted browser permission flows can leave a mirror
     // from an instance that no longer owns a stream. It never needs to survive
