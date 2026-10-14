@@ -187,6 +187,7 @@ export function GrimoireStage() {
   const [dialValues, setDialValues] = useState<Record<string, number>>({});
   const [storageAvailable, setStorageAvailable] = useState(true);
   const [rite, setRite] = useState<RiteState>(IDLE_RITE);
+  const prevRitePhaseRef = useRef<RiteState['phase']>(rite.phase);
   const [riteVignetteVisible, setRiteVignetteVisible] = useState(false);
   const [introEndcardVisible, setIntroEndcardVisible] = useState(false);
   const [introBeat, setIntroBeat] = useState('dark');
@@ -305,14 +306,21 @@ export function GrimoireStage() {
   }, [introVisible, prefersReducedMotion, stageReady]);
 
   useEffect(() => {
-    const visible = rite.phase === 'close' && rite.ward.some(Boolean);
-    if (!visible) return;
-    if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
-    setRiteVignetteVisible(true);
-    riteDismissTimerRef.current = window.setTimeout(() => {
+    const enteringClose = prevRitePhaseRef.current !== 'close' && rite.phase === 'close';
+    prevRitePhaseRef.current = rite.phase;
+    if (enteringClose && rite.ward.some(Boolean)) {
+      if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
+      setRiteVignetteVisible(true);
+      riteDismissTimerRef.current = window.setTimeout(() => {
+        setRiteVignetteVisible(false);
+        riteDismissTimerRef.current = null;
+      }, 5000);
+    }
+    if (rite.phase !== 'close') {
       setRiteVignetteVisible(false);
+      if (riteDismissTimerRef.current !== null) window.clearTimeout(riteDismissTimerRef.current);
       riteDismissTimerRef.current = null;
-    }, 5000);
+    }
   }, [rite]);
 
   useEffect(() => () => {
@@ -894,7 +902,7 @@ export function GrimoireStage() {
         {riteVignetteVisible && (
           <section className="rite-vignette" aria-live="polite" aria-label={`${currentElement.label} ward vignette`}>
             {prefersReducedMotion || calm
-              ? <img src={`/media/rite/ward-${currentElement.id}.png`} alt="" />
+              ? <img src={`/media/rite/ward-${currentElement.id}.jpg`} alt="" />
               : <video
                 src={`/media/rite/ward-${currentElement.id}.mp4`}
                 muted
@@ -1023,7 +1031,7 @@ export function GrimoireStage() {
         />
         <img
           className={`intro__endcard ${introEndcardVisible ? 'is-visible' : ''} ${prefersReducedMotion || calm ? 'is-static' : ''}`}
-          src={`/media/intro/endcard-${currentElement.id}.png`}
+          src={`/media/intro/endcard-${currentElement.id}.jpg`}
           alt=""
           aria-hidden="true"
         />

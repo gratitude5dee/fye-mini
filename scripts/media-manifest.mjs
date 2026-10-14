@@ -67,7 +67,7 @@ export const JOBS = [
     name: `endcard-${id}`,
     kind: 'image',
     prompt: `Cinematic wide 16:9 end-card for an elemental fantasy game: a lone caster seen from behind at center, ${words} around them, dark charcoal background with deep vignette, ${hex} accent light, painterly, high contrast, generous empty space in the upper third, no text, no letters, no logos, no watermark.`,
-    out: `media/intro/endcard-${id}.png`
+    out: `media/intro/endcard-${id}.jpg`
   })),
   ...[
     ['fire', 'a rising spiral of embers and fire ribbons', '#ff6a3c'],
@@ -78,7 +78,7 @@ export const JOBS = [
     name: `ward-${id}-still`,
     kind: 'image',
     prompt: `Top-down cinematic view of a circular ritual ward on a dark stone floor, a ring of carved ward stones all ignited with ${words}, glowing sigil lines connecting the stones, ${hex} light, mystical, 16:9, no text, no letters, no logos.`,
-    out: `media/rite/ward-${id}.png`
+    out: `media/rite/ward-${id}.jpg`
   })),
   ...[
     ['fire', '#ff6a3c'],
@@ -88,7 +88,7 @@ export const JOBS = [
   ].map(([id, hex]) => ({
     name: `ward-${id}-video`,
     kind: 'video',
-    source: `media/rite/ward-${id}.png`,
+    source: `media/rite/ward-${id}.jpg`,
     prompt: `The ward stones flare one after another and the sigil ring ignites, a soft column of ${hex} light rises from the center then settles into a calm steady glow; slow camera push-in; no text.`,
     out: `media/rite/ward-${id}.mp4`
   }))

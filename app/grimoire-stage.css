@@ -203,7 +203,7 @@
 .hands-notch--ready i, .hands-notch--tracking i { color: #a8f0dc; background: #a8f0dc; }
 .hands-notch--fallback i, .hands-notch--unavailable i { color: #ffb65d; background: #ffb65d; }
 .hands-notch--requesting i { color: #bfe8df; background: #bfe8df; }
-.hands-sheet { animation: hands-sheet-in-mobile .36s cubic-bezier(.2, 1.3, .4, 1) both; }
+.hands-sheet { animation: hands-sheet-in-mobile .36s cubic-bezier(.2, 1.3, .4, 1) backwards; }
 .hands-sheet.is-dragging { transition: none !important; }
 .hands-sheet.is-springing { transition: transform .32s cubic-bezier(.2, 1.3, .4, 1); }
 .hands-sheet--docking { transition: transform .2s ease-in; transform: translateY(110%); }
@@ -219,7 +219,7 @@
 @keyframes hands-sheet-in-mobile { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @media (min-width: 680px) {
   .hands-notch { top: 50%; right: 0; bottom: auto; transform: translateY(-50%); }
-  .hands-sheet { animation-name: hands-sheet-in-desktop; }
+  .hands-sheet { animation-name: hands-sheet-in-desktop; animation-fill-mode: backwards; }
   .hands-sheet--docking { transform: translate(110%, -50%); }
 }
 @keyframes hands-sheet-in-desktop { from { transform: translate(24px, -50%); } to { transform: translate(0, -50%); } }

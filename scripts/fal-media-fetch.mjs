@@ -7,7 +7,8 @@
  *
  * Every job in scripts/media-manifest.mjs is submitted, polled, and its
  * output downloaded to output/fal/media/<name>.<ext> for review. Reviewed
- * assets are then copied to public/media/ by the script's --publish step.
+ * assets are then normalized and published to public/media/ by the script's
+ * --publish step.
  * Runtime never calls fal — everything ships as static files.
  *
  * Requires FAL_KEY in the environment.
@@ -15,8 +16,9 @@
  *   FAL_KEY=... node scripts/fal-media-fetch.mjs [--only <name[,name]>] [--publish]
  */
 
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { access, copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JOBS } from './media-manifest.mjs';
 
@@ -72,6 +74,22 @@ const poll = async (endpoint, rid) => {
 
 const CONTENT_TYPE = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
 
+const runFfmpeg = (...args) => {
+  const result = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], { stdio: 'inherit' });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`ffmpeg exited with status ${result.status}`);
+};
+
+const exists = async (path) => {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+};
+
 const runJob = async (job) => {
   let endpoint, input;
   if (job.kind === 'image') {
@@ -93,9 +111,22 @@ const runJob = async (job) => {
   const result = await poll(endpoint, rid);
   const file = result.video ?? result.images?.[0] ?? result.image;
   if (!file?.url) throw new Error(`${job.name}: no file in result`);
-  const dest = join(STAGE, basename(job.out));
+  const response = await fetch(file.url);
+  if (!response.ok) throw new Error(`${job.name}: download failed with ${response.status}`);
+  const responseType = response.headers.get('content-type')?.split(';')[0] ?? file.content_type;
+  const responseExtension = {
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/jpeg': '.jpg',
+    'video/mp4': '.mp4'
+  }[responseType] ?? (
+    extname(new URL(file.url).pathname).toLowerCase()
+    || (extname(job.out).toLowerCase() === '.jpg' ? '.png' : extname(job.out))
+  );
+  const stagedExtension = job.kind === 'video' ? '.mp4' : responseExtension;
+  const dest = join(STAGE, `${basename(job.out, extname(job.out))}${stagedExtension}`);
   await mkdir(dirname(dest), { recursive: true });
-  await writeFile(dest, Buffer.from(await (await fetch(file.url)).arrayBuffer()));
+  await writeFile(dest, Buffer.from(await response.arrayBuffer()));
   console.log(`  done → ${dest}`);
 };
 
@@ -113,10 +144,38 @@ if (!publish) for (const job of JOBS) {
 if (publish) {
   for (const job of JOBS) {
     if (only && !only.includes(job.name)) continue;
-    const src = join(STAGE, basename(job.out));
+    const extension = extname(job.out).toLowerCase();
+    const name = basename(job.out, extension);
+    const stagedExtensions = extension === '.jpg' ? ['.png', '.webp', '.jpg', '.jpeg'] : [extension];
+    let src = null;
+    for (const stagedExtension of stagedExtensions) {
+      const candidate = join(STAGE, `${name}${stagedExtension}`);
+      if (await exists(candidate)) {
+        src = candidate;
+        break;
+      }
+    }
+    if (!src) throw new Error(`${job.name}: no staged source for ${job.out}`);
     const dest = join(ROOT, 'public', job.out);
     await mkdir(dirname(dest), { recursive: true });
-    await copyFile(src, dest);
+    const stagedExtension = extname(src).toLowerCase();
+    if (extension === '.jpg' && ['.png', '.webp'].includes(stagedExtension)) {
+      runFfmpeg('-i', src, '-q:v', '3', dest);
+    } else if (extension === '.mp4') {
+      runFfmpeg(
+        '-i', src,
+        '-an',
+        '-vf', "scale='min(960,iw)':-2",
+        '-c:v', 'libx264',
+        '-crf', '28',
+        '-preset', 'slow',
+        '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+        dest
+      );
+    } else {
+      await copyFile(src, dest);
+    }
     console.log(`published ${job.out}`);
   }
 }

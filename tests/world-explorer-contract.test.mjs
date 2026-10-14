@@ -97,6 +97,8 @@ test('third-person controls coexist with casting, air travel, and opt-in hands',
   assert.match(stage, /hands-notch/);
   assert.match(stage, /sheet-grabber/);
   assert.match(stage, /rite-vignette/);
+  assert.match(stage, /prevRitePhaseRef/);
+  assert.match(stage, /rite\.phase !== 'close'/);
   assert.match(stage, /intro__endcard/);
   assert.match(stage, /onPointerMove/);
   assert.match(stage, /onPointerEnter/);
