@@ -101,6 +101,22 @@ test('the analog axis ramps by deflection and yields to keyboard input', () => {
   assert.equal(controller.state.moving, false);
 });
 
+test('movement input stays available while a path is being drawn', () => {
+  const { input, controller } = makeController();
+  assert.equal(controller.hasMovementInput(), false);
+
+  input.axis = { x: 0, y: 0.15 };
+  assert.equal(controller.hasMovementInput(), false);
+  input.axis = { x: 0, y: 1 };
+  assert.equal(controller.hasMovementInput(), true);
+
+  input.axis = { x: 0, y: 0 };
+  input.keys.add('KeyW');
+  assert.equal(controller.hasMovementInput(), true);
+  input.keys.add('KeyS');
+  assert.equal(controller.hasMovementInput(), false);
+});
+
 test('modal and loading lockout leave the caster still', () => {
   const { input, character, controller } = makeController();
   input.keys.add('KeyD');

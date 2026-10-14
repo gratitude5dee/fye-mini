@@ -645,8 +645,10 @@ export class App {
     this.sigil.update(this.elapsed);
     this.sigil.faceCamera(this.camera);
     this.pathDrawer.update(raw);
+    const movementInputActive = this.locomotion?.hasMovementInput() ?? false;
     this.locomotion?.update(dt, {
-      locked: this.worldLoading || this.paused || this.walk?.active || this.pathDrawer.active
+      locked: this.worldLoading || this.paused || this.walk?.active ||
+        (this.pathDrawer.active && !movementInputActive)
     });
     this.motion?.update(dt);
     this.abilities.update(dt);

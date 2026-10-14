@@ -5,7 +5,7 @@ import { HOUSE_SEED_SPELLS } from '../src/config/house-spells';
 import { TO_ENGINE, TO_UI } from '../src/state/events.js';
 import { isPersistent, read as readPreferences, write as persistPreferences } from '../src/state/preferences.js';
 import { RITUAL_WORLD, WORLD_PRIORS } from '../src/world/world-seeds.js';
-import { shouldDock } from '../src/input/drag.js';
+import { flickVelocity, shouldDock } from '../src/input/drag.js';
 import { useDialog } from './useDialog';
 import { HelpSheet } from './HelpSheet';
 import './grimoire-stage.css';
@@ -163,11 +163,17 @@ type StageInput = {
   clearAxis?(): void;
 };
 const stageInput = () => (window as unknown as { app?: { input?: StageInput } }).app?.input;
+const MAX_HANDS_DRAG_SAMPLES = 6;
 
 export function GrimoireStage() {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const introVideoRef = useRef<HTMLVideoElement>(null);
-  const handsDragRef = useRef<{ pointerId: number; startY: number; startedAt: number; height: number } | null>(null);
+  const handsDragRef = useRef<{
+    pointerId: number;
+    startY: number;
+    height: number;
+    samples: Array<{ y: number; t: number }>;
+  } | null>(null);
   const handsDockTimerRef = useRef<number | null>(null);
   const riteDismissTimerRef = useRef<number | null>(null);
   const trackerActiveRef = useRef(false);
@@ -691,11 +697,12 @@ export function GrimoireStage() {
     const sheet = handsRef.current;
     if (!sheet || handsDocking) return;
     event.preventDefault();
+    const now = performance.now();
     handsDragRef.current = {
       pointerId: event.pointerId,
       startY: event.clientY,
-      startedAt: performance.now(),
-      height: sheet.getBoundingClientRect().height
+      height: sheet.getBoundingClientRect().height,
+      samples: [{ y: event.clientY, t: now }]
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     sheet.classList.remove('is-springing');
@@ -706,6 +713,8 @@ export function GrimoireStage() {
     const drag = handsDragRef.current;
     const sheet = handsRef.current;
     if (!drag || drag.pointerId !== event.pointerId || !sheet) return;
+    drag.samples.push({ y: event.clientY, t: performance.now() });
+    if (drag.samples.length > MAX_HANDS_DRAG_SAMPLES) drag.samples.shift();
     const dy = event.clientY - drag.startY;
     const offset = dy >= 0 ? dy : Math.max(-12, dy * 0.2);
     const mobile = window.matchMedia('(max-width: 679px)').matches;
@@ -720,7 +729,7 @@ export function GrimoireStage() {
     if (!drag || drag.pointerId !== event.pointerId || !sheet) return;
     handsDragRef.current = null;
     const dy = event.clientY - drag.startY;
-    const velocity = Math.max(0, dy) / Math.max(1, performance.now() - drag.startedAt);
+    const velocity = Math.max(0, flickVelocity(drag.samples, performance.now()));
     sheet.classList.remove('is-dragging');
     if (shouldDock({ dy, height: drag.height, velocity })) {
       if (prefersReducedMotion) {
